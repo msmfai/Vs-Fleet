@@ -44,6 +44,7 @@
 pub mod backoff;
 pub mod buffer;
 pub mod claude;
+pub mod claude_infer;
 pub mod claude_shim;
 pub mod codex;
 pub mod fake;
@@ -51,6 +52,7 @@ pub mod identity;
 pub mod liveness;
 pub mod reporter;
 pub mod testkit;
+pub mod transcript;
 pub mod transition;
 pub mod transport;
 
@@ -60,6 +62,10 @@ pub use buffer::{Delta, DeltaBuffer};
 pub use claude::{
     ClaudeAdapter, ClaudeHookEvent, ClaudeHookKind, ClaudeParseError, ClaudeStateMachine,
     Transition as ClaudeTransition,
+};
+pub use claude_infer::{
+    corroborate_jsonl, corroborate_transcript, ClaudeInferAdapter, ClaudeInferMachine,
+    Corroboration as InferCorroboration, Transition as ClaudeInferTransition, DEFAULT_DEBOUNCE_MS,
 };
 pub use claude_shim::{
     ApprovalDecision as ClaudeApprovalDecision, ApprovalRequest as ClaudeApprovalRequest,
@@ -73,6 +79,7 @@ pub use fake::{FakeReporter, FakeReporterConfig, Transport};
 pub use identity::{DurableId, IdentityLedger, RunIdentity, Stamp};
 pub use liveness::{Liveness, LivenessTracker};
 pub use reporter::{Reporter, ReporterCommand, ReporterConfig, ReporterCore, ReporterHandle};
+pub use transcript::{corroborate, Corroboration};
 pub use transition::{ScriptedStep, TransitionScript};
 pub use transport::{Connection, Connector, TransportError, WsConnector};
 

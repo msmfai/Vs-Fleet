@@ -1,0 +1,5 @@
+{"type":"system","subtype":"init","session_id":"0199f3aa-claude-session-1"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_keep","name":"Bash"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Read"
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","tool_call_id":"toolu_drifted","name":"Grep"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_unrelated"}]}}

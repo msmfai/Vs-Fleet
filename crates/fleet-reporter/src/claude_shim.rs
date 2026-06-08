@@ -21,7 +21,8 @@
 //! - **Native extension UI panel** (no shell, no shim) or **outside the editor**.
 //!   `Notification`, `PermissionRequest`, *and* `PostToolUse` do **not** fire
 //!   (anthropics/claude-code #31285 / PLAN §1). So waiting cannot be observed
-//!   authoritatively; it is *inferred* by S16 (`CLINFER`) ⇒ **[`Confidence::Inferred`]**.
+//!   authoritatively; it is *inferred* by S16 ([`crate::claude_infer`], `CLINFER`)
+//!   ⇒ **[`Confidence::Inferred`]**.
 //!
 //! The single locked invariant this module exists to enforce (confidence honesty,
 //! §3 invariant 5): **the *same* `PermissionRequest` approval payload yields
@@ -66,7 +67,7 @@ pub enum LaunchContext {
     /// Launched in the native extension UI panel, or in a shell with no shim
     /// applied. `PermissionRequest` does **not** fire here; if a waiting signal is
     /// ever derived it is a heuristic ⇒ **[`Confidence::Inferred`]** (and is owned
-    /// by S16/`CLINFER`, not this module).
+    /// by S16/`CLINFER` — [`crate::claude_infer`] — not this module).
     NativeUi,
 }
 

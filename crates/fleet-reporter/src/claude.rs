@@ -27,7 +27,8 @@
 //! - **`PermissionRequest` / `Notification`** — these do **not** fire in the
 //!   native extension UI either (PLAN §1; reproduced through ext v2.1.143). So this
 //!   S15 adapter does **not** model `waiting`/approval at all — that is the job of
-//!   `CLINFER` (S16, inferred from `PreToolUse`-without-`Stop` + JSONL) and
+//!   [`crate::claude_infer`] (`CLINFER` / S16, inferred from
+//!   `PreToolUse`-without-`Stop` + JSONL drift-guard) and
 //!   `CLUSETERM` (S17, authoritative `PermissionRequest` only under the shim). By
 //!   construction, **S15 never emits [`State::Waiting`] and never emits
 //!   [`Confidence::High`] for a heuristic** — confidence honesty (invariant 5) is
