@@ -151,6 +151,7 @@ mod tests {
             soloed,
             unread: false,
             run_count: 1,
+            last_message: None,
         }
     }
 
@@ -168,6 +169,7 @@ mod tests {
             soloed: false,
             unread: false,
             run_count: 0,
+            last_message: None,
         }
     }
 
@@ -185,6 +187,7 @@ mod tests {
             soloed: false,
             unread: false,
             run_count: 1,
+            last_message: None,
         }
     }
 
@@ -246,6 +249,7 @@ mod tests {
                 soloed: false,
                 unread: false,
                 run_count: 0,
+                last_message: None,
             };
             let tabs = vec![tab.clone()];
             assert!(

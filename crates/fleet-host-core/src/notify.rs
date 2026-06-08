@@ -306,6 +306,7 @@ mod tests {
             soloed: false,
             unread: false,
             run_count: 1,
+            last_message: None,
         }
     }
 
