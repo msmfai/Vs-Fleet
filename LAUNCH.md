@@ -28,8 +28,12 @@ target/debug/fleet-hub &
 export FLEET_REPORTER_SOCKET=/tmp/fleet/reporter-demo.sock
 target/debug/fleet-reporter --serve --session-id demo &
 
-# 3. The GUI window (subscribes to the Hub)
+# 3. The GUI window (subscribes to the Hub). Two ways:
+#    (a) quick/dev — runs while the launching shell lives:
 crates/fleet-host/target/debug/fleet-host &      # FLEET_HUB_URL defaults to ws://127.0.0.1:51777
+#    (b) PERSISTENT — a real macOS .app (survives terminal close, LaunchServices):
+( cd crates/fleet-host && ./bundle.sh debug && open ./Fleet.app )
+#        custom hub:  open crates/fleet-host/Fleet.app --args ws://host:port
 
 # 4. Drive an agent. Either run real `claude` with the Fleet hooks…
 claude --settings <fleet-hooks.json>             # see packages/extension shim output
