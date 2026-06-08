@@ -21,6 +21,8 @@ fn ev(kind: CodexHookKind) -> CodexHookEvent {
         tool_name: None,
         decision: None,
         turn_complete_done: false,
+        last_message: None,
+        tool_use_id: None,
     }
 }
 
@@ -684,4 +686,49 @@ proptest! {
         prop_assert_eq!(run.native_id, m.thread_id());
         prop_assert_eq!(run.waiting_since.is_some(), m.state() == State::Waiting);
     }
+}
+
+// ── real Codex payload fidelity (last_assistant_message + tool_use_id) ───────
+
+#[test]
+fn codex_stop_surfaces_last_assistant_message_as_idle_preview() {
+    let json = r#"{"session_id":"t","hook_event_name":"Stop","stop_hook_active":false,
+        "last_assistant_message":"Refactored the parser; all green."}"#;
+    let e = CodexHookEvent::parse(json).unwrap();
+    assert_eq!(e.last_message.as_deref(), Some("Refactored the parser; all green."));
+    let mut m = CodexStateMachine::new("t");
+    m.apply(&e);
+    assert_eq!(m.state(), State::Idle);
+    assert_eq!(
+        m.to_run("r", "2026-06-08T00:00:00Z").last_message.as_deref(),
+        Some("Refactored the parser; all green.")
+    );
+}
+
+#[test]
+fn codex_pre_tool_use_parses_tool_use_id() {
+    let json = r#"{"session_id":"t","hook_event_name":"PreToolUse","tool_name":"Bash","tool_use_id":"tool_789"}"#;
+    let e = CodexHookEvent::parse(json).unwrap();
+    assert_eq!(e.tool_use_id.as_deref(), Some("tool_789"));
+}
+
+#[test]
+fn codex_stop_inside_stop_hook_is_not_done() {
+    // Even with a completion marker, stop_hook_active:true → idle, never done.
+    let json = r#"{"session_id":"t","hook_event_name":"Stop","stop_hook_active":true,"task_complete":true}"#;
+    let e = CodexHookEvent::parse(json).unwrap();
+    assert!(!e.turn_complete_done, "stop_hook_active suppresses the done claim");
+    let mut m = CodexStateMachine::new("t");
+    m.apply(&CodexHookEvent::parse(r#"{"session_id":"t","hook_event_name":"UserPromptSubmit"}"#).unwrap());
+    m.apply(&e);
+    assert_eq!(m.state(), State::Idle);
+}
+
+#[test]
+fn codex_permission_request_is_authoritative_waiting_high() {
+    // The key Codex advantage: PermissionRequest is a real waiting signal → High.
+    let mut m = CodexStateMachine::new("t");
+    m.apply(&CodexHookEvent::parse(r#"{"session_id":"t","hook_event_name":"PermissionRequest","tool_name":"Bash","tool_use_id":"tool_1"}"#).unwrap());
+    assert_eq!(m.state(), State::Waiting);
+    assert_eq!(m.confidence(), Confidence::High, "PermissionRequest is authoritative");
 }

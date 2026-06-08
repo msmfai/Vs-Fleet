@@ -1,9 +1,13 @@
 {
   "session_id": "0199f3aa-thread-codex-1",
-  "turn_id": "turn-1",
+  "transcript_path": "/Users/dev/.codex/sessions/0199f3aa-thread-codex-1.jsonl",
   "cwd": "/Users/dev/project",
   "hook_event_name": "PreToolUse",
+  "model": "gpt-5-codex",
+  "permission_mode": "default",
+  "turn_id": "turn-1",
   "tool_name": "Bash",
+  "tool_use_id": "tool_789",
   "tool_input": {
     "command": "cargo test"
   }
