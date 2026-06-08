@@ -516,8 +516,18 @@ describe("hookRelayCommand() — framing matches the reporter --serve receiver",
         const cmd = hookRelayCommand(SOCK);
         expect(cmd).toContain("printf 'claude %s\\n'");
         expect(cmd).toContain("tr -d '\\r\\n'"); // strip embedded newlines → one line
-        expect(cmd).toContain(`nc -U ${SOCK}`);
+        expect(cmd).toContain(`nc -U '${SOCK}'`); // socket single-quoted (injection-safe)
         expect(cmd).toContain("|| true"); // observer-not-owner: never break claude
+    });
+
+    it("single-quotes a socket path with spaces / metacharacters (no injection)", () => {
+        const evil = "/tmp/fleet dir/r.sock'; rm -rf ~ #";
+        const cmd = hookRelayCommand(evil);
+        // The path is wrapped in single quotes with the embedded quote escaped,
+        // so the `rm -rf ~` cannot escape the quoting into a second command.
+        expect(cmd).toContain(`nc -U '/tmp/fleet dir/r.sock'\\''; rm -rf ~ #'`);
+        // Sanity: nothing after the quoted arg except the fixed pipeline tail.
+        expect(cmd.endsWith("2>/dev/null || true")).toBe(true);
     });
 });
 
@@ -536,7 +546,7 @@ describe("claudeHooksSettings() — the --settings document", () => {
         for (const [, groups] of Object.entries(doc.hooks)) {
             expect(Array.isArray(groups)).toBe(true);
             expect(groups[0].hooks[0].type).toBe("command");
-            expect(groups[0].hooks[0].command).toContain(`nc -U ${SOCK}`);
+            expect(groups[0].hooks[0].command).toContain(`nc -U '${SOCK}'`);
         }
     });
 
@@ -563,7 +573,7 @@ describe("PathShimmer.install() with a reporter socket — writes hooks + wires 
         expect(s.claudeHooksFile).toBe(hooksFile);
         expect(fs.existsSync(hooksFile)).toBe(true);
         const parsed = JSON.parse(fs.readFileSync(hooksFile, "utf8"));
-        expect(parsed.hooks.Stop[0].hooks[0].command).toContain(`nc -U ${SOCK}`);
+        expect(parsed.hooks.Stop[0].hooks[0].command).toContain(`nc -U '${SOCK}'`);
     });
 
     it("does NOT write a hooks file when no reporter socket is configured (pass-through)", () => {
