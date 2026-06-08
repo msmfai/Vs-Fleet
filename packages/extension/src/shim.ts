@@ -107,6 +107,53 @@ export interface ShimOptions {
     shimDir: string;
     /** Opt-in reliability flags (default: none). */
     reliability?: ReliabilityConfig;
+    /**
+     * The per-window reporter socket path (`FLEET_REPORTER_SOCKET`). When set,
+     * `install()` writes a Claude hooks settings file into the shim dir and the
+     * `claude` wrapper launches `claude --settings <that file>`, so Claude's
+     * Stop/UserPromptSubmit/PreToolUse/SessionStart/SessionEnd hooks send framed
+     * payloads to the reporter. When unset, the wrapper is a pure pass-through
+     * (no hooks) — the safe default.
+     */
+    reporterSocket?: string;
+}
+
+/** The Claude settings file the shim writes into its dir (consumed via `--settings`). */
+export const CLAUDE_HOOKS_FILE = "fleet-hooks.json";
+
+/**
+ * The shell command a Claude hook runs to relay its stdin payload to the
+ * reporter socket. Mirrors `fleet-cli`'s `init.rs` framing EXACTLY: one line of
+ * `"<agent-tag> <compact-json>\n"`, newlines stripped from the payload, sent via
+ * `nc -U`. `|| true` keeps Claude's own flow alive on any relay error
+ * (observer-not-owner).
+ */
+export function hookRelayCommand(reporterSocket: string): string {
+    return `printf 'claude %s\\n' "$(cat | tr -d '\\r\\n')" | nc -U ${reporterSocket} 2>/dev/null || true`;
+}
+
+/**
+ * Build the Claude `--settings` hooks document pointing every Fleet-consumed
+ * hook event at the reporter socket. Uses the real Claude settings hooks shape:
+ * each event name maps to an ARRAY of matcher-groups, each group carrying a
+ * `hooks` array of `{type:"command", command}` entries. `PreToolUse` carries a
+ * `"*"` matcher (fires for every tool); the lifecycle events take no matcher.
+ *
+ * Pure + exported so it's unit-tested and reused by `install()`.
+ */
+export function claudeHooksSettings(reporterSocket: string): object {
+    const cmd = hookRelayCommand(reporterSocket);
+    const group = { hooks: [{ type: "command", command: cmd }] };
+    const matchedGroup = { matcher: "*", hooks: [{ type: "command", command: cmd }] };
+    return {
+        hooks: {
+            SessionStart: [group],
+            UserPromptSubmit: [group],
+            PreToolUse: [matchedGroup],
+            Stop: [group],
+            SessionEnd: [group],
+        },
+    };
 }
 
 /**
@@ -152,20 +199,30 @@ export function hasAnyReliabilityFlag(reliability: ReliabilityConfig | undefined
  *   - Otherwise it prepends any OPT-IN reliability flags (surfacing them on
  *     stderr) and `exec`s the real binary with those flags followed by `"$@"`.
  *
- * Hook installation itself (writing `~/.codex/hooks.json`, Claude `--settings`)
- * is the job of the CODEX (S11–13) / CLUSETERM (S17) nodes; this script provides
- * the transparent, recursion-proof launch seam they build on. Until those land,
- * the hook-enabled branch differs from pass-through ONLY by the opt-in flags, so
- * the agent's UX is unchanged (NODE SHIM demo: "typing `codex` launches real
- * codex, UX unchanged").
+ * Claude hook installation: when a `hooksFile` is supplied (the per-window
+ * `fleet-hooks.json` `PathShimmer` writes), the `claude` wrapper prepends
+ * `--settings <hooksFile>` so Claude relays its lifecycle hooks to the reporter —
+ * WITHOUT touching the user's own `~/.claude/settings.json` (Claude layers
+ * `--settings` on top). Codex hook installation (via `CODEX_HOME`) is still
+ * deferred; the `codex` wrapper remains a transparent pass-through (plus any
+ * opt-in flags), so "typing `codex` launches real codex, UX unchanged".
  */
-export function shimScript(agent: ShimmedAgent, reliability?: ReliabilityConfig): string {
+export function shimScript(
+    agent: ShimmedAgent,
+    reliability?: ReliabilityConfig,
+    hooksFile?: string
+): string {
     const flags = injectedReliabilityFlags(reliability)[agent];
-    // Render opt-in flags as a quoted sh list assigned to $FLEET_EXTRA. Empty by
-    // default. Each flag is single-quoted to be injection-safe.
-    const extraAssign = flags.length
-        ? "set -- " + flags.map(f => `'${f.replace(/'/g, `'\\''`)}'`).join(" ") + ' "$@"'
-        : ""; // no-op when there are no flags
+    // Claude gets `--settings <fleet-hooks.json>` PREPENDED ahead of the user's
+    // args, so its hooks relay to the reporter. This is additive and verbatim:
+    // the user's own args (including their own `--settings`, if any) still follow.
+    const prepend: string[] =
+        agent === "claude" && hooksFile ? ["--settings", hooksFile, ...flags] : [...flags];
+    // Render the prepended args as a quoted sh list spliced ahead of "$@". Each
+    // token is single-quoted to be injection-safe. Empty ⇒ no-op.
+    const extraAssign = prepend.length
+        ? "set -- " + prepend.map(f => `'${f.replace(/'/g, `'\\''`)}'`).join(" ") + ' "$@"'
+        : ""; // no-op when there is nothing to prepend
 
     // The surfacing notice (only emitted when flags are active).
     const surface = flags.length
@@ -273,6 +330,7 @@ export class PathShimmer {
     private readonly _collection: EnvCollectionLike;
     private readonly _shimDir: string;
     private readonly _reliability: ReliabilityConfig;
+    private readonly _reporterSocket?: string;
     private _installed = false;
 
     constructor(collection: EnvCollectionLike, options: ShimOptions) {
@@ -282,11 +340,21 @@ export class PathShimmer {
         this._collection = collection;
         this._shimDir = options.shimDir;
         this._reliability = options.reliability ?? {};
+        this._reporterSocket = options.reporterSocket;
     }
 
     /** The shim directory this shimmer manages. */
     get shimDir(): string {
         return this._shimDir;
+    }
+
+    /**
+     * Absolute path of the Claude hooks settings file the shim writes (when a
+     * reporter socket is configured), referenced by the `claude` wrapper's
+     * `--settings`. `undefined` when no reporter socket is set (pass-through).
+     */
+    get claudeHooksFile(): string | undefined {
+        return this._reporterSocket ? path.join(this._shimDir, CLAUDE_HOOKS_FILE) : undefined;
     }
 
     /** True once `install()` has run and not been `dispose()`d. */
@@ -315,9 +383,23 @@ export class PathShimmer {
     install(): void {
         fs.mkdirSync(this._shimDir, { recursive: true });
 
+        // When a reporter socket is configured, write the Claude hooks settings
+        // file the `claude` wrapper passes via `--settings`. This is a SEPARATE
+        // file from the user's own `~/.claude/settings.json` (which we never
+        // touch) — Claude layers `--settings` on top, so Fleet's hooks are added
+        // without modifying the user's config.
+        const hooksFile = this.claudeHooksFile;
+        if (hooksFile && this._reporterSocket) {
+            fs.writeFileSync(
+                hooksFile,
+                JSON.stringify(claudeHooksSettings(this._reporterSocket), null, 2),
+                { mode: 0o644 }
+            );
+        }
+
         for (const agent of SHIMMED_AGENTS) {
             const file = path.join(this._shimDir, agent);
-            fs.writeFileSync(file, shimScript(agent, this._reliability), { mode: 0o755 });
+            fs.writeFileSync(file, shimScript(agent, this._reliability, hooksFile), { mode: 0o755 });
             // writeFileSync `mode` is masked by umask on create and ignored on
             // overwrite, so chmod explicitly to guarantee the +x bit.
             fs.chmodSync(file, 0o755);
@@ -362,6 +444,8 @@ export class PathShimmer {
                 const file = path.join(this._shimDir, agent);
                 if (fs.existsSync(file)) fs.rmSync(file);
             }
+            const hooksFile = path.join(this._shimDir, CLAUDE_HOOKS_FILE);
+            if (fs.existsSync(hooksFile)) fs.rmSync(hooksFile);
             if (fs.existsSync(this._shimDir)) fs.rmdirSync(this._shimDir);
         } catch {
             /* best-effort: a non-empty/locked dir is left for the OS temp reaper */

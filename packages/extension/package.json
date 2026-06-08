@@ -33,6 +33,11 @@
           "default": 10000,
           "description": "Heartbeat interval in milliseconds."
         },
+        "fleet.reporterBinPath": {
+          "type": "string",
+          "default": "fleet-reporter",
+          "description": "Path to the fleet-reporter binary the extension launches per window (--serve). Defaults to resolving `fleet-reporter` on PATH."
+        },
         "fleet.claude.allowDangerouslySkipPermissions": {
           "type": "boolean",
           "default": false,

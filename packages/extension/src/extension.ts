@@ -27,8 +27,10 @@ import {
     resolveEndpoint,
     resolveSessionId,
 } from "./connection";
-import { EnvInjector, endpointToTargets } from "./envInject";
+import { EnvInjector } from "./envInject";
+import { reporterSocketPath } from "./paths";
 import { ReadStreamManager } from "./readStream";
+import { ReporterSupervisor } from "./reporter";
 import { PathShimmer, defaultShimDir, hasAnyReliabilityFlag, type ReliabilityConfig } from "./shim";
 import { FleetStatusBar } from "./statusBar";
 
@@ -43,6 +45,9 @@ let _pathShimmer: PathShimmer | null = null;
 
 /** The single live read-stream OSC recovery manager (null until activate() runs). */
 let _readStreamManager: ReadStreamManager | null = null;
+
+/** The single live reporter supervisor (null until activate() runs). */
+let _reporterSupervisor: ReporterSupervisor | null = null;
 
 /**
  * VS Code calls this when the extension activates (onStartupFinished).
@@ -61,6 +66,11 @@ export function activate(context: vscode.ExtensionContext): void {
         10_000
     );
 
+    // The per-window reporter socket: where this window's `fleet-reporter
+    // --serve` listens for Claude/Codex hooks. Injected into terminals, bound by
+    // the reporter, targeted by the shim's hooks — one path, three consumers.
+    const reporterSocket = reporterSocketPath(sessionId);
+
     // ENVINJ (S9): inject FLEET_SESSION_ID (per window) + the reporter endpoint
     // into every integrated-terminal shell via the STABLE
     // EnvironmentVariableCollection API (workspace-scoped, reversible). This is
@@ -73,7 +83,7 @@ export function activate(context: vscode.ExtensionContext): void {
     _envInjector = envInjector;
     envInjector.inject({
         sessionId,
-        ...endpointToTargets(endpoint),
+        reporterSocket,
     });
 
     // SHIM (S10): prepend a per-window dir of transparent `claude`/`codex`
@@ -94,6 +104,10 @@ export function activate(context: vscode.ExtensionContext): void {
     const pathShimmer = new PathShimmer(context.environmentVariableCollection, {
         shimDir: defaultShimDir(sessionId),
         reliability,
+        // The shim writes a `fleet-hooks.json` pointed at THIS window's reporter
+        // socket and launches `claude --settings <that file>`, so Claude relays
+        // its hooks to the reporter without touching ~/.claude/settings.json.
+        reporterSocket,
     });
     _pathShimmer = pathShimmer;
     try {
@@ -114,6 +128,27 @@ export function activate(context: vscode.ExtensionContext): void {
             `Fleet: could not install PATH shim (${err}); falling back to config-only detection.`
         );
         _pathShimmer = null;
+    }
+
+    // REPSERVE: spawn this window's `fleet-reporter --serve`. It binds the
+    // reporter socket, registers the window session with the Hub, and turns the
+    // shim-installed Claude/Codex hooks into Hub deltas. Best-effort: a missing
+    // binary surfaces a warning and falls back to the extension's own Hub
+    // presence (the reporter is what makes hooks flow, not editor presence).
+    const reporterBin = cfg.get<string>("reporterBinPath", "fleet-reporter");
+    const reporterSupervisor = new ReporterSupervisor({
+        binPath: reporterBin,
+        reporterSocket,
+        sessionId,
+        hubEndpoint: endpoint,
+    });
+    _reporterSupervisor = reporterSupervisor;
+    try {
+        reporterSupervisor.start();
+    } catch (err) {
+        vscode.window.showWarningMessage(
+            `Fleet: could not start the reporter (${err}); set "fleet.reporterBinPath" to the fleet-reporter binary.`
+        );
     }
 
     // Status bar: shows connection state throughout the window lifetime.
@@ -162,6 +197,10 @@ export function activate(context: vscode.ExtensionContext): void {
                 unsub();
                 conn.dispose();
                 _connection = null;
+                // Stop this window's reporter (reversibility): kill the child and
+                // cancel any pending restart.
+                reporterSupervisor.dispose();
+                _reporterSupervisor = null;
                 // READSTREAM cleanup (reversibility): cancel all in-flight readers
                 // and deregister the shell execution event listener.
                 readStreamMgr.dispose();
@@ -193,6 +232,10 @@ export function deactivate(): void {
     if (_readStreamManager) {
         _readStreamManager.dispose();
         _readStreamManager = null;
+    }
+    if (_reporterSupervisor) {
+        _reporterSupervisor.dispose();
+        _reporterSupervisor = null;
     }
     if (_pathShimmer) {
         _pathShimmer.dispose();
@@ -234,4 +277,12 @@ export function getPathShimmer(): PathShimmer | null {
  */
 export function getReadStreamManager(): ReadStreamManager | null {
     return _readStreamManager;
+}
+
+/**
+ * Accessor for the current reporter supervisor (used by tests). Null before
+ * activate() and after deactivate().
+ */
+export function getReporterSupervisor(): ReporterSupervisor | null {
+    return _reporterSupervisor;
 }

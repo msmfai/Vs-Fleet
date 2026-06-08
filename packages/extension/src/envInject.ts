@@ -13,10 +13,11 @@
  *   - `FLEET_SESSION_ID`   — the per-window Fleet session id, so a `claude`/
  *     `codex` run started in this window can be correlated back to the editor
  *     window (run↔editor correlation; also fixes focus/jump mapping, §12.2).
- *   - the reporter endpoint — `FLEET_HUB_SOCKET` (unix fast path) or
- *     `FLEET_HUB_WS_URL` (WS fallback), so a hook/wrapper launched in the shell
- *     knows where the reporter socket lives (consumed by SHIM/S10 + the Codex/
- *     Claude hooks, S11+).
+ *   - `FLEET_REPORTER_SOCKET` — the per-window **reporter** socket path, where
+ *     `fleet-reporter --serve` listens for this window's hooks. The shim reads it
+ *     to point Claude/Codex hooks at the reporter (consumed by SHIM/S10 + the
+ *     Codex/Claude hooks). This is the reporter socket, NOT the Hub socket — the
+ *     terminals never talk to the Hub directly.
  *
  * ── Locked decisions / invariants honored ────────────────────────────────────
  *   - D14 — STABLE `EnvironmentVariableCollection` ONLY; NO proposed APIs; the
@@ -72,10 +73,16 @@
 
 /** The window-identity env var injected into every integrated-terminal shell. */
 export const FLEET_SESSION_ID_VAR = "FLEET_SESSION_ID";
-/** Reporter unix-socket path env var (set when the endpoint is a unix socket). */
-export const FLEET_HUB_SOCKET_VAR = "FLEET_HUB_SOCKET";
-/** Reporter WebSocket URL env var (set when the endpoint is a ws:// URL). */
-export const FLEET_HUB_WS_URL_VAR = "FLEET_HUB_WS_URL";
+
+/**
+ * The **reporter** socket path env var injected into every integrated-terminal
+ * shell. This is the per-window socket where `fleet-reporter --serve` listens —
+ * NOT the Hub socket. The shim reads it to point Claude/Codex hooks at the
+ * reporter (re-exported from `./paths`, the single source of truth shared with
+ * the Rust side's `FLEET_REPORTER_SOCKET`).
+ */
+export { FLEET_REPORTER_SOCKET_VAR } from "./paths";
+import { FLEET_REPORTER_SOCKET_VAR } from "./paths";
 
 /**
  * The set of env vars Fleet owns in the collection. Used by `dispose()` to
@@ -84,8 +91,7 @@ export const FLEET_HUB_WS_URL_VAR = "FLEET_HUB_WS_URL";
  */
 export const FLEET_ENV_VARS: readonly string[] = [
     FLEET_SESSION_ID_VAR,
-    FLEET_HUB_SOCKET_VAR,
-    FLEET_HUB_WS_URL_VAR,
+    FLEET_REPORTER_SOCKET_VAR,
 ] as const;
 
 /**
@@ -119,29 +125,19 @@ export interface EnvCollectionLike {
 }
 
 /**
- * What gets injected. Exactly one of `hubSocketPath` / `hubWsUrl` is set,
- * mirroring `resolveEndpoint` (unix fast path vs WS fallback).
+ * What gets injected into the integrated-terminal environment.
  */
 export interface InjectionTargets {
     /** The per-window Fleet session id. */
     sessionId: string;
-    /** Reporter unix-socket path (unix fast path), if the endpoint is unix. */
-    hubSocketPath?: string;
-    /** Reporter WebSocket URL, if the endpoint is a ws:// URL. */
-    hubWsUrl?: string;
-}
-
-/**
- * Translate a resolved endpoint string (from `resolveEndpoint`) into the
- * reporter-endpoint half of an `InjectionTargets`. `unix:/path` → socket path;
- * `ws://…` → ws url. Keeping this pure makes the env→endpoint mapping testable
- * without VS Code.
- */
-export function endpointToTargets(endpoint: string): Pick<InjectionTargets, "hubSocketPath" | "hubWsUrl"> {
-    if (endpoint.startsWith("unix:")) {
-        return { hubSocketPath: endpoint.slice("unix:".length) };
-    }
-    return { hubWsUrl: endpoint };
+    /**
+     * The per-window **reporter** socket path — where `fleet-reporter --serve`
+     * listens for this window's Claude/Codex hooks. The shim reads this to point
+     * the agent's hooks at the reporter. (Distinct from the Hub socket, which the
+     * terminals never talk to — only the reporter and the extension connect to
+     * the Hub.)
+     */
+    reporterSocket: string;
 }
 
 /**
@@ -188,21 +184,7 @@ export class EnvInjector {
         const opts = { applyAtProcessCreation: true };
 
         this._collection.replace(FLEET_SESSION_ID_VAR, targets.sessionId, opts);
-
-        // Exactly one reporter-endpoint var is set; the other is removed so a
-        // re-inject after an endpoint change (unix↔ws) never leaves a stale
-        // endpoint var behind.
-        if (targets.hubSocketPath) {
-            this._collection.replace(FLEET_HUB_SOCKET_VAR, targets.hubSocketPath, opts);
-            this._collection.delete(FLEET_HUB_WS_URL_VAR);
-        } else if (targets.hubWsUrl) {
-            this._collection.replace(FLEET_HUB_WS_URL_VAR, targets.hubWsUrl, opts);
-            this._collection.delete(FLEET_HUB_SOCKET_VAR);
-        } else {
-            // No reporter endpoint to inject — drop both so nothing stale lingers.
-            this._collection.delete(FLEET_HUB_SOCKET_VAR);
-            this._collection.delete(FLEET_HUB_WS_URL_VAR);
-        }
+        this._collection.replace(FLEET_REPORTER_SOCKET_VAR, targets.reporterSocket, opts);
 
         this._injected = true;
     }

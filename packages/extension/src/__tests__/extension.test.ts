@@ -7,6 +7,8 @@
  * connection object, without opening any real socket.
  */
 
+import { EventEmitter } from "events";
+
 import * as vscode from "vscode";
 import {
     makeExtensionContext,
@@ -14,13 +16,24 @@ import {
     setMockConfig,
 } from "../__mocks__/vscode";
 
+// Mock child_process so activate()'s ReporterSupervisor never spawns a real
+// `fleet-reporter`: spawn returns an inert EventEmitter with a kill() spy.
+jest.mock("child_process", () => ({
+    spawn: jest.fn(() => {
+        const ee = new EventEmitter() as EventEmitter & { kill: jest.Mock };
+        ee.kill = jest.fn();
+        return ee;
+    }),
+}));
+
 // Import connection module so we can spy on HubConnection.open.
 import * as connectionModule from "../connection";
 import { HubConnection } from "../connection";
 
 // Import module under test.
 import { activate, deactivate, getConnection, getEnvInjector } from "../extension";
-import { FLEET_SESSION_ID_VAR, FLEET_HUB_SOCKET_VAR, FLEET_HUB_WS_URL_VAR } from "../envInject";
+import { FLEET_SESSION_ID_VAR, FLEET_REPORTER_SOCKET_VAR } from "../envInject";
+import { reporterSocketPath } from "../paths";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -302,25 +315,14 @@ describe("env injection on activate/deactivate", () => {
         expect(ctx.environmentVariableCollection.get(FLEET_SESSION_ID_VAR)!.value).toBe(sessionId);
     });
 
-    it("injects FLEET_HUB_WS_URL for the default WS endpoint (no socket var)", () => {
+    it("injects the per-window FLEET_REPORTER_SOCKET matching the session id", () => {
         const ctx = makeExtensionContext();
         activate(ctx as unknown as vscode.ExtensionContext);
 
-        expect(ctx.environmentVariableCollection.get(FLEET_HUB_WS_URL_VAR)!.value).toBe(
-            "ws://127.0.0.1:51777"
+        const [, sessionId] = openSpy.mock.calls[0];
+        expect(ctx.environmentVariableCollection.get(FLEET_REPORTER_SOCKET_VAR)!.value).toBe(
+            reporterSocketPath(sessionId as string)
         );
-        expect(ctx.environmentVariableCollection.get(FLEET_HUB_SOCKET_VAR)).toBeUndefined();
-    });
-
-    it("injects FLEET_HUB_SOCKET for a unix endpoint (no ws var)", () => {
-        setMockConfig("hubUnixSocket", "/var/run/fleet.sock");
-        const ctx = makeExtensionContext();
-        activate(ctx as unknown as vscode.ExtensionContext);
-
-        expect(ctx.environmentVariableCollection.get(FLEET_HUB_SOCKET_VAR)!.value).toBe(
-            "/var/run/fleet.sock"
-        );
-        expect(ctx.environmentVariableCollection.get(FLEET_HUB_WS_URL_VAR)).toBeUndefined();
     });
 
     it("exposes the injector via getEnvInjector() after activate", () => {
