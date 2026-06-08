@@ -119,6 +119,9 @@ impl FakeReporter {
             } => ClientMessage::RunUpsert {
                 session_id: session_id.clone(),
                 run: run.clone(),
+                // The S4 fake is an un-stamped fixture (no durable-identity
+                // gating); the Hub applies it ungated, as for any S5 reporter.
+                stamp: None,
             },
             ScriptedStep::RemoveSession { session_id, .. } => ClientMessage::SessionRemove {
                 session_id: session_id.clone(),
@@ -313,7 +316,9 @@ mod tests {
         };
         let msg = FakeReporter::step_to_message(&step);
         match msg {
-            ClientMessage::RunUpsert { session_id, run: r } => {
+            ClientMessage::RunUpsert {
+                session_id, run: r, ..
+            } => {
                 assert_eq!(session_id, "s1");
                 assert_eq!(r.run_id, "r1");
             }

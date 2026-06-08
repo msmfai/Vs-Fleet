@@ -17,6 +17,7 @@
 //! double-applied across the subscribe boundary.
 
 use std::net::SocketAddr;
+use std::path::Path;
 use std::sync::Arc;
 
 use fleet_protocol::Event;
@@ -25,7 +26,7 @@ use tokio::net::TcpListener;
 use tokio::sync::{broadcast, Mutex};
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::merge::MergeEngine;
+use crate::persist::{PersistError, StateStore};
 use crate::wire::ClientMessage;
 
 /// Default capacity of the per-connection broadcast backlog. A slow subscriber
@@ -34,9 +35,15 @@ use crate::wire::ClientMessage;
 const BROADCAST_CAPACITY: usize = 1024;
 
 /// Shared Hub state handed to every connection task.
+///
+/// State lives in a durable [`StateStore`] (PLAN S7, D3): every accepted reporter
+/// delta is appended to a SQLite event log **then** projected into memory and
+/// broadcast, so a Hub restart restores all sessions/runs from the log. Opening
+/// the store with an existing log replays it, restoring the projection before
+/// the first connection is served.
 #[derive(Clone)]
 pub struct HubState {
-    engine: Arc<Mutex<MergeEngine>>,
+    store: Arc<Mutex<StateStore>>,
     tx: broadcast::Sender<Event>,
 }
 
@@ -47,26 +54,44 @@ impl Default for HubState {
 }
 
 impl HubState {
-    /// A fresh Hub with an empty engine and a live broadcast channel.
+    /// A fresh Hub backed by an **in-memory** event log (no durability across
+    /// restart). Used by tests and the transport smoke harness; the daemon uses
+    /// [`Self::with_db`] for a persistent log.
     pub fn new() -> Self {
+        let store = StateStore::open_in_memory().expect("in-memory sqlite log always opens");
+        Self::from_store(store)
+    }
+
+    /// A Hub backed by a durable on-disk event log at `db_path` (D3). Replays any
+    /// existing log to restore the projection before serving.
+    pub fn with_db(db_path: impl AsRef<Path>) -> Result<Self, PersistError> {
+        let store = StateStore::open(db_path)?;
+        Ok(Self::from_store(store))
+    }
+
+    fn from_store(store: StateStore) -> Self {
         let (tx, _rx) = broadcast::channel(BROADCAST_CAPACITY);
         HubState {
-            engine: Arc::new(Mutex::new(MergeEngine::new())),
+            store: Arc::new(Mutex::new(store)),
             tx,
         }
     }
 
-    /// Apply one inbound message, mutating the engine and broadcasting any
-    /// resulting events. `subscribe`/`command` return an optional immediate
-    /// reply for the calling connection (the snapshot for `subscribe`).
+    /// Apply one inbound message, persisting + projecting the mutation and
+    /// broadcasting any resulting events. `subscribe`/`command` return an
+    /// optional immediate reply for the calling connection (the snapshot for
+    /// `subscribe`).
     ///
     /// Returning the snapshot here — under the same lock that serializes deltas
-    /// — is what makes subscribe atomic w.r.t. the delta stream.
+    /// — is what makes subscribe atomic w.r.t. the delta stream. A persistence
+    /// error on a delta is logged and the delta is dropped (the in-memory
+    /// projection is only updated *after* a successful append, so memory and the
+    /// log never diverge).
     async fn apply(&self, msg: ClientMessage) -> Option<Event> {
         match msg {
             ClientMessage::Subscribe => {
-                let engine = self.engine.lock().await;
-                Some(Event::snapshot(engine.snapshot()))
+                let store = self.store.lock().await;
+                Some(Event::snapshot(store.snapshot()))
             }
             ClientMessage::Command { command } => {
                 // S2: commands are accepted and acknowledged but not yet acted
@@ -78,29 +103,38 @@ impl HubState {
                 None
             }
             ClientMessage::SessionUpsert { session } => {
-                let mut engine = self.engine.lock().await;
-                let ev = engine.upsert_session(session);
-                let _ = self.tx.send(ev);
+                self.ingest_session_upsert(session).await;
                 None
             }
             ClientMessage::SessionRemove { session_id } => {
-                let mut engine = self.engine.lock().await;
-                if let Some(ev) = engine.remove_session(&session_id) {
-                    let _ = self.tx.send(ev);
+                let mut store = self.store.lock().await;
+                match store.apply_session_remove(&session_id) {
+                    Ok(Some(ev)) => {
+                        let _ = self.tx.send(ev);
+                    }
+                    Ok(None) => {}
+                    Err(e) => tracing::error!(error = %e, "persist session.remove failed; dropped"),
                 }
                 None
             }
-            ClientMessage::RunUpsert { session_id, run } => {
-                let mut engine = self.engine.lock().await;
-                for ev in engine.upsert_run(&session_id, run) {
-                    let _ = self.tx.send(ev);
-                }
+            ClientMessage::RunUpsert {
+                session_id,
+                run,
+                stamp,
+            } => {
+                self.ingest_run_upsert_stamped(&session_id, run, stamp)
+                    .await;
                 None
             }
             ClientMessage::RunRemove { session_id, run_id } => {
-                let mut engine = self.engine.lock().await;
-                for ev in engine.remove_run(&session_id, &run_id) {
-                    let _ = self.tx.send(ev);
+                let mut store = self.store.lock().await;
+                match store.apply_run_remove(&session_id, &run_id) {
+                    Ok(evs) => {
+                        for ev in evs {
+                            let _ = self.tx.send(ev);
+                        }
+                    }
+                    Err(e) => tracing::error!(error = %e, "persist run.remove failed; dropped"),
                 }
                 None
             }
@@ -109,8 +143,87 @@ impl HubState {
 
     /// Current snapshot (used by tests and the unix/ws snapshot path).
     pub async fn snapshot_event(&self) -> Event {
-        let engine = self.engine.lock().await;
-        Event::snapshot(engine.snapshot())
+        let store = self.store.lock().await;
+        Event::snapshot(store.snapshot())
+    }
+
+    /// Persist + project + broadcast a session upsert. The public, transport-
+    /// agnostic equivalent of receiving a `session.upsert` delta — used by the
+    /// fake reporter and integration tests that drive the Hub without a socket.
+    pub async fn ingest_session_upsert(&self, session: fleet_protocol::Session) {
+        let mut store = self.store.lock().await;
+        match store.apply_session_upsert(session) {
+            Ok(ev) => {
+                let _ = self.tx.send(ev);
+            }
+            Err(e) => tracing::error!(error = %e, "persist session.upsert failed; dropped"),
+        }
+    }
+
+    /// Persist + project + broadcast a run upsert (see [`Self::ingest_session_upsert`]).
+    ///
+    /// Un-stamped (S5 reporters): applied ungated, preserving prior behavior.
+    pub async fn ingest_run_upsert(&self, session_id: &str, run: fleet_protocol::AgentRun) {
+        let mut store = self.store.lock().await;
+        match store.apply_run_upsert(session_id, run) {
+            Ok(evs) => {
+                for ev in evs {
+                    let _ = self.tx.send(ev);
+                }
+            }
+            Err(e) => tracing::error!(error = %e, "persist run.upsert failed; dropped"),
+        }
+    }
+
+    /// Persist + project + broadcast a run upsert, **gated by the durable-identity
+    /// stamp** when present (S6). A stamped delta flows through the reclaim table
+    /// ([`crate::reclaim`]): applied once per `(durable_id, seq)` in `seq` order;
+    /// a duplicate or stale out-of-order delta is dropped (no broadcast). A delta
+    /// with no stamp (S5 reporter) is applied ungated.
+    pub async fn ingest_run_upsert_stamped(
+        &self,
+        session_id: &str,
+        run: fleet_protocol::AgentRun,
+        stamp: Option<crate::wire::SeqStamp>,
+    ) {
+        let mut store = self.store.lock().await;
+        let result = match stamp {
+            Some(s) => {
+                let did = crate::reclaim::DurableId::new(s.durable_id);
+                store
+                    .apply_run_upsert_seq(session_id, run, &did, s.epoch, s.seq)
+                    .map(|(_decision, evs)| evs)
+            }
+            None => store.apply_run_upsert(session_id, run),
+        };
+        match result {
+            Ok(evs) => {
+                for ev in evs {
+                    let _ = self.tx.send(ev);
+                }
+            }
+            Err(e) => tracing::error!(error = %e, "persist run.upsert failed; dropped"),
+        }
+    }
+
+    /// Run one GC pass: reap `dead` runs past `grace` (D17) and sweep sessions
+    /// untouched past `session_ttl`, broadcasting every resulting removal. `now`
+    /// is an ISO-8601 UTC instant (the daemon passes the wall clock). Returns the
+    /// number of broadcast events. Intended to be called on the reap timer.
+    pub async fn gc(
+        &self,
+        now: &str,
+        grace: std::time::Duration,
+        session_ttl: std::time::Duration,
+    ) -> Result<usize, PersistError> {
+        let mut store = self.store.lock().await;
+        let mut events = store.reap_dead(now, grace)?;
+        events.extend(store.sweep_expired_sessions(now, session_ttl)?);
+        let n = events.len();
+        for ev in events {
+            let _ = self.tx.send(ev);
+        }
+        Ok(n)
     }
 
     /// Subscribe to the broadcast stream of applied deltas.
@@ -327,6 +440,7 @@ mod tests {
             .apply(ClientMessage::RunUpsert {
                 session_id: "s1".into(),
                 run,
+                stamp: None,
             })
             .await;
         // A late subscriber sees the accumulated state.

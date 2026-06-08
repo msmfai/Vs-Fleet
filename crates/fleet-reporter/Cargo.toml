@@ -31,3 +31,4 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = "0.23"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+proptest = "1"

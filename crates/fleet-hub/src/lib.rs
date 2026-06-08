@@ -26,6 +26,8 @@
 
 pub mod lockfile;
 pub mod merge;
+pub mod persist;
+pub mod reclaim;
 pub mod server;
 pub mod wire;
 
@@ -34,8 +36,10 @@ use std::path::PathBuf;
 
 pub use lockfile::{InstanceLock, LockError};
 pub use merge::MergeEngine;
+pub use persist::{EventLog, PersistError, PersistEvent, StateStore, DEFAULT_REAP_GRACE};
+pub use reclaim::{Decision, DurableId, ReclaimTable};
 pub use server::HubState;
-pub use wire::ClientMessage;
+pub use wire::{ClientMessage, SeqStamp};
 
 /// Runtime configuration for a Hub daemon.
 #[derive(Debug, Clone)]
@@ -47,6 +51,13 @@ pub struct HubConfig {
     pub unix_path: PathBuf,
     /// Path to the single-instance lockfile (D2).
     pub lock_path: PathBuf,
+    /// Path to the durable SQLite event log (D3, S7). A restart replays this to
+    /// restore all sessions/runs.
+    pub db_path: PathBuf,
+    /// Reap grace before a `dead` run is GC'd (D17: 1 h default).
+    pub reap_grace: std::time::Duration,
+    /// TTL before a session untouched this long is swept (S6 session-expiry GC).
+    pub session_ttl: std::time::Duration,
 }
 
 /// The default Hub state directory, `$XDG_RUNTIME_DIR/fleet` or a temp fallback.
@@ -82,9 +93,21 @@ impl Default for HubConfig {
             ws_addr: SocketAddr::from(([127, 0, 0, 1], port)),
             unix_path: dir.join("hub.sock"),
             lock_path: dir.join("hub.lock"),
+            db_path: dir.join("hub.db"),
+            // D17: 1 h reap grace before a `dead` run is GC'd.
+            reap_grace: crate::persist::DEFAULT_REAP_GRACE,
+            // Session expiry is far more lenient than dead-reaping: a live but
+            // quiet session must not vanish. 24 h by default (reuses the D17
+            // timer plumbing — S6/S7).
+            session_ttl: std::time::Duration::from_secs(24 * 60 * 60),
         }
     }
 }
+
+/// The interval between Hub GC passes (reap + session sweep). Frequent enough
+/// that a `dead` run is reaped within a minute of crossing its grace, cheap
+/// enough to be negligible on a local daemon.
+const GC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// Run the Hub daemon to completion (i.e. forever — D2: never auto-exits).
 ///
@@ -96,7 +119,35 @@ pub async fn run(config: HubConfig) -> anyhow::Result<()> {
     let _lock = InstanceLock::acquire(&config.lock_path)?;
     tracing::info!(lock = %config.lock_path.display(), "single-instance lock acquired");
 
-    let state = HubState::new();
+    // D3/S7: durable state. Opening replays the existing event log, restoring
+    // every session/run before the first connection is served.
+    if let Some(parent) = config.db_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let state = HubState::with_db(&config.db_path)?;
+    tracing::info!(db = %config.db_path.display(), "durable state restored");
+
+    // S7/D17: periodic GC — reap `dead` runs past the grace, sweep expired
+    // sessions. Spawned as a background task; the Hub itself never auto-exits (D2).
+    {
+        let gc_state = state.clone();
+        let grace = config.reap_grace;
+        let ttl = config.session_ttl;
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(GC_INTERVAL);
+            // Skip the immediate first tick so we don't GC the instant we start.
+            tick.tick().await;
+            loop {
+                tick.tick().await;
+                let now = persist::now_iso();
+                match gc_state.gc(&now, grace, ttl).await {
+                    Ok(0) => {}
+                    Ok(n) => tracing::info!(reaped = n, "GC pass removed entries"),
+                    Err(e) => tracing::error!(error = %e, "GC pass failed"),
+                }
+            }
+        });
+    }
 
     // WS listener (always — D7).
     let (ws_local, ws_fut) = server::run_ws_listener(state.clone(), config.ws_addr).await?;

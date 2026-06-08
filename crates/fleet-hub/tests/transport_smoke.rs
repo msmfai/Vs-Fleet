@@ -100,6 +100,7 @@ async fn ws_subscribe_empty_then_live_delta() {
     let run_up = serde_json::to_string(&ClientMessage::RunUpsert {
         session_id: "s1".into(),
         run: sample_run("r1"),
+        stamp: None,
     })
     .unwrap();
     rep.send(Message::Text(run_up)).await.unwrap();
