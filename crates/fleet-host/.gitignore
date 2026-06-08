@@ -1,3 +1,4 @@
 # Tauri / cargo build artifacts — regenerated on every build.
 /target
 /gen
+/Fleet.app
