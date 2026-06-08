@@ -129,7 +129,15 @@ export const CLAUDE_HOOKS_FILE = "fleet-hooks.json";
  * (observer-not-owner).
  */
 export function hookRelayCommand(reporterSocket: string): string {
-    return `printf 'claude %s\\n' "$(cat | tr -d '\\r\\n')" | nc -U ${reporterSocket} 2>/dev/null || true`;
+    // Single-quote the socket path so a path with spaces or shell metacharacters
+    // can never break the command or inject (the path derives from
+    // $XDG_RUNTIME_DIR / the temp dir, which are outside Fleet's control).
+    return `printf 'claude %s\\n' "$(cat | tr -d '\\r\\n')" | nc -U ${shQuote(reporterSocket)} 2>/dev/null || true`;
+}
+
+/** POSIX single-quote a string for safe interpolation into a `/bin/sh` command. */
+export function shQuote(s: string): string {
+    return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
 /**

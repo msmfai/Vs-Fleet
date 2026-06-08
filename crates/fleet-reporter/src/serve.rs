@@ -251,9 +251,14 @@ pub async fn serve_unix(
 
 /// Bind a [`UnixListener`] at `path`, reclaiming a stale socket file if its
 /// previous owner is gone. Errors only if a *live* peer already owns the socket.
+///
+/// The bound socket is restricted to the owner (mode `0600`) so no other local
+/// user can connect and inject spoofed hook frames — defence-in-depth on the
+/// local trust boundary (a hook frame can mutate this window's reported agent
+/// state, so the channel must be owner-only).
 async fn bind_reclaiming(path: &Path) -> anyhow::Result<UnixListener> {
-    match UnixListener::bind(path) {
-        Ok(l) => Ok(l),
+    let listener = match UnixListener::bind(path) {
+        Ok(l) => l,
         Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
             // Someone bound this path before. Probe whether they're still alive.
             match tokio::net::UnixStream::connect(path).await {
@@ -264,13 +269,29 @@ async fn bind_reclaiming(path: &Path) -> anyhow::Result<UnixListener> {
                 Err(_) => {
                     // Stale socket file from a dead reporter — remove and rebind.
                     std::fs::remove_file(path).ok();
-                    Ok(UnixListener::bind(path)?)
+                    UnixListener::bind(path)?
                 }
             }
         }
-        Err(e) => Err(e.into()),
+        Err(e) => return Err(e.into()),
+    };
+    restrict_socket_perms(path);
+    Ok(listener)
+}
+
+/// Restrict the reporter socket to owner-only (`0600`) on unix. Best-effort: a
+/// permission-set failure must not stop the receiver (the socket is still bound
+/// in the user's own runtime dir).
+#[cfg(unix)]
+fn restrict_socket_perms(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    if let Err(e) = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)) {
+        warn!(error = %e, socket = %path.display(), "could not restrict reporter socket to 0600");
     }
 }
+
+#[cfg(not(unix))]
+fn restrict_socket_perms(_path: &Path) {}
 
 #[cfg(test)]
 mod tests {

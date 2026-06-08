@@ -143,6 +143,12 @@ impl InitConfig {
 /// The marker we embed in `settings.json` to detect Fleet-managed hooks.
 const FLEET_MARKER: &str = "fleet-managed";
 
+/// POSIX single-quote a string for safe interpolation into a `/bin/sh` command.
+/// Wraps in single quotes and escapes any embedded single quote as `'\''`.
+fn sh_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 /// Build the Fleet hooks block for `settings.json`.
 ///
 /// Each hook calls `fleet-hook-relay` (a thin shell glue script, installed
@@ -153,7 +159,10 @@ const FLEET_MARKER: &str = "fleet-managed";
 /// the hooks write directly to the reporter socket via `nc` or `socat` as
 /// the best-available mechanism, with a comment noting the limitation.
 fn build_claude_hooks(reporter_socket: &Path) -> serde_json::Value {
-    let socket_path = reporter_socket.display().to_string();
+    // Single-quote the socket path for the shell so a path containing spaces or
+    // metacharacters can neither break the hook command nor inject (the path
+    // comes from $XDG_RUNTIME_DIR / the temp dir, outside Fleet's control).
+    let socket_path = sh_quote(&reporter_socket.display().to_string());
     // Each hook sends a JSON payload to the reporter socket using a POSIX
     // shell one-liner. We use `printf … | nc -U <socket>` as the most
     // portable option (nc with -U is available on macOS + Linux via OpenBSD
