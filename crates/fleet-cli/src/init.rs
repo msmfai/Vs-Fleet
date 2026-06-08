@@ -8,9 +8,16 @@
 //!    `Stop`, `UserPromptSubmit`, `PreToolUse`, `SessionStart`, `SessionEnd` hooks
 //!    so that Claude reports its state to the Fleet reporter socket.
 //!
-//! 2. **`~/.codex/config.toml`** (OpenAI Codex) — sets `[features] hooks = true`
-//!    and `[tui] notifications = true` so Codex fires its hook system and OSC9
-//!    notifications (D10: hooks-first, default-on; PLAN §2).
+//! 2. **`~/.codex/config.toml`** (OpenAI Codex) — enables `[features] hooks`
+//!    and installs **proper Codex hooks** (the documented `[[hooks.<Event>]]`
+//!    mechanism, NOT the legacy `notify` toggle Codex ignores in project config)
+//!    for SessionStart/UserPromptSubmit/PreToolUse/PostToolUse/Stop/SessionEnd/
+//!    **PermissionRequest**. The hooks are installed *composably* — appended
+//!    alongside any existing hooks (the monads stack), each a non-blocking,
+//!    env-routed relay (reads `$FLEET_REPORTER_SOCKET` at runtime so the hook
+//!    text is constant → trusted once via Codex's `/hooks`, never bypassed). Also
+//!    sets `[tui] notifications = true` (OSC9 corroboration). The user trusts the
+//!    Fleet hook via `/hooks` once (Codex keys trust by hook hash).
 //!
 //! Before modifying any file the original bytes are saved as a `.fleet-backup`
 //! file (e.g. `settings.json.fleet-backup`). A manifest is written to
@@ -297,55 +304,166 @@ fn remove_claude_hooks(value: &mut serde_json::Value) -> bool {
 }
 
 // ── Codex config.toml helpers ─────────────────────────────────────────────────
+//
+// Fleet writes **proper Codex hooks** (the documented `[[hooks.<Event>]]`
+// mechanism) — not the legacy `notify` toggle (which Codex ignores in
+// project-local config). The hooks are installed the *composable* way:
+//
+//  - **Stacks, never replaces.** Fleet *appends* one command-hook group to each
+//    event's array; any existing hooks (the user's, or another wrapper's) are
+//    preserved and still run — Codex executes every hook for an event.
+//  - **Never denies.** The relay exits `0`, makes no permission decision, and is
+//    a no-op when `$FLEET_REPORTER_SOCKET` is unset (a non-Fleet terminal). It
+//    can't block a tool or short-circuit another wrapper's hook.
+//  - **Stable trust.** The command reads the per-window reporter socket from the
+//    `$FLEET_REPORTER_SOCKET` env var at runtime (the extension injects it per
+//    window) — so the hook *text* is constant across windows and needs trusting
+//    via Codex's `/hooks` **once** (Codex keys trust by hook hash). Fleet never
+//    uses `--dangerously-bypass-hook-trust`.
 
-/// Returns `true` if the TOML value already has Fleet's required Codex keys.
+/// Marker embedded (as a trailing `#` comment) in Fleet's Codex hook command, so
+/// re-init is idempotent and uninstall can find Fleet's hook without a custom
+/// TOML field (Codex's `--strict-config` would reject unknown fields).
+const FLEET_CODEX_MARKER: &str = "fleet-managed-codex-hook";
+
+/// The Codex hook events Fleet relays. `PermissionRequest` is Codex's
+/// authoritative *waiting-on-the-user* signal (it fires reliably, unlike Claude's
+/// native UI), so Codex `waiting` can be high-confidence.
+const CODEX_HOOK_EVENTS: &[&str] = &[
+    "SessionStart",
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PostToolUse",
+    "Stop",
+    "SessionEnd",
+    "PermissionRequest",
+];
+
+/// The env-routed, non-blocking relay command Fleet installs for every event.
+/// Reads `$FLEET_REPORTER_SOCKET` at runtime (constant text → trust-stable),
+/// tags the payload `codex` for the receiver, and `|| true`s so it never breaks
+/// Codex's own flow.
+fn codex_hook_relay_command() -> String {
+    format!(
+        "printf 'codex %s\\n' \"$(cat | tr -d '\\r\\n')\" | nc -U \"$FLEET_REPORTER_SOCKET\" 2>/dev/null || true # {FLEET_CODEX_MARKER}"
+    )
+}
+
+/// One `[[hooks.<Event>]]` group carrying Fleet's single command hook.
+fn fleet_codex_hook_group() -> toml::Value {
+    let mut cmd = toml::Table::new();
+    cmd.insert("type".into(), toml::Value::String("command".into()));
+    cmd.insert(
+        "command".into(),
+        toml::Value::String(codex_hook_relay_command()),
+    );
+    let mut group = toml::Table::new();
+    group.insert(
+        "hooks".into(),
+        toml::Value::Array(vec![toml::Value::Table(cmd)]),
+    );
+    toml::Value::Table(group)
+}
+
+/// Whether an event's hook-group array already contains Fleet's hook (by marker).
+fn event_array_has_fleet_hook(arr: &[toml::Value]) -> bool {
+    arr.iter().any(|group| {
+        group
+            .get("hooks")
+            .and_then(|h| h.as_array())
+            .map(|hooks| {
+                hooks.iter().any(|h| {
+                    h.get("command")
+                        .and_then(|c| c.as_str())
+                        .map(|c| c.contains(FLEET_CODEX_MARKER))
+                        .unwrap_or(false)
+                })
+            })
+            .unwrap_or(false)
+    })
+}
+
+/// Returns `true` if the TOML value already has the full Fleet Codex config
+/// (the `hooks` feature on, and a Fleet hook present for every relayed event).
+/// (Used by tests; `inject_codex_config` checks idempotency per-event inline.)
+#[cfg(test)]
 fn codex_toml_has_fleet_config(table: &toml::Table) -> bool {
-    // [features] hooks = true
     let features_ok = table
         .get("features")
         .and_then(|f| f.as_table())
         .and_then(|f| f.get("hooks"))
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    // [tui] notifications = true
-    let tui_ok = table
-        .get("tui")
-        .and_then(|t| t.as_table())
-        .and_then(|t| t.get("notifications"))
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    features_ok && tui_ok
+    if !features_ok {
+        return false;
+    }
+    let Some(hooks) = table.get("hooks").and_then(|h| h.as_table()) else {
+        return false;
+    };
+    CODEX_HOOK_EVENTS.iter().all(|ev| {
+        hooks
+            .get(*ev)
+            .and_then(|a| a.as_array())
+            .map(|arr| event_array_has_fleet_hook(arr))
+            .unwrap_or(false)
+    })
 }
 
-/// Inject Fleet's required Codex keys into a mutable TOML table, merging with
-/// any existing content. Returns `true` if a modification was made.
+/// Inject Fleet's Codex config (the `hooks` feature + a composable, env-routed
+/// relay hook per event), merging with any existing content. Idempotent;
+/// preserves every non-Fleet hook. Returns `true` if a modification was made.
 fn inject_codex_config(table: &mut toml::Table) -> bool {
-    if codex_toml_has_fleet_config(table) {
-        return false; // idempotent
-    }
+    let mut modified = false;
 
-    // [features] hooks = true (canonical key, D10; default-on hooks)
+    // [features] hooks = true — enable the hooks subsystem (D10).
     {
         let features = table
             .entry("features")
             .or_insert_with(|| toml::Value::Table(toml::Table::new()));
         if let toml::Value::Table(ft) = features {
-            ft.entry("hooks").or_insert(toml::Value::Boolean(true));
+            if ft.get("hooks").and_then(|v| v.as_bool()) != Some(true) {
+                ft.insert("hooks".into(), toml::Value::Boolean(true));
+                modified = true;
+            }
         }
     }
 
-    // [tui] notifications = true (OSC9 corroboration channel, PLAN §2)
+    // [tui] notifications = true — OSC9 corroboration channel (PLAN §2).
     {
         let tui = table
             .entry("tui")
             .or_insert_with(|| toml::Value::Table(toml::Table::new()));
         if let toml::Value::Table(tt) = tui {
-            tt.entry("notifications")
-                .or_insert(toml::Value::Boolean(true));
+            if tt.get("notifications").and_then(|v| v.as_bool()) != Some(true) {
+                tt.insert("notifications".into(), toml::Value::Boolean(true));
+                modified = true;
+            }
         }
     }
 
-    true
+    // [[hooks.<Event>]] — APPEND Fleet's relay group to each event's array,
+    // preserving any existing groups (the user's / another wrapper's). The
+    // monads stack: Codex runs every hook for the event.
+    {
+        let hooks = table
+            .entry("hooks")
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+        if let toml::Value::Table(hooks) = hooks {
+            for ev in CODEX_HOOK_EVENTS {
+                let arr_val = hooks
+                    .entry((*ev).to_string())
+                    .or_insert_with(|| toml::Value::Array(Vec::new()));
+                if let toml::Value::Array(arr) = arr_val {
+                    if !event_array_has_fleet_hook(arr) {
+                        arr.push(fleet_codex_hook_group());
+                        modified = true;
+                    }
+                }
+            }
+        }
+    }
+
+    modified
 }
 
 // ── Backup helpers ────────────────────────────────────────────────────────────
@@ -1123,27 +1241,85 @@ mod tests {
     }
 
     #[test]
-    fn init_does_not_break_existing_codex_hooks_true() {
-        // If Codex already has hooks = true, inject must not duplicate it.
+    fn init_is_idempotent_for_codex_and_does_not_duplicate_hooks() {
+        // Running init twice produces no second modification and exactly one
+        // Fleet hook per event (no duplicates).
         let dir = TempDir::new().unwrap();
         let cfg = tmp_cfg(&dir);
 
-        let codex_path = cfg.codex_config_path();
-        fs::create_dir_all(codex_path.parent().unwrap()).unwrap();
-        let existing = "[features]\nhooks = true\n[tui]\nnotifications = true\n";
-        fs::write(&codex_path, existing).unwrap();
-
-        let result = do_init(&cfg).unwrap();
-        // Codex should be recognised as already having the fleet-required keys.
+        let first = do_init(&cfg).unwrap();
+        assert!(first.codex_modified, "first init installs the codex hooks");
+        let second = do_init(&cfg).unwrap();
         assert!(
-            !result.codex_modified,
-            "codex already has fleet config — should not be modified"
+            !second.codex_modified,
+            "second init is a no-op (idempotent)"
         );
 
+        let content = fs::read_to_string(cfg.codex_config_path()).unwrap();
+        // Exactly one Fleet relay per event — count the marker occurrences.
+        let marker_count = content.matches(FLEET_CODEX_MARKER).count();
+        assert_eq!(
+            marker_count,
+            CODEX_HOOK_EVENTS.len(),
+            "one Fleet hook per relayed event, no duplicates"
+        );
+    }
+
+    #[test]
+    fn codex_init_preserves_an_existing_non_fleet_hook() {
+        // The monads stack: a user's own Codex hook must survive init, alongside
+        // Fleet's — Fleet appends, never replaces.
+        let dir = TempDir::new().unwrap();
+        let cfg = tmp_cfg(&dir);
+        let codex_path = cfg.codex_config_path();
+        fs::create_dir_all(codex_path.parent().unwrap()).unwrap();
+        let existing = concat!(
+            "[[hooks.PreToolUse]]\n",
+            "[[hooks.PreToolUse.hooks]]\n",
+            "type = \"command\"\n",
+            "command = \"my-own-policy.sh\"\n",
+        );
+        fs::write(&codex_path, existing).unwrap();
+
+        do_init(&cfg).unwrap();
         let content = fs::read_to_string(&codex_path).unwrap();
-        // Must not gain duplicate keys.
-        let count = content.matches("hooks").count();
-        assert_eq!(count, 1, "hooks key must not be duplicated");
+        assert!(
+            content.contains("my-own-policy.sh"),
+            "the user's existing hook must be preserved"
+        );
+        assert!(
+            content.contains(FLEET_CODEX_MARKER),
+            "Fleet's hook is added alongside it"
+        );
+        // PreToolUse now has BOTH groups: the user's and Fleet's.
+        let table: toml::Table = content.parse().unwrap();
+        let arr = table["hooks"]["PreToolUse"].as_array().unwrap();
+        assert_eq!(arr.len(), 2, "user group + fleet group coexist");
+    }
+
+    #[test]
+    fn codex_hook_relay_is_env_routed_and_non_blocking() {
+        // Trust-stable (constant text via $FLEET_REPORTER_SOCKET) + never denies
+        // (exits 0, no permission decision, no-op when the var is unset).
+        let cmd = codex_hook_relay_command();
+        assert!(
+            cmd.contains("\"$FLEET_REPORTER_SOCKET\""),
+            "env-routed, not a baked path"
+        );
+        assert!(
+            cmd.starts_with("printf 'codex %s"),
+            "tags the payload `codex`"
+        );
+        assert!(
+            cmd.contains("|| true"),
+            "non-blocking: never breaks codex's flow"
+        );
+        assert!(
+            cmd.contains(FLEET_CODEX_MARKER),
+            "carries the idempotency marker"
+        );
+        // No permission/deny decision is emitted (pure side-effect relay).
+        assert!(!cmd.contains("\"decision\""));
     }
 
     #[test]
