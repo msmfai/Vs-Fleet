@@ -315,7 +315,7 @@ pub fn format_run_row(r: &RunRow, indent: &str) -> String {
         .map(|m| format!("  \"{m}\""))
         .unwrap_or_default();
     format!(
-        "{indent}  [{kind}] {state} ({conf}conf)  {cwd}{waiting}{msg}",
+        "{indent}  [{kind}] {state} (conf: {conf})  {cwd}{waiting}{msg}",
         cwd = r.cwd
     )
 }
@@ -1007,5 +1007,24 @@ mod tests {
 
         let rows = st.rows();
         assert_eq!(rows[0].runs[0].confidence, Confidence::High);
+    }
+
+    #[test]
+    fn run_row_renders_confidence_label_readably() {
+        // Regression: the row used to render "(inferredconf)" — confidence label
+        // must read "(conf: inferred)" / "(conf: high)", not be glued to "conf".
+        for (c, want) in [
+            (Confidence::Inferred, "(conf: inferred)"),
+            (Confidence::High, "(conf: high)"),
+        ] {
+            let mut st = CliState::new();
+            st.apply(Event::session_added(session("s1", "proj", RunState::Idle)));
+            let mut r = run("r1", RunState::Waiting, Some(Urgency::Approval));
+            r.confidence = c;
+            st.apply(Event::run_added("s1", r));
+            let line = format_run_row(&st.rows()[0].runs[0], "");
+            assert!(line.contains(want), "want {want:?} in: {line}");
+            assert!(!line.contains("inferredconf") && !line.contains("highconf"));
+        }
     }
 }

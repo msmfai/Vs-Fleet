@@ -106,6 +106,13 @@ that fails dispatches **fixer agents and loops to green (≤3 rounds), else HALT
 | `◆G3` | **Face reducer** | UI reducer determinism (snapshot+delta→view); exhaustive sort ordering `(unread,urgency,age)`; notification **urgency→sound-name** mapping table; confidence render; **per-OS focus with mocked OS calls + focus-confirmation telemetry**; palette fuzzy-match; mute/solo command round-trips | ≥80% face logic |
 | `◆G4` | **v1 DoD** | §21 items 1–11 automated as **integration** scenarios on mac+linux (≥3 agents/≥2 editors; Codex `high` + Claude `inferred`/`high`; auto-resolve <2s; jump-focus; palette; mute/solo; restart-persistence; CLI+GUI+Hub same protocol); Windows best-effort smoke | acceptance |
 
+**Coverage enforcement.** The numeric floors above are enforced in **CI** (`cargo llvm-cov`; rustup
+runners install `llvm-tools-preview`) — see `.github/workflows/ci.yml` (workspace ≥80%, the
+G0-frozen protocol+hub ≥85%). The **local** build-gate runs on a Nix toolchain without llvm-tools,
+so it enforces the stronger *qualitative* bar instead: the required tests must **exist**, be
+meaningful, and be green. A green local gate is **not** proof the numeric floor is met — that check
+lives in CI.
+
 **Cross-cutting per-node test duties** (every build node, not just gates): unit tests land **with**
 the code (red→green in the same node), public APIs get doc-tests, and the node returns *green or it
 returns failed* — a node never reports done with a red suite.

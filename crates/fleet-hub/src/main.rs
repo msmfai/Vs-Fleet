@@ -9,6 +9,27 @@ use fleet_hub::{HubConfig, LockError};
 
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
+    // Minimal CLI: the Hub takes no runtime args, but must answer --help/--version
+    // cleanly instead of silently starting the daemon (a surprising footgun).
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!(
+            "fleet-hub — the Fleet Hub daemon\n\n\
+             Usage: fleet-hub\n\n\
+             Starts the always-on Hub (WebSocket 127.0.0.1:51777 + unix socket on Unix).\n\
+             The Hub never auto-exits (D2); stop it with Ctrl-C or SIGTERM.\n\
+             Logging honors RUST_LOG (default \"info\").\n\n\
+             Options:\n  \
+             -h, --help     Print this help\n  \
+             -V, --version  Print version"
+        );
+        return std::process::ExitCode::SUCCESS;
+    }
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("fleet-hub {}", env!("CARGO_PKG_VERSION"));
+        return std::process::ExitCode::SUCCESS;
+    }
+
     // Structured logging (PLAN S2 "structured logging"). Honors RUST_LOG.
     tracing_subscriber::fmt()
         .with_env_filter(
