@@ -1,0 +1,5 @@
+{"type":"system","subtype":"init","session_id":"0199f3aa-claude-session-1","cwd":"/Users/dev/project"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Run the build and fix any errors."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll run the build."},{"type":"tool_use","id":"toolu_01abc","name":"Bash","input":{"command":"cargo build"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_01abc","content":"Finished in 2.3s"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The build passed."}]}}
