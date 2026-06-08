@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/fleet-protocol",
+    "crates/fleet-hub",
+    "crates/fleet-reporter",
+    "crates/fleet-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.78"
+authors = ["Fleet Team"]
+license = "UNLICENSED"
+
+[workspace.dependencies]
+# serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# async runtime
+tokio = { version = "1", features = ["full"] }
+
+# logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# error handling
+anyhow = "1"
+thiserror = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
