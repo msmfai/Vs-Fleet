@@ -11,7 +11,9 @@
 use std::path::PathBuf;
 
 use fleet_protocol::{Confidence, State, Urgency};
-use fleet_reporter::codex::{CodexAdapter, CodexHookEvent, CodexHookKind, CodexParseError};
+use fleet_reporter::codex::{
+    CodexAdapter, CodexHookEvent, CodexHookKind, CodexParseError, CodexStateMachine,
+};
 use fleet_reporter::reporter::ReporterCommand;
 
 fn fixture(name: &str) -> String {
@@ -217,4 +219,32 @@ fn full_transcript_transition_sequence() {
         a.ingest_json(&fixture(file));
         assert_eq!(a.state_of(tid), Some(expect), "after {file}");
     }
+}
+
+// ── real-fidelity fields (captured shape per OpenAI Codex hooks docs) ────────
+
+#[test]
+fn stop_idle_fixture_carries_last_assistant_message_preview() {
+    let e = parse("stop_idle.json");
+    assert_eq!(e.kind, CodexHookKind::Stop);
+    assert_eq!(
+        e.last_message.as_deref(),
+        Some("Refactored the parser; all tests pass.")
+    );
+    let mut m = CodexStateMachine::new(&e.thread_id);
+    m.apply(&e);
+    assert_eq!(
+        m.to_run("r", "2026-06-08T00:00:00Z")
+            .last_message
+            .as_deref(),
+        Some("Refactored the parser; all tests pass.")
+    );
+}
+
+#[test]
+fn pre_tool_use_fixture_carries_tool_use_id() {
+    assert_eq!(
+        parse("pre_tool_use.json").tool_use_id.as_deref(),
+        Some("tool_789")
+    );
 }

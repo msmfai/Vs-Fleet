@@ -459,7 +459,8 @@ impl ClaudeStateMachine {
 }
 
 /// Truncate an assistant message to a single-line inbox preview (≤ 100 chars).
-fn preview(msg: &str) -> String {
+/// Shared with the Codex adapter (same inbox-preview semantics).
+pub(crate) fn preview(msg: &str) -> String {
     const MAX: usize = 100;
     let one_line = msg.replace(['\n', '\r'], " ");
     let trimmed = one_line.trim();

@@ -143,6 +143,12 @@ pub struct CodexHookEvent {
     pub decision: Option<ApprovalDecision>,
     /// Whether a `Stop` event signalled task completion (→ `done` not `idle`).
     pub turn_complete_done: bool,
+    /// The assistant's last message (real `Stop` payloads carry
+    /// `last_assistant_message`) — surfaced as the idle/done inbox preview.
+    pub last_message: Option<String>,
+    /// The `tool_use_id` for a `PreToolUse`/`PermissionRequest` — the durable
+    /// correlation anchor to the transcript.
+    pub tool_use_id: Option<String>,
 }
 
 /// The raw on-the-wire shape of a Codex hook payload, as recorded from the hook
@@ -173,6 +179,16 @@ struct RawCodexHook {
     #[serde(alias = "taskComplete")]
     task_complete: Option<bool>,
     reason: Option<String>,
+    /// `true` when a `Stop` fired from within a stop hook's own continuation, i.e.
+    /// not a real turn end (matches Claude's semantics).
+    #[serde(alias = "stopHookActive")]
+    stop_hook_active: Option<bool>,
+    /// Real `Stop` payloads carry the assistant's final text here.
+    #[serde(alias = "lastAssistantMessage")]
+    last_assistant_message: Option<String>,
+    /// Real `PreToolUse`/`PermissionRequest` payloads carry the tool-call id here.
+    #[serde(alias = "toolUseId")]
+    tool_use_id: Option<String>,
 }
 
 /// The approval decision can arrive as a plain string or a structured object.
@@ -256,9 +272,14 @@ impl CodexHookEvent {
             .ok_or(CodexParseError::MissingThreadId)?;
         let kind = CodexHookKind::from_name(&name);
         let decision = raw.decision.and_then(RawDecision::into_decision);
-        let turn_complete_done = raw.turn_complete.unwrap_or(false)
+        // A Stop fired from within a stop hook's own continuation is not a real
+        // turn end → never `done` (matches Claude). Real Codex Stop carries no
+        // completion marker, so this conservatively resolves to `idle`.
+        let stop_hook_active = raw.stop_hook_active.unwrap_or(false);
+        let has_marker = raw.turn_complete.unwrap_or(false)
             || raw.task_complete.unwrap_or(false)
             || matches!(raw.reason.as_deref(), Some("completed") | Some("done"));
+        let turn_complete_done = has_marker && !stop_hook_active;
         Ok(CodexHookEvent {
             kind,
             thread_id,
@@ -267,6 +288,8 @@ impl CodexHookEvent {
             tool_name: raw.tool_name,
             decision,
             turn_complete_done,
+            last_message: raw.last_assistant_message.filter(|m| !m.is_empty()),
+            tool_use_id: raw.tool_use_id.filter(|s| !s.is_empty()),
         })
     }
 
@@ -299,6 +322,9 @@ pub struct CodexStateMachine {
     /// Set when a `PermissionRequest` is outstanding, so a later activity hook can
     /// recognise it as the *auto-resolve* of that approval.
     pending_approval: bool,
+    /// The assistant's last message (from a `Stop`'s `last_assistant_message`),
+    /// surfaced as the idle/done inbox preview.
+    last_assistant_message: Option<String>,
 }
 
 /// A single state transition the machine decided, returned by
@@ -334,6 +360,7 @@ impl CodexStateMachine {
             confidence: Confidence::Inferred,
             last_tool: None,
             pending_approval: false,
+            last_assistant_message: None,
         }
     }
 
@@ -378,6 +405,9 @@ impl CodexStateMachine {
         }
         if let Some(t) = &ev.tool_name {
             self.last_tool = Some(t.clone());
+        }
+        if let Some(m) = &ev.last_message {
+            self.last_assistant_message = Some(m.clone());
         }
 
         match &ev.kind {
@@ -552,7 +582,18 @@ impl CodexStateMachine {
                 None => "Approval required".to_string(),
             }),
             State::Working => self.last_tool.as_ref().map(|t| format!("Running {t}…")),
-            State::Done => Some("Task complete.".to_string()),
+            // After a turn ends, show what Codex actually said (real `Stop` carries
+            // `last_assistant_message`) — falls back to the generic when absent.
+            State::Idle => self
+                .last_assistant_message
+                .as_deref()
+                .map(crate::claude::preview),
+            State::Done => Some(
+                self.last_assistant_message
+                    .as_deref()
+                    .map(crate::claude::preview)
+                    .unwrap_or_else(|| "Task complete.".to_string()),
+            ),
             State::Dead => Some("Thread closed.".to_string()),
             _ => None,
         }

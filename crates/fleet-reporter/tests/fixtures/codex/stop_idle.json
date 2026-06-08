@@ -1,6 +1,11 @@
 {
   "session_id": "0199f3aa-thread-codex-1",
-  "turn_id": "turn-1",
+  "transcript_path": "/Users/dev/.codex/sessions/0199f3aa-thread-codex-1.jsonl",
   "cwd": "/Users/dev/project",
-  "hook_event_name": "Stop"
+  "hook_event_name": "Stop",
+  "model": "gpt-5-codex",
+  "permission_mode": "default",
+  "turn_id": "turn-1",
+  "stop_hook_active": false,
+  "last_assistant_message": "Refactored the parser; all tests pass."
 }
