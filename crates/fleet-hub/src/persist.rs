@@ -389,6 +389,72 @@ impl StateStore {
         }
     }
 
+    /// Set `muted = true` on a session, persisting the updated session state.
+    ///
+    /// Returns `Some(session.updated)` if the session was found and the flag
+    /// changed; `None` if absent or already muted. The updated session is
+    /// appended as a `session.upsert` so the flag survives a Hub restart.
+    pub fn apply_mute(&mut self, session_id: &str) -> Option<Event> {
+        // Apply the change in memory first to get the updated session.
+        let ev = self.engine.apply_mute(session_id)?;
+        // Persist the updated session state.
+        if let Some(sess) = self.engine.session(session_id) {
+            if let Err(e) = self.log.append(&PersistEvent::SessionUpsert {
+                session: Box::new(sess.clone()),
+            }) {
+                tracing::error!(error = %e, "persist mute failed; flag not durable");
+            }
+        }
+        Some(ev)
+    }
+
+    /// Set `muted = false` on a session, persisting the updated state.
+    ///
+    /// Returns `Some(session.updated)` if found and the flag changed; `None` if
+    /// absent or already unmuted.
+    pub fn apply_unmute(&mut self, session_id: &str) -> Option<Event> {
+        let ev = self.engine.apply_unmute(session_id)?;
+        if let Some(sess) = self.engine.session(session_id) {
+            if let Err(e) = self.log.append(&PersistEvent::SessionUpsert {
+                session: Box::new(sess.clone()),
+            }) {
+                tracing::error!(error = %e, "persist unmute failed; flag not durable");
+            }
+        }
+        Some(ev)
+    }
+
+    /// Solo a session (set `soloed = true` on it, clear the flag on all others),
+    /// persisting every changed session.
+    ///
+    /// Returns the broadcast events. Empty if `session_id` is not found.
+    pub fn apply_solo(&mut self, session_id: &str) -> Vec<Event> {
+        let events = self.engine.apply_solo(session_id);
+        if events.is_empty() {
+            return events;
+        }
+        // Persist every session whose soloed flag changed (i.e. those we emitted
+        // events for). We snapshot the current state of those sessions.
+        // Collect the session ids from the events to persist them.
+        let changed_ids: Vec<String> = events
+            .iter()
+            .filter_map(|ev| match ev {
+                Event::SessionUpdated { session, .. } => Some(session.session_id.clone()),
+                _ => None,
+            })
+            .collect();
+        for id in &changed_ids {
+            if let Some(sess) = self.engine.session(id) {
+                if let Err(e) = self.log.append(&PersistEvent::SessionUpsert {
+                    session: Box::new(sess.clone()),
+                }) {
+                    tracing::error!(error = %e, "persist solo failed for session {id}; flag not durable");
+                }
+            }
+        }
+        events
+    }
+
     /// Persist + apply a run removal. Returns the broadcast events (empty if the
     /// session/run was absent — then nothing is logged).
     pub fn apply_run_remove(

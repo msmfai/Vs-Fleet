@@ -1,0 +1,6 @@
+{
+  "session_id": "0199f3aa-thread-codex-1",
+  "cwd": "/Users/dev/project",
+  "hook_event_name": "SomeFutureCodexHookThatDoesNotExistYet",
+  "extra_future_field": {"nested": [1, 2, 3]}
+}

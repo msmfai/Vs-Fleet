@@ -183,6 +183,74 @@ impl MergeEngine {
     pub fn all_rollups_hold(&self) -> bool {
         self.sessions.values().all(Self::rollup_holds)
     }
+
+    /// Set `muted = true` on a session. Returns `Some(session.updated)` if the
+    /// session was found and the flag changed; `None` if absent or already muted.
+    ///
+    /// Muting silences pings for the session without removing it from the inbox
+    /// (README §15.4 / PLAN S25). State is still visible; only notifications are
+    /// suppressed.
+    pub fn apply_mute(&mut self, session_id: &str) -> Option<Event> {
+        let sess = self.sessions.get_mut(session_id)?;
+        if sess.muted {
+            return None; // already muted, no change
+        }
+        sess.muted = true;
+        let cloned = sess.clone();
+        Some(Event::session_updated(cloned))
+    }
+
+    /// Set `muted = false` on a session. Returns `Some(session.updated)` if the
+    /// session was found and the flag changed; `None` if absent or already unmuted.
+    pub fn apply_unmute(&mut self, session_id: &str) -> Option<Event> {
+        let sess = self.sessions.get_mut(session_id)?;
+        if !sess.muted {
+            return None; // already unmuted, no change
+        }
+        sess.muted = false;
+        let cloned = sess.clone();
+        Some(Event::session_updated(cloned))
+    }
+
+    /// Solo a session: set `soloed = true` on `session_id` and `soloed = false`
+    /// on every other session in the inbox. Returns the broadcast events — one
+    /// `session.updated` for the soloed session plus one for each session whose
+    /// `soloed` flag had to be cleared.
+    ///
+    /// If `session_id` is not found, returns an empty vec (no-op).
+    ///
+    /// Semantics: exactly one session is soloed at a time. Sending a `solo` for
+    /// a second session atomically moves the solo. Sending a `solo` for the
+    /// already-soloed session is a no-op (idempotent).
+    pub fn apply_solo(&mut self, session_id: &str) -> Vec<Event> {
+        if !self.sessions.contains_key(session_id) {
+            return Vec::new();
+        }
+
+        let mut events = Vec::new();
+
+        // First pass: clear the solo flag on every other session.
+        for id in &self.order {
+            if id != session_id {
+                if let Some(s) = self.sessions.get_mut(id.as_str()) {
+                    if s.soloed {
+                        s.soloed = false;
+                        events.push(Event::session_updated(s.clone()));
+                    }
+                }
+            }
+        }
+
+        // Second pass: set solo on the target.
+        if let Some(s) = self.sessions.get_mut(session_id) {
+            if !s.soloed {
+                s.soloed = true;
+                events.push(Event::session_updated(s.clone()));
+            }
+        }
+
+        events
+    }
 }
 
 #[cfg(test)]
@@ -338,6 +406,132 @@ mod tests {
         e.remove_session("b");
         let ids: Vec<_> = e.snapshot().into_iter().map(|s| s.session_id).collect();
         assert_eq!(ids, vec!["a", "c"]);
+    }
+
+    // ── mute / unmute / solo (PLAN S25) ─────────────────────────────────────
+
+    #[test]
+    fn mute_sets_flag_and_emits_updated() {
+        let mut e = MergeEngine::new();
+        e.upsert_session(sess("s1"));
+        assert!(!e.session("s1").unwrap().muted);
+        let ev = e.apply_mute("s1").expect("mute on present session");
+        assert_eq!(ev.type_name(), "session.updated");
+        assert!(e.session("s1").unwrap().muted);
+    }
+
+    #[test]
+    fn mute_is_idempotent() {
+        let mut e = MergeEngine::new();
+        e.upsert_session(sess("s1"));
+        e.apply_mute("s1");
+        // Second mute is a no-op.
+        assert!(e.apply_mute("s1").is_none(), "second mute must be a no-op");
+        assert!(e.session("s1").unwrap().muted);
+    }
+
+    #[test]
+    fn mute_on_absent_session_is_none() {
+        let mut e = MergeEngine::new();
+        assert!(e.apply_mute("ghost").is_none());
+    }
+
+    #[test]
+    fn unmute_clears_flag_and_emits_updated() {
+        let mut e = MergeEngine::new();
+        e.upsert_session(sess("s1"));
+        e.apply_mute("s1");
+        let ev = e.apply_unmute("s1").expect("unmute on muted session");
+        assert_eq!(ev.type_name(), "session.updated");
+        assert!(!e.session("s1").unwrap().muted);
+    }
+
+    #[test]
+    fn unmute_is_idempotent() {
+        let mut e = MergeEngine::new();
+        e.upsert_session(sess("s1"));
+        // Already unmuted; second unmute is a no-op.
+        assert!(
+            e.apply_unmute("s1").is_none(),
+            "unmute of already-unmuted must be no-op"
+        );
+    }
+
+    #[test]
+    fn mute_does_not_change_state_or_rollup() {
+        // Muting must only flip the flag — rollup and state are unaffected.
+        let mut e = MergeEngine::new();
+        e.upsert_session(sess("s1"));
+        e.upsert_run("s1", run_with("r1", State::Working, None));
+        let before = e.session("s1").unwrap().rollup_state;
+        e.apply_mute("s1");
+        let after = e.session("s1").unwrap().rollup_state;
+        assert_eq!(before, after, "mute must not change rollup_state");
+        assert!(e.session("s1").unwrap().muted);
+    }
+
+    #[test]
+    fn solo_sets_flag_on_target_and_clears_others() {
+        let mut e = MergeEngine::new();
+        for id in ["s1", "s2", "s3"] {
+            e.upsert_session(sess(id));
+        }
+        let evs = e.apply_solo("s2");
+        // s2 gets a session.updated (soloed=true).
+        assert!(!evs.is_empty());
+        assert!(e.session("s2").unwrap().soloed);
+        assert!(!e.session("s1").unwrap().soloed);
+        assert!(!e.session("s3").unwrap().soloed);
+        // The events must all be session.updated.
+        for ev in &evs {
+            assert_eq!(ev.type_name(), "session.updated");
+        }
+    }
+
+    #[test]
+    fn solo_on_absent_session_is_empty() {
+        let mut e = MergeEngine::new();
+        assert!(e.apply_solo("ghost").is_empty());
+    }
+
+    #[test]
+    fn solo_is_idempotent() {
+        let mut e = MergeEngine::new();
+        e.upsert_session(sess("s1"));
+        let evs1 = e.apply_solo("s1");
+        assert!(!evs1.is_empty()); // first solo emits an event
+        let evs2 = e.apply_solo("s1");
+        assert!(
+            evs2.is_empty(),
+            "second solo must be a no-op (already soloed)"
+        );
+        assert!(e.session("s1").unwrap().soloed);
+    }
+
+    #[test]
+    fn solo_moves_from_one_session_to_another() {
+        let mut e = MergeEngine::new();
+        for id in ["a", "b"] {
+            e.upsert_session(sess(id));
+        }
+        // Solo a, then solo b.
+        e.apply_solo("a");
+        assert!(e.session("a").unwrap().soloed);
+        let evs = e.apply_solo("b");
+        // a should have soloed cleared; b should have it set.
+        assert!(!e.session("a").unwrap().soloed);
+        assert!(e.session("b").unwrap().soloed);
+        // Events contain both a (cleared) and b (set).
+        assert_eq!(evs.len(), 2);
+    }
+
+    #[test]
+    fn solo_single_session_inbox() {
+        let mut e = MergeEngine::new();
+        e.upsert_session(sess("solo"));
+        let evs = e.apply_solo("solo");
+        assert_eq!(evs.len(), 1);
+        assert!(e.session("solo").unwrap().soloed);
     }
 
     #[test]

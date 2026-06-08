@@ -1,0 +1,11 @@
+{
+  "session_id": "0199f3aa-claude-session-1",
+  "transcript_path": "/Users/dev/.claude/projects/proj/0199f3aa-claude-session-1.jsonl",
+  "cwd": "/Users/dev/project",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "cargo test"
+  },
+  "permission_mode": "default"
+}

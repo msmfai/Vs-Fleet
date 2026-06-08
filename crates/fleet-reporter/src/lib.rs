@@ -43,6 +43,9 @@
 
 pub mod backoff;
 pub mod buffer;
+pub mod claude;
+pub mod claude_shim;
+pub mod codex;
 pub mod fake;
 pub mod identity;
 pub mod liveness;
@@ -54,6 +57,18 @@ pub mod transport;
 // Public surface used by tests and the binary.
 pub use backoff::Backoff;
 pub use buffer::{Delta, DeltaBuffer};
+pub use claude::{
+    ClaudeAdapter, ClaudeHookEvent, ClaudeHookKind, ClaudeParseError, ClaudeStateMachine,
+    Transition as ClaudeTransition,
+};
+pub use claude_shim::{
+    ApprovalDecision as ClaudeApprovalDecision, ApprovalRequest as ClaudeApprovalRequest,
+    ClaudeShimAdapter, ClaudeShimStateMachine, LaunchContext, Transition as ClaudeShimTransition,
+};
+pub use codex::{
+    ApprovalDecision, CodexAdapter, CodexHookEvent, CodexHookKind, CodexParseError,
+    CodexStateMachine, Transition as CodexTransition,
+};
 pub use fake::{FakeReporter, FakeReporterConfig, Transport};
 pub use identity::{DurableId, IdentityLedger, RunIdentity, Stamp};
 pub use liveness::{Liveness, LivenessTracker};

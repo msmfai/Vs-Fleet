@@ -12,6 +12,7 @@
 //! first snapshot (useful in scripts / pipe mode).
 
 mod connection;
+mod init;
 mod render;
 
 use anyhow::Result;
@@ -45,6 +46,28 @@ enum Commands {
         #[arg(long)]
         once: bool,
     },
+
+    /// Inject Fleet hooks into Claude and Codex config files.
+    ///
+    /// Writes Fleet-managed hooks to:
+    ///   - ~/.claude/settings.json  (Claude Code)
+    ///   - ~/.codex/config.toml     (OpenAI Codex)
+    ///
+    /// Before modifying any file, the original is backed up. Running `fleet init`
+    /// twice is safe (idempotent). Use `fleet uninit` to revert.
+    Init {
+        /// Override the reporter socket path embedded in hook commands.
+        /// Defaults to $XDG_RUNTIME_DIR/fleet/reporter.sock (or /tmp/fleet/reporter.sock).
+        #[arg(long)]
+        reporter_socket: Option<std::path::PathBuf>,
+    },
+
+    /// Revert all changes made by `fleet init`, restoring original files byte-identically.
+    ///
+    /// Uses the backup manifest written by `fleet init`. If a file was created
+    /// fresh (no prior content), it is removed. If `fleet init` was never run,
+    /// this is a no-op.
+    Uninit,
 }
 
 #[tokio::main]
@@ -70,7 +93,93 @@ async fn main() -> std::process::ExitCode {
 async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::Ls { once } => cmd_ls(&cli.hub, cli.unix.as_deref(), once).await,
+        Commands::Init { reporter_socket } => cmd_init(reporter_socket),
+        Commands::Uninit => cmd_uninit(),
     }
+}
+
+fn cmd_init(reporter_socket: Option<std::path::PathBuf>) -> Result<()> {
+    let home = home_dir()?;
+    let mut cfg = init::InitConfig::new(home);
+    if let Some(socket) = reporter_socket {
+        cfg.reporter_socket = Some(socket);
+    }
+
+    if init::is_initialised(&cfg) {
+        eprintln!("fleet init: already initialised (run `fleet uninit` first to re-init)");
+    }
+
+    let result = init::do_init(&cfg)?;
+
+    if result.claude_modified {
+        eprintln!(
+            "fleet init: wrote Claude hooks → {}",
+            cfg.claude_settings_path().display()
+        );
+    } else {
+        eprintln!(
+            "fleet init: Claude settings already managed ({})",
+            cfg.claude_settings_path().display()
+        );
+    }
+    if result.codex_modified {
+        eprintln!(
+            "fleet init: wrote Codex config → {}",
+            cfg.codex_config_path().display()
+        );
+    } else {
+        eprintln!(
+            "fleet init: Codex config already managed ({})",
+            cfg.codex_config_path().display()
+        );
+    }
+    if result.manifest_written {
+        eprintln!(
+            "fleet init: manifest written → {}",
+            cfg.manifest_path().display()
+        );
+    }
+
+    Ok(())
+}
+
+fn cmd_uninit() -> Result<()> {
+    let home = home_dir()?;
+    let cfg = init::InitConfig::new(home);
+
+    if !init::is_initialised(&cfg) {
+        eprintln!("fleet uninit: not initialised (nothing to undo)");
+        return Ok(());
+    }
+
+    let result = init::do_uninit(&cfg)?;
+
+    for path in &result.restored {
+        eprintln!("fleet uninit: restored {}", path.display());
+    }
+    for path in &result.removed {
+        eprintln!("fleet uninit: removed {}", path.display());
+    }
+    if result.restored.is_empty() && result.removed.is_empty() {
+        eprintln!("fleet uninit: nothing to restore");
+    }
+
+    Ok(())
+}
+
+/// Resolve the user's home directory from `$HOME` (or platform default).
+fn home_dir() -> Result<std::path::PathBuf> {
+    if let Ok(h) = std::env::var("HOME") {
+        return Ok(std::path::PathBuf::from(h));
+    }
+    #[cfg(unix)]
+    {
+        // Fall back to the passwd entry via std.
+        if let Some(h) = std::env::var_os("HOME") {
+            return Ok(std::path::PathBuf::from(h));
+        }
+    }
+    anyhow::bail!("cannot determine home directory (set $HOME)")
 }
 
 async fn cmd_ls(ws_url: &str, unix_path: Option<&std::path::Path>, once: bool) -> Result<()> {

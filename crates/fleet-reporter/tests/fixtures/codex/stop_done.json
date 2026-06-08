@@ -1,0 +1,8 @@
+{
+  "session_id": "0199f3aa-thread-codex-1",
+  "turn_id": "turn-1",
+  "cwd": "/Users/dev/project",
+  "hook_event_name": "Stop",
+  "turn_complete": true,
+  "reason": "completed"
+}

@@ -1,0 +1,5 @@
+{
+  "cwd": "/Users/dev/project",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash"
+}

@@ -97,6 +97,39 @@ async fn wait_until(state: &HubState, secs: u64, pred: impl Fn(&[Session]) -> bo
         .expect("condition not met before timeout");
 }
 
+/// Wait until `pred` holds **and stays held** across a short settle window — the
+/// state has *converged*, not merely flickered true once. This is what makes the
+/// reclaim assertion deterministic: a single mid-flight `snapshot_event()` can
+/// catch the Hub between two frames of an at-least-once / multi-connection stream
+/// (e.g. a fresh reporter's empty-runs `session.upsert` momentarily wiping the
+/// run before its `run.upsert` re-adds it, or a *previous* reporter's straggler
+/// heartbeat landing late), so we require the predicate to be stably true.
+async fn wait_settled(state: &HubState, secs: u64, pred: impl Fn(&[Session]) -> bool) {
+    let check = async {
+        loop {
+            wait_until(state, secs, &pred).await;
+            // Re-check a few times across a quiet window; if it ever fails, the
+            // stream hasn't converged yet — loop back and wait again.
+            let mut stable = true;
+            for _ in 0..5 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                if let Event::Snapshot { sessions, .. } = state.snapshot_event().await {
+                    if !pred(&sessions) {
+                        stable = false;
+                        break;
+                    }
+                }
+            }
+            if stable {
+                return;
+            }
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(secs), check)
+        .await
+        .expect("condition not stably met before timeout");
+}
+
 /// PLAN S6 demo (part 1): bounce the reporter mid-lifecycle → entry reclaimed,
 /// not duplicated; buffered deltas replay across the gap.
 #[tokio::test]
@@ -124,6 +157,17 @@ async fn reporter_bounce_reclaims_entry_no_ghost() {
     // Reporter #2 — same session id, same durable id, RECONNECT (clean_start =
     // false, the default). It re-registers and advances the run to idle. The Hub
     // must RECLAIM the existing entry: exactly one session, one run — no ghost.
+    //
+    // A genuinely-reconnecting reporter *continues its per-run seq series* across
+    // the bounce (that is the §S6 reclaim contract: same epoch, monotonic seq).
+    // Reporter #1 already drove this run to seq 2 (working=1, waiting=2), so the
+    // Hub's high-water mark for `native-d` is 2. We replay working→waiting→idle on
+    // reporter #2 so its idle delta lands at seq 3 — past the high-water mark —
+    // and is *applied* rather than rejected as a stale-seq duplicate. (A reporter
+    // that reset its seq to 1 would have its idle delta gated out by the reclaim
+    // table, which is exactly the timing race that made this test flaky.) The
+    // replayed working/waiting deltas (seq 1, 2) are idempotent duplicate-drops at
+    // the Hub — no ghost, no regression.
     let reporter = Reporter::new(
         fast_config("sess-s6"),
         Box::new(WsConnector::new(url.clone())),
@@ -131,16 +175,29 @@ async fn reporter_bounce_reclaims_entry_no_ghost() {
     let (reporter, handle, rx) = reporter.with_channel();
     let task = tokio::spawn(reporter.run(rx));
     handle.upsert_session(session("sess-s6"));
+    handle.upsert_run(run("sess-s6:run-1", "native-d", State::Working));
+    handle.upsert_run(run("sess-s6:run-1", "native-d", State::Waiting));
     handle.upsert_run(run("sess-s6:run-1", "native-d", State::Idle));
-    wait_until(&state, 5, |s| {
-        s.iter()
-            .any(|x| x.session_id == "sess-s6" && x.rollup_state == State::Idle)
+
+    // Assert the *converged* reclaim outcome while reporter #2 is still live, so
+    // its heartbeats keep re-asserting the reclaimed run as the definitive
+    // last-writer over any straggler frame from reporter #1's closed connection.
+    // `wait_settled` requires the condition to hold stably (not flicker once),
+    // which removes the snapshot-ordering nondeterminism. Exactly one session,
+    // exactly one run, idle — no ghost duplicate, no wiped run.
+    wait_settled(&state, 5, |s| {
+        let matching: Vec<_> = s.iter().filter(|x| x.session_id == "sess-s6").collect();
+        matching.len() == 1
+            && matching[0].runs.len() == 1
+            && matching[0].runs[0].state == State::Idle
     })
     .await;
+
     handle.shutdown();
     task.await.unwrap().unwrap();
 
-    // Exactly one session, exactly one run — no ghost duplicate.
+    // Final snapshot still shows exactly one session, one idle run — the reclaim
+    // is durable after the reporter shut down cleanly.
     if let Event::Snapshot { sessions, .. } = state.snapshot_event().await {
         let matching: Vec<_> = sessions
             .iter()

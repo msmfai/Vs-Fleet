@@ -94,12 +94,10 @@ impl HubState {
                 Some(Event::snapshot(store.snapshot()))
             }
             ClientMessage::Command { command } => {
-                // S2: commands are accepted and acknowledged but not yet acted
-                // on (mute/solo land in MUTE/S25). Logged for observability.
-                tracing::debug!(
-                    command = command.command_name(),
-                    "command received (no-op in S2)"
-                );
+                // S25: mute/unmute/solo are now fully implemented. Other commands
+                // (focus, dismiss, set_tags) are accepted and logged but not yet
+                // acted on — they land in later slices.
+                self.apply_command(command).await;
                 None
             }
             ClientMessage::SessionUpsert { session } => {
@@ -137,6 +135,39 @@ impl HubState {
                     Err(e) => tracing::error!(error = %e, "persist run.remove failed; dropped"),
                 }
                 None
+            }
+        }
+    }
+
+    /// Apply a face→Hub command. Mute/unmute/solo mutate the Hub state and
+    /// broadcast the resulting `session.updated` event(s). Other commands are
+    /// logged and accepted but not yet acted upon (later slices).
+    async fn apply_command(&self, command: fleet_protocol::Command) {
+        use fleet_protocol::Command;
+        match command {
+            Command::Mute { session_id, .. } => {
+                let mut store = self.store.lock().await;
+                if let Some(ev) = store.apply_mute(&session_id) {
+                    let _ = self.tx.send(ev);
+                }
+            }
+            Command::Unmute { session_id, .. } => {
+                let mut store = self.store.lock().await;
+                if let Some(ev) = store.apply_unmute(&session_id) {
+                    let _ = self.tx.send(ev);
+                }
+            }
+            Command::Solo { session_id, .. } => {
+                let mut store = self.store.lock().await;
+                for ev in store.apply_solo(&session_id) {
+                    let _ = self.tx.send(ev);
+                }
+            }
+            other => {
+                tracing::debug!(
+                    command = other.command_name(),
+                    "command received (not yet implemented in this slice)"
+                );
             }
         }
     }
@@ -476,6 +507,149 @@ mod tests {
                 command: fleet_protocol::Command::mute("s1"),
             })
             .await;
-        assert!(reply.is_none(), "command has no immediate reply in S2");
+        assert!(reply.is_none(), "command has no immediate reply");
+    }
+
+    // ── S25: mute / solo command handling ─────────────────────────────────────
+
+    #[tokio::test]
+    async fn mute_command_sets_flag_and_broadcasts() {
+        let state = HubState::new();
+        let mut rx = state.subscribe();
+        // Register a session first.
+        state
+            .apply(ClientMessage::SessionUpsert {
+                session: sess("s1"),
+            })
+            .await;
+        let _ = rx.recv().await; // consume session.added
+
+        // Send a mute command.
+        state
+            .apply(ClientMessage::Command {
+                command: fleet_protocol::Command::mute("s1"),
+            })
+            .await;
+
+        // Must broadcast a session.updated with muted=true.
+        let ev = rx.recv().await.unwrap();
+        assert_eq!(ev.type_name(), "session.updated");
+        match ev {
+            fleet_protocol::Event::SessionUpdated { session, .. } => {
+                assert!(session.muted, "muted flag must be set in broadcast event");
+            }
+            other => panic!("expected session.updated, got {other:?}"),
+        }
+
+        // Snapshot reflects the flag.
+        let snap = state.apply(ClientMessage::Subscribe).await.unwrap();
+        match snap {
+            fleet_protocol::Event::Snapshot { sessions, .. } => {
+                assert!(sessions[0].muted, "snapshot must show muted=true");
+            }
+            other => panic!("expected snapshot, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn unmute_command_clears_flag() {
+        let state = HubState::new();
+        // Register + mute.
+        state
+            .apply(ClientMessage::SessionUpsert {
+                session: sess("s1"),
+            })
+            .await;
+        state
+            .apply(ClientMessage::Command {
+                command: fleet_protocol::Command::mute("s1"),
+            })
+            .await;
+        let mut rx = state.subscribe();
+
+        // Unmute.
+        state
+            .apply(ClientMessage::Command {
+                command: fleet_protocol::Command::unmute("s1"),
+            })
+            .await;
+        let ev = rx.recv().await.unwrap();
+        assert_eq!(ev.type_name(), "session.updated");
+        match ev {
+            fleet_protocol::Event::SessionUpdated { session, .. } => {
+                assert!(!session.muted, "unmuted flag must be cleared in broadcast");
+            }
+            other => panic!("expected session.updated, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn mute_on_absent_session_does_not_broadcast() {
+        let state = HubState::new();
+        let mut rx = state.subscribe();
+        // Mute a session that doesn't exist — no broadcast.
+        state
+            .apply(ClientMessage::Command {
+                command: fleet_protocol::Command::mute("ghost"),
+            })
+            .await;
+        // Channel should be empty (no events broadcast).
+        assert!(
+            rx.try_recv().is_err(),
+            "muting an absent session must not broadcast"
+        );
+    }
+
+    #[tokio::test]
+    async fn solo_command_sets_solo_and_clears_others() {
+        let state = HubState::new();
+        // Register two sessions.
+        state
+            .apply(ClientMessage::SessionUpsert {
+                session: sess("s1"),
+            })
+            .await;
+        state
+            .apply(ClientMessage::SessionUpsert {
+                session: sess("s2"),
+            })
+            .await;
+        let mut rx = state.subscribe();
+        // Consume the two session.added / session.updated events from upserts.
+        // (They may or may not have been consumed already depending on timing.)
+
+        // Solo s1.
+        state
+            .apply(ClientMessage::Command {
+                command: fleet_protocol::Command::solo("s1"),
+            })
+            .await;
+
+        // Should get a session.updated for s1 with soloed=true.
+        let mut saw_s1_solo = false;
+        // Drain the broadcast channel — may contain earlier events too.
+        while let Ok(ev) = rx.try_recv() {
+            if let fleet_protocol::Event::SessionUpdated { session, .. } = &ev {
+                if session.session_id == "s1" && session.soloed {
+                    saw_s1_solo = true;
+                }
+            }
+        }
+        assert!(
+            saw_s1_solo,
+            "solo must broadcast session.updated with soloed=true for s1"
+        );
+
+        // Snapshot reflects the solo.
+        let snap = state.apply(ClientMessage::Subscribe).await.unwrap();
+        match snap {
+            fleet_protocol::Event::Snapshot { sessions, .. } => {
+                let s1 = sessions.iter().find(|s| s.session_id == "s1").unwrap();
+                let s2 = sessions.iter().find(|s| s.session_id == "s2").unwrap();
+                assert!(s1.soloed, "s1 must be soloed in snapshot");
+                assert!(!s2.soloed, "s2 must not be soloed in snapshot");
+            }
+            other => panic!("expected snapshot, got {other:?}"),
+        }
     }
 }

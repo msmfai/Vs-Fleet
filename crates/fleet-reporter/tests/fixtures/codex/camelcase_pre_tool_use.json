@@ -1,0 +1,7 @@
+{
+  "sessionId": "0199f3aa-thread-codex-1",
+  "turnId": "turn-7",
+  "cwd": "/Users/dev/project",
+  "hookEventName": "PreToolUse",
+  "toolName": "ApplyPatch"
+}
