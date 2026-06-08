@@ -80,7 +80,19 @@ pub mod notify;
 pub mod palette;
 pub mod sort;
 
+// Multi-editor descriptor table + launch/focus (PLAN S26, node `EDITORS`). A
+// data-driven table (one row per editor) + a single launcher that **reuses** the
+// per-OS [`focus`] seam — no per-editor branching.
+pub mod editors;
+
 pub use view::{AgentIcon, InboxModel, InboxView, SessionTab, TabState};
+
+// Re-export the editor descriptor table API at the crate root so the host shell
+// can `use fleet_host_core::{EditorDescriptor, installed_targets, …};`.
+pub use editors::{
+    descriptor_for, focus_editor, installed_targets, is_kind_installed, launch_command, Detector,
+    EditorDescriptor, LaunchTarget, PathDetector, EDITORS,
+};
 
 // Re-export the protocol confidence enum at the crate root so host consumers can
 // `use fleet_host_core::Confidence;` without a second `fleet_protocol` import.

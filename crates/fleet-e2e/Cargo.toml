@@ -1,0 +1,39 @@
+[package]
+name = "fleet-e2e"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Fleet end-to-end integration tests — composes the REAL Hub + reporter adapters + host-core view-model + CLI face into the §21 v1 Definition-of-Done acceptance suite"
+publish = false
+
+# A library of shared harness/fixture helpers, exercised by the `tests/` suite
+# (one named #[test] per DoD item, README §21 items 1–11). The crate COMPOSES the
+# already-built, gated components — it never reimplements them.
+[lib]
+name = "fleet_e2e"
+
+[dependencies]
+# Compose the real, gated components — NOT reimplementations of them.
+fleet-protocol = { path = "../fleet-protocol" }
+fleet-hub = { path = "../fleet-hub" }
+fleet-reporter = { path = "../fleet-reporter" }
+fleet-host-core = { path = "../fleet-host-core" }
+# NOTE: fleet-cli is a binary-only crate, so it cannot be a normal path dependency
+# (no lib target). The CLI **face** is still exercised end-to-end: `cli_ls_once`
+# locates the real `fleet` binary next to the test runner in `target/<profile>/`
+# and runs it as a subprocess subscriber (see harness::find_fleet_binary).
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = "0.23"
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tokio-tungstenite = "0.23"
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+tempfile = "3"

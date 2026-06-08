@@ -6,6 +6,7 @@ members = [
     "crates/fleet-reporter",
     "crates/fleet-cli",
     "crates/fleet-host-core",
+    "crates/fleet-e2e",
 ]
 
 [workspace.package]
