@@ -66,6 +66,16 @@ per-window `fleet-hooks.json`, installs the `claude`/`codex` PATH shim, and spaw
 this window's `fleet-reporter --serve`. All of it is reversible (disable/uninstall
 removes the env, the shim, and stops the reporter).
 
+## Status: Claude live, Codex untested
+
+- **Claude** — live-validated end-to-end (real `claude` hooks → reporter → Hub →
+  window/CLI), including the assistant-message inbox preview.
+- **Codex** — the hook config (`fleet init`) and adapter are built to OpenAI's
+  official Codex-hooks docs and unit-tested, but **not yet run against a real
+  `codex` binary**. To validate when you have Codex: `fleet init`, trust the Fleet
+  hook via Codex's `/hooks` (never `--dangerously-bypass-hook-trust`), then
+  `codex exec` and confirm the payload matches the fixtures.
+
 ## Proven end-to-end
 
 - **Synthetic:** a framed hook line → `fleet-reporter --serve` → Hub → both the

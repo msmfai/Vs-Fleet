@@ -1,5 +1,14 @@
 //! Codex detection adapter (PLAN S11–S13 / node CODEX).
 //!
+//! > ⚠️ **LIVE-UNTESTED (2026-06).** The Codex hook *config* (`fleet init`,
+//! > composable `[[hooks.*]]`) and this adapter are aligned to OpenAI's official
+//! > Codex-hooks docs and unit-tested against fixtures, but have **not** been run
+//! > against a real `codex` binary yet (no Codex access on the dev machine). The
+//! > Claude path *is* live-validated end-to-end. Before relying on Codex: run
+//! > `fleet init`, trust the Fleet hook via Codex's `/hooks` (never
+//! > `--dangerously-bypass-hook-trust`), run `codex exec`, and confirm the real
+//! > payload matches the fixtures here.
+//!
 //! This module is the **default, hooks-first** Codex integration. Per the locked
 //! decision **D10** and the resolution in `PLAN.md` §2, Fleet does **not** tap a
 //! hand-launched Codex TUI's `app-server` (passive observation of a hand-launched
