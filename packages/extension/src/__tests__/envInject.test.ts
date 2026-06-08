@@ -7,10 +7,10 @@
  * clear/delete, getScoped isolation).
  *
  * These tests assert the build-relevant contract:
- *   - the RIGHT vars (FLEET_SESSION_ID + exactly one reporter endpoint) are
- *     injected with the RIGHT options (applyAtProcessCreation),
+ *   - the RIGHT vars (FLEET_SESSION_ID + FLEET_REPORTER_SOCKET) are injected with
+ *     the RIGHT options (applyAtProcessCreation),
  *   - injection is idempotent (no accumulation),
- *   - endpoint unix↔ws switching never leaves a stale endpoint var,
+ *   - re-injection overwrites values rather than accumulating,
  *   - dispose() is fully reversible and idempotent (invariant 6),
  *   - persistence + description are set (reload survival + UI legibility).
  */
@@ -22,34 +22,12 @@ import {
 } from "../__mocks__/vscode";
 import {
     EnvInjector,
-    endpointToTargets,
     FLEET_SESSION_ID_VAR,
-    FLEET_HUB_SOCKET_VAR,
-    FLEET_HUB_WS_URL_VAR,
+    FLEET_REPORTER_SOCKET_VAR,
     FLEET_ENV_VARS,
 } from "../envInject";
 
-// ── endpointToTargets() (pure) ────────────────────────────────────────────────
-
-describe("endpointToTargets()", () => {
-    it("maps a unix: endpoint to a hubSocketPath", () => {
-        expect(endpointToTargets("unix:/var/run/fleet.sock")).toEqual({
-            hubSocketPath: "/var/run/fleet.sock",
-        });
-    });
-
-    it("maps a ws:// endpoint to a hubWsUrl", () => {
-        expect(endpointToTargets("ws://127.0.0.1:51777")).toEqual({
-            hubWsUrl: "ws://127.0.0.1:51777",
-        });
-    });
-
-    it("treats a non-unix endpoint as a ws url (no socket path leaks)", () => {
-        const t = endpointToTargets("ws://example:9999");
-        expect(t.hubSocketPath).toBeUndefined();
-        expect(t.hubWsUrl).toBe("ws://example:9999");
-    });
-});
+const SOCK = "/run/user/1000/fleet/reporter-win.sock";
 
 // ── construction ──────────────────────────────────────────────────────────────
 
@@ -79,7 +57,7 @@ describe("EnvInjector construction", () => {
 describe("inject() — FLEET_SESSION_ID", () => {
     it("injects FLEET_SESSION_ID via replace with the given value", () => {
         const coll = new MockEnvironmentVariableCollection();
-        new EnvInjector(coll).inject({ sessionId: "win-42", hubWsUrl: "ws://h" });
+        new EnvInjector(coll).inject({ sessionId: "win-42", reporterSocket: SOCK });
 
         const m = coll.get(FLEET_SESSION_ID_VAR);
         expect(m).toBeDefined();
@@ -89,65 +67,36 @@ describe("inject() — FLEET_SESSION_ID", () => {
 
     it("injects with applyAtProcessCreation:true (works without shell integration)", () => {
         const coll = new MockEnvironmentVariableCollection();
-        new EnvInjector(coll).inject({ sessionId: "win-1", hubWsUrl: "ws://h" });
+        new EnvInjector(coll).inject({ sessionId: "win-1", reporterSocket: SOCK });
         expect(coll.get(FLEET_SESSION_ID_VAR)!.options.applyAtProcessCreation).toBe(true);
     });
 
     it("flips injected to true", () => {
         const inj = new EnvInjector(new MockEnvironmentVariableCollection());
-        inj.inject({ sessionId: "x", hubWsUrl: "ws://h" });
+        inj.inject({ sessionId: "x", reporterSocket: SOCK });
         expect(inj.injected).toBe(true);
     });
 });
 
-// ── inject(): reporter endpoint (exactly one var) ─────────────────────────────
+// ── inject(): reporter socket ─────────────────────────────────────────────────
 
-describe("inject() — reporter endpoint", () => {
-    it("unix endpoint → FLEET_HUB_SOCKET set, FLEET_HUB_WS_URL absent", () => {
+describe("inject() — FLEET_REPORTER_SOCKET", () => {
+    it("injects the per-window reporter socket via replace", () => {
         const coll = new MockEnvironmentVariableCollection();
-        new EnvInjector(coll).inject({ sessionId: "s", hubSocketPath: "/run/f.sock" });
+        new EnvInjector(coll).inject({ sessionId: "s", reporterSocket: SOCK });
 
-        expect(coll.get(FLEET_HUB_SOCKET_VAR)!.value).toBe("/run/f.sock");
-        expect(coll.get(FLEET_HUB_WS_URL_VAR)).toBeUndefined();
+        const m = coll.get(FLEET_REPORTER_SOCKET_VAR);
+        expect(m!.value).toBe(SOCK);
+        expect(m!.type).toBe(EnvironmentVariableMutatorType.Replace);
+        expect(m!.options.applyAtProcessCreation).toBe(true);
     });
 
-    it("ws endpoint → FLEET_HUB_WS_URL set, FLEET_HUB_SOCKET absent", () => {
+    it("injects exactly the two Fleet vars (session id + reporter socket)", () => {
         const coll = new MockEnvironmentVariableCollection();
-        new EnvInjector(coll).inject({ sessionId: "s", hubWsUrl: "ws://127.0.0.1:51777" });
-
-        expect(coll.get(FLEET_HUB_WS_URL_VAR)!.value).toBe("ws://127.0.0.1:51777");
-        expect(coll.get(FLEET_HUB_SOCKET_VAR)).toBeUndefined();
-    });
-
-    it("no endpoint → neither endpoint var is set (only session id)", () => {
-        const coll = new MockEnvironmentVariableCollection();
-        new EnvInjector(coll).inject({ sessionId: "only-session" });
-
-        expect(coll.get(FLEET_SESSION_ID_VAR)!.value).toBe("only-session");
-        expect(coll.get(FLEET_HUB_SOCKET_VAR)).toBeUndefined();
-        expect(coll.get(FLEET_HUB_WS_URL_VAR)).toBeUndefined();
-    });
-
-    it("switching ws→unix removes the stale ws var", () => {
-        const coll = new MockEnvironmentVariableCollection();
-        const inj = new EnvInjector(coll);
-        inj.inject({ sessionId: "s", hubWsUrl: "ws://h" });
-        expect(coll.get(FLEET_HUB_WS_URL_VAR)).toBeDefined();
-
-        inj.inject({ sessionId: "s", hubSocketPath: "/run/f.sock" });
-        expect(coll.get(FLEET_HUB_WS_URL_VAR)).toBeUndefined();
-        expect(coll.get(FLEET_HUB_SOCKET_VAR)!.value).toBe("/run/f.sock");
-    });
-
-    it("switching unix→ws removes the stale socket var", () => {
-        const coll = new MockEnvironmentVariableCollection();
-        const inj = new EnvInjector(coll);
-        inj.inject({ sessionId: "s", hubSocketPath: "/run/f.sock" });
-        expect(coll.get(FLEET_HUB_SOCKET_VAR)).toBeDefined();
-
-        inj.inject({ sessionId: "s", hubWsUrl: "ws://h" });
-        expect(coll.get(FLEET_HUB_SOCKET_VAR)).toBeUndefined();
-        expect(coll.get(FLEET_HUB_WS_URL_VAR)!.value).toBe("ws://h");
+        new EnvInjector(coll).inject({ sessionId: "s", reporterSocket: SOCK });
+        expect(coll.map.size).toBe(2);
+        expect(coll.get(FLEET_SESSION_ID_VAR)!.value).toBe("s");
+        expect(coll.get(FLEET_REPORTER_SOCKET_VAR)!.value).toBe(SOCK);
     });
 });
 
@@ -157,22 +106,22 @@ describe("inject() idempotency", () => {
     it("re-injecting the same targets leaves exactly one mutator per variable", () => {
         const coll = new MockEnvironmentVariableCollection();
         const inj = new EnvInjector(coll);
-        inj.inject({ sessionId: "win-7", hubSocketPath: "/s" });
-        inj.inject({ sessionId: "win-7", hubSocketPath: "/s" });
-        inj.inject({ sessionId: "win-7", hubSocketPath: "/s" });
+        inj.inject({ sessionId: "win-7", reporterSocket: SOCK });
+        inj.inject({ sessionId: "win-7", reporterSocket: SOCK });
+        inj.inject({ sessionId: "win-7", reporterSocket: SOCK });
 
-        // Only the two relevant vars; no duplicates (Map keyed by var name).
         expect(coll.map.size).toBe(2);
         expect(coll.get(FLEET_SESSION_ID_VAR)!.value).toBe("win-7");
-        expect(coll.get(FLEET_HUB_SOCKET_VAR)!.value).toBe("/s");
+        expect(coll.get(FLEET_REPORTER_SOCKET_VAR)!.value).toBe(SOCK);
     });
 
-    it("re-injecting a new session id overwrites the old value", () => {
+    it("re-injecting a new session id / socket overwrites the old values", () => {
         const coll = new MockEnvironmentVariableCollection();
         const inj = new EnvInjector(coll);
-        inj.inject({ sessionId: "old", hubWsUrl: "ws://h" });
-        inj.inject({ sessionId: "new", hubWsUrl: "ws://h" });
+        inj.inject({ sessionId: "old", reporterSocket: "/run/a.sock" });
+        inj.inject({ sessionId: "new", reporterSocket: "/run/b.sock" });
         expect(coll.get(FLEET_SESSION_ID_VAR)!.value).toBe("new");
+        expect(coll.get(FLEET_REPORTER_SOCKET_VAR)!.value).toBe("/run/b.sock");
         expect(coll.map.size).toBe(2);
     });
 });
@@ -183,7 +132,7 @@ describe("dispose() — reversibility", () => {
     it("removes every Fleet var after injection", () => {
         const coll = new MockEnvironmentVariableCollection();
         const inj = new EnvInjector(coll);
-        inj.inject({ sessionId: "s", hubSocketPath: "/s" });
+        inj.inject({ sessionId: "s", reporterSocket: SOCK });
         expect(coll.map.size).toBeGreaterThan(0);
 
         inj.dispose();
@@ -197,7 +146,7 @@ describe("dispose() — reversibility", () => {
     it("calls clear() on the collection (full reset)", () => {
         const coll = new MockEnvironmentVariableCollection();
         const inj = new EnvInjector(coll);
-        inj.inject({ sessionId: "s", hubWsUrl: "ws://h" });
+        inj.inject({ sessionId: "s", reporterSocket: SOCK });
         inj.dispose();
         expect(coll.cleared).toBe(true);
     });
@@ -205,7 +154,7 @@ describe("dispose() — reversibility", () => {
     it("flips injected back to false", () => {
         const coll = new MockEnvironmentVariableCollection();
         const inj = new EnvInjector(coll);
-        inj.inject({ sessionId: "s", hubWsUrl: "ws://h" });
+        inj.inject({ sessionId: "s", reporterSocket: SOCK });
         inj.dispose();
         expect(inj.injected).toBe(false);
     });
@@ -220,7 +169,7 @@ describe("dispose() — reversibility", () => {
     it("is idempotent (double-dispose does not throw)", () => {
         const coll = new MockEnvironmentVariableCollection();
         const inj = new EnvInjector(coll);
-        inj.inject({ sessionId: "s", hubWsUrl: "ws://h" });
+        inj.inject({ sessionId: "s", reporterSocket: SOCK });
         expect(() => {
             inj.dispose();
             inj.dispose();
@@ -231,14 +180,13 @@ describe("dispose() — reversibility", () => {
     it("can re-inject cleanly after dispose (round-trip)", () => {
         const coll = new MockEnvironmentVariableCollection();
         const inj = new EnvInjector(coll);
-        inj.inject({ sessionId: "s1", hubWsUrl: "ws://h" });
+        inj.inject({ sessionId: "s1", reporterSocket: "/run/a.sock" });
         inj.dispose();
-        inj.inject({ sessionId: "s2", hubSocketPath: "/s" });
+        inj.inject({ sessionId: "s2", reporterSocket: "/run/b.sock" });
 
         expect(inj.injected).toBe(true);
         expect(coll.get(FLEET_SESSION_ID_VAR)!.value).toBe("s2");
-        expect(coll.get(FLEET_HUB_SOCKET_VAR)!.value).toBe("/s");
-        expect(coll.get(FLEET_HUB_WS_URL_VAR)).toBeUndefined();
+        expect(coll.get(FLEET_REPORTER_SOCKET_VAR)!.value).toBe("/run/b.sock");
     });
 });
 
@@ -247,16 +195,13 @@ describe("dispose() — reversibility", () => {
 describe("collection scoping (documented as workspace-scoped, not per-terminal)", () => {
     it("getScoped returns an isolated collection that does not affect the global one", () => {
         const global = new MockEnvironmentVariableCollection();
-        new EnvInjector(global).inject({ sessionId: "win", hubWsUrl: "ws://h" });
+        new EnvInjector(global).inject({ sessionId: "win", reporterSocket: SOCK });
 
         const scoped = global.getScoped({
             workspaceFolder: { uri: { fsPath: "/proj" } },
         });
-        // The scoped collection is empty/distinct — injecting globally does NOT
-        // leak into a scoped collection, matching the real API's isolation.
         expect(scoped).not.toBe(global);
         expect(scoped.get(FLEET_SESSION_ID_VAR)).toBeUndefined();
-        // Global injection is intact (every terminal in the window sees it).
         expect(global.get(FLEET_SESSION_ID_VAR)!.value).toBe("win");
     });
 });

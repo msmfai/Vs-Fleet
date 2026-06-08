@@ -1,0 +1,16 @@
+# Source & test material — only the compiled out/ ships.
+src/**
+**/__tests__/**
+**/__mocks__/**
+**/*.test.ts
+**/*.map
+
+# Tooling / config not needed at runtime.
+tsconfig.json
+.eslintrc*
+jest.config*
+.gitignore
+.vscode/**
+
+# Dev-dependency noise (vsce prunes dev deps, but be explicit).
+node_modules/.bin/**

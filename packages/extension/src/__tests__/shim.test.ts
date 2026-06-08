@@ -32,6 +32,9 @@ import {
     defaultShimDir,
     injectedReliabilityFlags,
     hasAnyReliabilityFlag,
+    claudeHooksSettings,
+    hookRelayCommand,
+    CLAUDE_HOOKS_FILE,
     type ShimmedAgent,
 } from "../shim";
 
@@ -501,5 +504,132 @@ describe("PathShimmer.dispose() — reversibility (invariant 6)", () => {
         expect(s.installed).toBe(true);
         expect(coll.get(PATH_VAR)!.value).toBe(shimDir + path.delimiter);
         expect(fs.existsSync(path.join(shimDir, "claude"))).toBe(true);
+    });
+});
+
+// ── Claude hook installation (the load-bearing step-4 wiring) ─────────────────
+
+const SOCK = "/run/user/1000/fleet/reporter-win.sock";
+
+describe("hookRelayCommand() — framing matches the reporter --serve receiver", () => {
+    it("emits a `claude `-tagged, newline-framed nc pipeline to the socket", () => {
+        const cmd = hookRelayCommand(SOCK);
+        expect(cmd).toContain("printf 'claude %s\\n'");
+        expect(cmd).toContain("tr -d '\\r\\n'"); // strip embedded newlines → one line
+        expect(cmd).toContain(`nc -U ${SOCK}`);
+        expect(cmd).toContain("|| true"); // observer-not-owner: never break claude
+    });
+});
+
+describe("claudeHooksSettings() — the --settings document", () => {
+    const doc = claudeHooksSettings(SOCK) as {
+        hooks: Record<string, Array<{ matcher?: string; hooks: Array<{ type: string; command: string }> }>>;
+    };
+
+    it("covers exactly the Fleet-consumed lifecycle events", () => {
+        expect(Object.keys(doc.hooks).sort()).toEqual(
+            ["PreToolUse", "SessionEnd", "SessionStart", "Stop", "UserPromptSubmit"].sort()
+        );
+    });
+
+    it("uses the array-of-matcher-groups shape Claude expects", () => {
+        for (const [, groups] of Object.entries(doc.hooks)) {
+            expect(Array.isArray(groups)).toBe(true);
+            expect(groups[0].hooks[0].type).toBe("command");
+            expect(groups[0].hooks[0].command).toContain(`nc -U ${SOCK}`);
+        }
+    });
+
+    it("gives PreToolUse a '*' matcher (fires for every tool); lifecycle events take none", () => {
+        expect(doc.hooks.PreToolUse[0].matcher).toBe("*");
+        expect(doc.hooks.Stop[0].matcher).toBeUndefined();
+        expect(doc.hooks.UserPromptSubmit[0].matcher).toBeUndefined();
+    });
+
+    it("serializes to valid JSON a Claude --settings file can load", () => {
+        const json = JSON.stringify(claudeHooksSettings(SOCK));
+        expect(() => JSON.parse(json)).not.toThrow();
+    });
+});
+
+describe("PathShimmer.install() with a reporter socket — writes hooks + wires --settings", () => {
+    it("writes fleet-hooks.json into the shim dir pointing at the socket", () => {
+        const coll = new MockEnvironmentVariableCollection();
+        const shimDir = makeTmpDir();
+        const s = new PathShimmer(coll, { shimDir, reporterSocket: SOCK });
+        s.install();
+
+        const hooksFile = path.join(shimDir, CLAUDE_HOOKS_FILE);
+        expect(s.claudeHooksFile).toBe(hooksFile);
+        expect(fs.existsSync(hooksFile)).toBe(true);
+        const parsed = JSON.parse(fs.readFileSync(hooksFile, "utf8"));
+        expect(parsed.hooks.Stop[0].hooks[0].command).toContain(`nc -U ${SOCK}`);
+    });
+
+    it("does NOT write a hooks file when no reporter socket is configured (pass-through)", () => {
+        const coll = new MockEnvironmentVariableCollection();
+        const shimDir = makeTmpDir();
+        const s = new PathShimmer(coll, { shimDir });
+        s.install();
+        expect(s.claudeHooksFile).toBeUndefined();
+        expect(fs.existsSync(path.join(shimDir, CLAUDE_HOOKS_FILE))).toBe(false);
+    });
+
+    it("removes the hooks file on dispose (reversibility)", () => {
+        const coll = new MockEnvironmentVariableCollection();
+        const shimDir = makeTmpDir();
+        const s = new PathShimmer(coll, { shimDir, reporterSocket: SOCK });
+        s.install();
+        const hooksFile = path.join(shimDir, CLAUDE_HOOKS_FILE);
+        expect(fs.existsSync(hooksFile)).toBe(true);
+        s.dispose();
+        expect(fs.existsSync(hooksFile)).toBe(false);
+    });
+});
+
+describePosix("generated claude wrapper with hooks — executed under /bin/sh", () => {
+    it("prepends --settings <hooksFile> ahead of the user's args (Fleet branch)", () => {
+        const shimDir = makeTmpDir();
+        const realDir = makeTmpDir();
+        makeFakeBinary(realDir, "claude");
+        const hooksFile = path.join(shimDir, CLAUDE_HOOKS_FILE);
+        // Write the claude wrapper WITH a hooks file (3rd arg).
+        fs.mkdirSync(shimDir, { recursive: true });
+        const shimPath = path.join(shimDir, "claude");
+        fs.writeFileSync(shimPath, shimScript("claude", undefined, hooksFile), { mode: 0o755 });
+        fs.chmodSync(shimPath, 0o755);
+
+        const out = runShim(shimPath, {
+            pathDirs: [shimDir, realDir],
+            shimDir,
+            env: { [FLEET_SESSION_ID_VAR]: "win-1" },
+            args: ["-p", "hello"],
+        });
+
+        expect(out.status).toBe(0);
+        expect(out.stdout).toContain("REAL_CLAUDE");
+        // The exact forwarded argv: --settings <hooksFile> then the user's args.
+        const argLines = out.stdout.split("\n").filter(l => l.startsWith("ARG:")).map(l => l.slice(4));
+        expect(argLines).toEqual(["--settings", hooksFile, "-p", "hello"]);
+    });
+
+    it("does NOT add --settings in pass-through (no FLEET_SESSION_ID)", () => {
+        const shimDir = makeTmpDir();
+        const realDir = makeTmpDir();
+        makeFakeBinary(realDir, "claude");
+        const hooksFile = path.join(shimDir, CLAUDE_HOOKS_FILE);
+        fs.mkdirSync(shimDir, { recursive: true });
+        const shimPath = path.join(shimDir, "claude");
+        fs.writeFileSync(shimPath, shimScript("claude", undefined, hooksFile), { mode: 0o755 });
+        fs.chmodSync(shimPath, 0o755);
+
+        const out = runShim(shimPath, {
+            pathDirs: [shimDir, realDir],
+            shimDir,
+            // No FLEET_SESSION_ID → pure pass-through.
+            args: ["-p", "hello"],
+        });
+        const argLines = out.stdout.split("\n").filter(l => l.startsWith("ARG:")).map(l => l.slice(4));
+        expect(argLines).toEqual(["-p", "hello"]); // verbatim, no --settings
     });
 });
