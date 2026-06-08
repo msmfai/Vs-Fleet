@@ -224,6 +224,7 @@ mod tests {
             soloed: false,
             unread,
             run_count: 0,
+            last_message: None,
         }
     }
 

@@ -150,6 +150,11 @@ pub struct SessionTab {
     pub unread: bool,
     /// Number of runs hosted under this tab (the window shows a count badge).
     pub run_count: usize,
+    /// The rolled-up run's last message — the inbox preview line (e.g. the
+    /// assistant's final words on `idle`/`done`, or "Approve Bash?" on `waiting`).
+    /// `None` when the rolled-up run has no message. Taken from the run that owns
+    /// the rolled-up state (same run as [`SessionTab::agent_icon`]).
+    pub last_message: Option<String>,
 }
 
 /// The whole reduced inbox: the ordered list of session tabs the window draws.
@@ -320,17 +325,26 @@ fn recompute_rollups(sess: &mut Session) {
     };
 }
 
-/// The agent icon for a session: the kind of its most-urgent run (the run that
-/// owns the rolled-up state), or [`AgentIcon::None`] when there are no runs.
-fn rolled_up_agent_icon(sess: &Session) -> AgentIcon {
-    // Pick the run whose state equals the session's rollup_state; ties resolve
-    // to the first such run, which is deterministic given run order.
+/// The run that owns the rolled-up state (state-match, else the first run) — the
+/// single run the tab's icon/preview represent. `None` when there are no runs.
+fn rolled_up_run(sess: &Session) -> Option<&AgentRun> {
     sess.runs
         .iter()
         .find(|r| r.state == sess.rollup_state)
         .or_else(|| sess.runs.first())
+}
+
+/// The agent icon for a session: the kind of its rolled-up run, or
+/// [`AgentIcon::None`] when there are no runs.
+fn rolled_up_agent_icon(sess: &Session) -> AgentIcon {
+    rolled_up_run(sess)
         .map(|r| AgentIcon::from_kind(&r.agent_kind))
         .unwrap_or(AgentIcon::None)
+}
+
+/// The rolled-up run's `last_message` — the inbox preview line.
+fn rolled_up_last_message(sess: &Session) -> Option<String> {
+    rolled_up_run(sess).and_then(|r| r.last_message.clone())
 }
 
 /// The worst confidence among a session's *waiting* runs, plus the earliest
@@ -374,6 +388,7 @@ fn session_to_tab(sess: &Session) -> SessionTab {
         soloed: sess.soloed,
         unread: sess.unread,
         run_count: sess.runs.len(),
+        last_message: rolled_up_last_message(sess),
     }
 }
 
@@ -857,6 +872,7 @@ mod tests {
                     soloed: false,
                     unread: false,
                     run_count: 1,
+                    last_message: None,
                 },
                 SessionTab {
                     session_id: "s2".into(),
@@ -871,6 +887,7 @@ mod tests {
                     soloed: false,
                     unread: false,
                     run_count: 1,
+                    last_message: None,
                 },
             ],
         };
