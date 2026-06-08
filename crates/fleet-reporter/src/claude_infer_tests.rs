@@ -430,3 +430,71 @@ mod props {
         }
     }
 }
+
+// ── precise tool_use_id correlation (CLINFER hardening) ──────────────────────
+
+#[test]
+fn corroborate_jsonl_for_keys_on_the_specific_tool() {
+    // Two tools dispatched; only tool A resolved. The transcript's *last*
+    // dispatched is B (still stuck), but if we armed on A we should see Resolved.
+    let blob = [
+        r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_A"}]}}"#,
+        r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_B"}]}}"#,
+        r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_A"}]}}"#,
+    ].join("\n");
+
+    assert_eq!(corroborate_jsonl_for(&blob, "toolu_A"), Corroboration::Resolved);
+    assert_eq!(corroborate_jsonl_for(&blob, "toolu_B"), Corroboration::Stuck);
+    // An id never seen → Unknown (never suppress a genuine approval on timing).
+    assert_eq!(corroborate_jsonl_for(&blob, "toolu_ZZ"), Corroboration::Unknown);
+    // The last-dispatched heuristic, by contrast, sees B outstanding → Stuck.
+    assert_eq!(corroborate_jsonl(&blob), Corroboration::Stuck);
+}
+
+#[test]
+fn machine_pins_the_armed_tool_use_id_from_pre_tool_use() {
+    let mut m = ClaudeInferMachine::new(SID);
+    m.apply(
+        &ClaudeHookEvent::parse(&format!(
+            r#"{{"session_id":"{SID}","hook_event_name":"PreToolUse","tool_name":"Read","tool_use_id":"toolu_XYZ"}}"#
+        ))
+        .unwrap(),
+        0,
+    );
+    assert_eq!(m.armed_tool_use_id(), Some("toolu_XYZ"));
+    // Clearing the inference (e.g. a Stop) drops the anchor.
+    m.apply(
+        &ClaudeHookEvent::parse(&format!(r#"{{"session_id":"{SID}","hook_event_name":"Stop"}}"#))
+            .unwrap(),
+        10,
+    );
+    assert_eq!(m.armed_tool_use_id(), None);
+}
+
+#[test]
+fn adapter_corroborate_blob_auto_resolves_via_precise_anchor() {
+    let mut a = ClaudeInferAdapter::new();
+    // Arm on tool A, then fire the inferred waiting (past the debounce window).
+    a.ingest_json(
+        &format!(
+            r#"{{"session_id":"{SID}","hook_event_name":"PreToolUse","tool_name":"Bash","tool_use_id":"toolu_A"}}"#
+        ),
+        0,
+    );
+    a.tick(WINDOW + 1);
+    assert_eq!(a.state_of(SID), Some(State::Waiting));
+
+    // A transcript where a LATER tool B is still outstanding but OUR armed tool A
+    // resolved. Precise correlation must auto-resolve the waiting.
+    let blob = [
+        r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_A"}]}}"#,
+        r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_B"}]}}"#,
+        r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_A"}]}}"#,
+    ].join("\n");
+    let cmds = a.corroborate_blob(SID, &blob);
+    assert_eq!(a.state_of(SID), Some(State::Working), "armed tool resolved → no longer waiting");
+    assert!(
+        cmds.iter().any(|c| matches!(c, ReporterCommand::UpsertRun(_))),
+        "auto-resolve emits a run upsert"
+    );
+}

@@ -21,6 +21,8 @@ fn ev(kind: ClaudeHookKind) -> ClaudeHookEvent {
         tool_name: None,
         stop_hook_active: false,
         turn_complete_done: false,
+        last_message: None,
+        tool_use_id: None,
     }
 }
 
@@ -636,4 +638,58 @@ proptest! {
         prop_assert!(run.waiting_since.is_none());
         prop_assert_eq!(run.agent_kind, AgentKind::ClaudeCode);
     }
+}
+
+// ── last_assistant_message → inbox preview (real Stop carries it) ─────────────
+
+#[test]
+fn stop_surfaces_last_assistant_message_as_idle_preview() {
+    // A real Stop payload carries `last_assistant_message`; the run's preview
+    // should be that text (not None / not a generic line).
+    let json = r#"{"session_id":"s","hook_event_name":"Stop","stop_hook_active":false,
+        "last_assistant_message":"The current model is Claude Opus 4.8 (1M context)."}"#;
+    let e = ClaudeHookEvent::parse(json).unwrap();
+    assert_eq!(e.last_message.as_deref(), Some("The current model is Claude Opus 4.8 (1M context)."));
+
+    let mut m = ClaudeStateMachine::new("s");
+    m.apply(&e);
+    assert_eq!(m.state(), State::Idle);
+    let run = m.to_run("r", "2026-06-08T00:00:00Z");
+    assert_eq!(
+        run.last_message.as_deref(),
+        Some("The current model is Claude Opus 4.8 (1M context).")
+    );
+}
+
+#[test]
+fn idle_preview_is_none_without_a_message() {
+    // A bare Stop (no last_assistant_message) → idle with no preview (unchanged).
+    let mut m = ClaudeStateMachine::new("s");
+    m.apply(&ClaudeHookEvent::parse(r#"{"session_id":"s","hook_event_name":"Stop"}"#).unwrap());
+    assert_eq!(m.state(), State::Idle);
+    assert!(m.to_run("r", "t").last_message.is_none());
+}
+
+#[test]
+fn preview_truncates_a_long_multiline_message_to_one_line() {
+    let long = "line one\nline two ".to_string() + &"x".repeat(200);
+    let json = format!(
+        r#"{{"session_id":"s","hook_event_name":"Stop","stop_hook_active":false,"last_assistant_message":{}}}"#,
+        serde_json::to_string(&long).unwrap()
+    );
+    let mut m = ClaudeStateMachine::new("s");
+    m.apply(&ClaudeHookEvent::parse(&json).unwrap());
+    let msg = m.to_run("r", "t").last_message.unwrap();
+    assert!(!msg.contains('\n'), "preview is single-line");
+    assert!(msg.ends_with('…'), "long preview is truncated");
+    assert!(msg.chars().count() <= 101, "preview bounded (~100 + ellipsis)");
+}
+
+#[test]
+fn pre_tool_use_parses_tool_use_id() {
+    // Real PreToolUse carries `tool_use_id` (a toolu_… correlation anchor).
+    let json = r#"{"session_id":"s","hook_event_name":"PreToolUse","tool_name":"Read",
+        "tool_use_id":"toolu_016FQ3SN7uLEwwQEkQxU2nMA"}"#;
+    let e = ClaudeHookEvent::parse(json).unwrap();
+    assert_eq!(e.tool_use_id.as_deref(), Some("toolu_016FQ3SN7uLEwwQEkQxU2nMA"));
 }

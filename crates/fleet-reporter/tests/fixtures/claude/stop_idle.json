@@ -2,6 +2,13 @@
   "session_id": "0199f3aa-claude-session-1",
   "transcript_path": "/Users/dev/.claude/projects/proj/0199f3aa-claude-session-1.jsonl",
   "cwd": "/Users/dev/project",
+  "permission_mode": "default",
+  "effort": {
+    "level": "high"
+  },
   "hook_event_name": "Stop",
-  "stop_hook_active": false
+  "stop_hook_active": false,
+  "last_assistant_message": "Done — all tests pass.",
+  "background_tasks": [],
+  "session_crons": []
 }
