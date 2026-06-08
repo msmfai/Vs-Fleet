@@ -18,7 +18,9 @@
 use std::path::PathBuf;
 
 use fleet_protocol::{Confidence, State};
-use fleet_reporter::claude::{ClaudeAdapter, ClaudeHookEvent, ClaudeHookKind, ClaudeParseError};
+use fleet_reporter::claude::{
+    ClaudeAdapter, ClaudeHookEvent, ClaudeHookKind, ClaudeParseError, ClaudeStateMachine,
+};
 use fleet_reporter::reporter::ReporterCommand;
 
 const SESSION: &str = "0199f3aa-claude-session-1";
@@ -266,4 +268,28 @@ fn full_transcript_transition_sequence() {
         a.ingest_json(&fixture(file));
         assert_eq!(a.state_of(SESSION), Some(expect), "after {file}");
     }
+}
+
+// ── real-fidelity fields (captured from claude 2.1.x) ────────────────────────
+
+#[test]
+fn stop_idle_fixture_carries_last_assistant_message_preview() {
+    let e = parse("stop_idle.json");
+    assert_eq!(e.kind, ClaudeHookKind::Stop);
+    assert!(!e.stop_hook_active);
+    assert_eq!(e.last_message.as_deref(), Some("Done — all tests pass."));
+    // And the run surfaces it as the idle preview.
+    let mut m = ClaudeStateMachine::new(&e.session_id);
+    m.apply(&e);
+    let run = m.to_run("r", "2026-06-08T00:00:00Z");
+    assert_eq!(run.last_message.as_deref(), Some("Done — all tests pass."));
+}
+
+#[test]
+fn pre_tool_use_fixture_carries_tool_use_id() {
+    let e = parse("pre_tool_use.json");
+    assert_eq!(
+        e.tool_use_id.as_deref(),
+        Some("toolu_016FQ3SN7uLEwwQEkQxU2nMA")
+    );
 }

@@ -136,6 +136,62 @@ pub fn corroborate_transcript(blob: &str) -> Corroboration {
     corroborate_jsonl(blob)
 }
 
+/// Like [`corroborate_jsonl`] but keyed on a **specific** `tool_use_id` (the
+/// precise anchor a `PreToolUse` hook carries) rather than the transcript's
+/// last-dispatched tool. Correct when tools run in parallel or the transcript
+/// lags: we ask "did *the tool this hook armed on* get a `tool_result`?".
+///
+/// - dispatched (`tool_use` with this `id`) but no matching `tool_result` →
+///   [`Corroboration::Stuck`];
+/// - has a matching `tool_result` → [`Corroboration::Resolved`];
+/// - the id is not seen at all → [`Corroboration::Unknown`] (decide on timing
+///   alone — never suppress a genuine approval). Same schema-drift guard.
+pub fn corroborate_jsonl_for(body: &str, tool_use_id: &str) -> Corroboration {
+    let mut dispatched = false;
+    let mut completed = false;
+    for line in body.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let value: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let blocks = value
+            .get("message")
+            .and_then(|m| m.get("content"))
+            .or_else(|| value.get("content"));
+        let Some(serde_json::Value::Array(blocks)) = blocks else {
+            continue;
+        };
+        for block in blocks {
+            let Some(ty) = block.get("type").and_then(|t| t.as_str()) else {
+                continue;
+            };
+            match ty {
+                "tool_use" if block.get("id").and_then(|i| i.as_str()) == Some(tool_use_id) => {
+                    dispatched = true;
+                }
+                "tool_result"
+                    if block.get("tool_use_id").and_then(|i| i.as_str()) == Some(tool_use_id) =>
+                {
+                    completed = true;
+                }
+                _ => {}
+            }
+        }
+    }
+    if !dispatched {
+        return Corroboration::Unknown;
+    }
+    if completed {
+        Corroboration::Resolved
+    } else {
+        Corroboration::Stuck
+    }
+}
+
 /// The pure S16 **inference state machine** for one Claude `session_id`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClaudeInferMachine {
@@ -148,6 +204,11 @@ pub struct ClaudeInferMachine {
     debounce_ms: u64,
     armed_since: Option<u64>,
     inferred_waiting: bool,
+    /// The `tool_use_id` of the currently-armed `PreToolUse` (the precise
+    /// transcript correlation anchor), if the hook carried one. Persists while
+    /// the run is armed/waiting so corroboration checks *this exact* tool, not
+    /// merely the transcript's last-dispatched one.
+    armed_tool_use_id: Option<String>,
 }
 
 /// A single state transition the machine decided. `changed` is `false` for a no-op.
@@ -185,6 +246,7 @@ impl ClaudeInferMachine {
             debounce_ms,
             armed_since: None,
             inferred_waiting: false,
+            armed_tool_use_id: None,
         }
     }
 
@@ -220,6 +282,11 @@ impl ClaudeInferMachine {
     pub fn is_inferred_waiting(&self) -> bool {
         self.inferred_waiting
     }
+    /// The `tool_use_id` of the currently-armed/waiting `PreToolUse`, if the hook
+    /// carried one — the precise transcript correlation anchor.
+    pub fn armed_tool_use_id(&self) -> Option<&str> {
+        self.armed_tool_use_id.as_deref()
+    }
 
     /// Apply a parsed lifecycle hook event at monotonic millisecond time `now_ms`.
     pub fn apply(&mut self, ev: &ClaudeHookEvent, now_ms: u64) -> Transition {
@@ -241,6 +308,8 @@ impl ClaudeInferMachine {
                 let was_working = self.state == State::Working && self.urgency.is_none();
                 self.enter_working();
                 self.armed_since = Some(now_ms);
+                // Pin the precise correlation anchor for this arming (if present).
+                self.armed_tool_use_id = ev.tool_use_id.clone();
                 Transition {
                     state: self.state,
                     urgency: self.urgency,
@@ -416,6 +485,7 @@ impl ClaudeInferMachine {
 
     fn clear_inference(&mut self) -> bool {
         self.armed_since = None;
+        self.armed_tool_use_id = None;
         let was_waiting = self.inferred_waiting;
         self.inferred_waiting = false;
         was_waiting
@@ -578,6 +648,22 @@ impl ClaudeInferAdapter {
             None => return Vec::new(),
         };
         self.commands_for(&transition, session_id, run_id)
+    }
+
+    /// Corroborate a session against a raw transcript `blob`, automatically using
+    /// the **precise** `tool_use_id` correlation ([`corroborate_jsonl_for`]) when
+    /// the armed `PreToolUse` carried one, and falling back to the last-dispatched
+    /// heuristic ([`corroborate_jsonl`]) otherwise. The caller just hands over the
+    /// transcript; the right correlation strategy is chosen here.
+    pub fn corroborate_blob(&mut self, session_id: &str, blob: &str) -> Vec<ReporterCommand> {
+        let verdict = match self.sessions.get(session_id) {
+            Some(s) => match s.machine.armed_tool_use_id() {
+                Some(id) => corroborate_jsonl_for(blob, id),
+                None => corroborate_jsonl(blob),
+            },
+            None => return Vec::new(),
+        };
+        self.corroborate(session_id, verdict)
     }
 
     /// Forget a session entirely.

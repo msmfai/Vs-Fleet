@@ -65,8 +65,9 @@ pub use claude::{
     Transition as ClaudeTransition,
 };
 pub use claude_infer::{
-    corroborate_jsonl, corroborate_transcript, ClaudeInferAdapter, ClaudeInferMachine,
-    Corroboration as InferCorroboration, Transition as ClaudeInferTransition, DEFAULT_DEBOUNCE_MS,
+    corroborate_jsonl, corroborate_jsonl_for, corroborate_transcript, ClaudeInferAdapter,
+    ClaudeInferMachine, Corroboration as InferCorroboration, Transition as ClaudeInferTransition,
+    DEFAULT_DEBOUNCE_MS,
 };
 pub use claude_shim::{
     ApprovalDecision as ClaudeApprovalDecision, ApprovalRequest as ClaudeApprovalRequest,

@@ -2,10 +2,14 @@
   "session_id": "0199f3aa-claude-session-1",
   "transcript_path": "/Users/dev/.claude/projects/proj/0199f3aa-claude-session-1.jsonl",
   "cwd": "/Users/dev/project",
+  "permission_mode": "default",
+  "effort": {
+    "level": "high"
+  },
   "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
   "tool_input": {
     "command": "cargo test"
   },
-  "permission_mode": "default"
+  "tool_use_id": "toolu_016FQ3SN7uLEwwQEkQxU2nMA"
 }
