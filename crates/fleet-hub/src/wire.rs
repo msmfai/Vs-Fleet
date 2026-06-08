@@ -19,6 +19,36 @@
 use fleet_protocol::{AgentRun, Command, Session};
 use serde::{Deserialize, Serialize};
 
+/// The durable-identity stamp a reporter attaches to a run delta (S6).
+///
+/// `durable_id` is the run's fixed identity anchored on its native agent id
+/// (D4 — Codex `thread.id` / Claude `session_id`). `epoch` distinguishes a
+/// *reconnect* (same epoch, reclaim + continue the `seq` series) from a
+/// *fresh-start* (bumped epoch, wipe the prior series). `seq` is the monotonic
+/// per-run sequence number. Together `(durable_id, epoch, seq)` is what
+/// [`crate::reclaim::ReclaimTable`] gates on for idempotent, ordered apply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SeqStamp {
+    /// The run's fixed durable id (native-agent-anchored).
+    pub durable_id: String,
+    /// Run-instance epoch: bumped on a clean fresh-start, kept on reconnect.
+    #[serde(default)]
+    pub epoch: u64,
+    /// Monotonic per-run sequence number.
+    pub seq: u64,
+}
+
+impl SeqStamp {
+    /// Construct a stamp.
+    pub fn new(durable_id: impl Into<String>, epoch: u64, seq: u64) -> Self {
+        SeqStamp {
+            durable_id: durable_id.into(),
+            epoch,
+            seq,
+        }
+    }
+}
+
 /// A message a connected client sends to the Hub.
 ///
 /// Two client roles share this envelope:
@@ -54,8 +84,21 @@ pub enum ClientMessage {
     SessionRemove { session_id: String },
 
     /// Reporter delta: a run within a session was added or changed.
+    ///
+    /// **Durable identity (S6).** A run upsert MAY carry a [`SeqStamp`] — the
+    /// run's durable id, epoch, and monotonic per-run `seq` — so the Hub can
+    /// apply it idempotently and in `seq` order ([`crate::reclaim`]). The field
+    /// is optional and `#[serde(default)]`: an older reporter (S5) that omits it
+    /// is treated as un-gated (always applied, preserving prior behavior), while
+    /// an S6 reporter stamps every delta. This keeps the inbound vocabulary
+    /// backward-compatible while the contract is still being shaped.
     #[serde(rename = "run.upsert")]
-    RunUpsert { session_id: String, run: AgentRun },
+    RunUpsert {
+        session_id: String,
+        run: AgentRun,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stamp: Option<SeqStamp>,
+    },
 
     /// Reporter delta: a run was removed from a session.
     #[serde(rename = "run.remove")]
@@ -152,6 +195,12 @@ mod tests {
             ClientMessage::RunUpsert {
                 session_id: "s1".into(),
                 run: sample_run("r1"),
+                stamp: None,
+            },
+            ClientMessage::RunUpsert {
+                session_id: "s1".into(),
+                run: sample_run("r1"),
+                stamp: Some(SeqStamp::new("native", 0, 7)),
             },
             ClientMessage::RunRemove {
                 session_id: "s1".into(),
@@ -170,6 +219,54 @@ mod tests {
         let raw = serde_json::json!({ "type": "totally.unknown", "x": 1 });
         let r: Result<ClientMessage, _> = serde_json::from_value(raw);
         assert!(r.is_err(), "unknown message types must not silently parse");
+    }
+
+    #[test]
+    fn run_upsert_omits_stamp_when_absent() {
+        // S5-compatibility: a run.upsert without a stamp serializes WITHOUT the
+        // `stamp` key, and an S5 wire frame (no stamp) parses to `stamp: None`.
+        let m = ClientMessage::RunUpsert {
+            session_id: "s1".into(),
+            run: sample_run("r1"),
+            stamp: None,
+        };
+        let v = serde_json::to_value(&m).unwrap();
+        assert!(
+            v.get("stamp").is_none(),
+            "absent stamp must not be on the wire"
+        );
+        // An S5 frame (no stamp field at all) still deserializes.
+        let raw = serde_json::json!({
+            "type": "run.upsert",
+            "session_id": "s1",
+            "run": serde_json::to_value(sample_run("r1")).unwrap(),
+        });
+        let back: ClientMessage = serde_json::from_value(raw).unwrap();
+        assert_eq!(back, m);
+    }
+
+    #[test]
+    fn run_upsert_carries_stamp_when_present() {
+        let m = ClientMessage::RunUpsert {
+            session_id: "s1".into(),
+            run: sample_run("r1"),
+            stamp: Some(SeqStamp::new("native-d", 2, 11)),
+        };
+        let v = serde_json::to_value(&m).unwrap();
+        assert_eq!(v["stamp"]["durable_id"], "native-d");
+        assert_eq!(v["stamp"]["epoch"], 2);
+        assert_eq!(v["stamp"]["seq"], 11);
+        let back: ClientMessage = serde_json::from_value(v).unwrap();
+        assert_eq!(back, m);
+    }
+
+    #[test]
+    fn seq_stamp_epoch_defaults_to_zero() {
+        // An S6 reporter that omits epoch (reconnect-default) parses to epoch 0.
+        let raw = serde_json::json!({ "durable_id": "d", "seq": 3 });
+        let s: SeqStamp = serde_json::from_value(raw).unwrap();
+        assert_eq!(s.epoch, 0);
+        assert_eq!(s.seq, 3);
     }
 
     #[test]

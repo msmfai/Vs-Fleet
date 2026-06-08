@@ -25,9 +25,14 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
+# Persistence (PLAN D3, S7): append-only SQLite event log + projection. The
+# `bundled` feature compiles SQLite in-tree so there is no system libsqlite
+# dependency (reproducible on the Nix local gate and CI alike).
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [dev-dependencies]
 tokio = { workspace = true }
 tokio-tungstenite = "0.23"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 proptest = "1"
+tempfile = "3"
