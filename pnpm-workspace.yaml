@@ -1,2 +1,25 @@
 packages:
   - "packages/*"
+
+# packages/extension is an npm-managed VS Code extension: it carries its own
+# package-lock.json, an npm-installed node_modules, and a tsc/jest/eslint
+# toolchain. pnpm only orchestrates the per-package `build`/`test`/`lint`
+# scripts here; npm owns the install. Two pnpm behaviours have to be tamed so
+# `pnpm -r build` (the JS gate, PLAN §3 invariant 1) does not fight the npm
+# toolchain:
+#
+# 1. verify-deps-before-run=false — by default `pnpm run` first runs an
+#    implicit `pnpm install` deps-status check. That install would overwrite
+#    npm's node_modules (different layout) and hard-fail on the build-script
+#    approval prompt below. We disable the pre-run verification; install is an
+#    explicit step (CI: `pnpm install --ignore-scripts`; locally: npm).
+#
+# 2. ignoredBuiltDependencies — unrs-resolver@1 (a native-binary transitive
+#    dep of the eslint import resolver) ships a postinstall build script.
+#    pnpm 9+ refuses to silently skip it (ERR_PNPM_IGNORED_BUILDS). We never
+#    build it under pnpm — npm runs it during the extension's own install — so
+#    we acknowledge the skip explicitly to keep `pnpm install`/`-r build`
+#    non-interactive and green.
+verifyDepsBeforeRun: false
+ignoredBuiltDependencies:
+  - unrs-resolver

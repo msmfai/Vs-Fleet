@@ -1,26 +1,92 @@
 {
   "name": "fleet-extension",
+  "displayName": "Fleet",
+  "description": "Fleet VS Code extension — live agent state across editor windows. Open-VSX-publishable, engine ^1.93.0.",
   "version": "0.1.0",
-  "description": "Fleet VS Code extension — Open-VSX-publishable, engine ^1.93.0 (S0 scaffold)",
-  "private": true,
+  "publisher": "fleet-team",
+  "license": "UNLICENSED",
   "engines": {
     "vscode": "^1.93.0"
   },
+  "categories": ["Other"],
+  "keywords": ["fleet", "agent", "ai", "codex", "claude"],
   "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "Fleet",
+      "properties": {
+        "fleet.hubWsUrl": {
+          "type": "string",
+          "default": "ws://127.0.0.1:51777",
+          "description": "Fleet Hub WebSocket URL. The extension connects here to report editor presence."
+        },
+        "fleet.hubUnixSocket": {
+          "type": "string",
+          "default": "",
+          "description": "Fleet Hub unix socket path (macOS/Linux fast path). If set, used instead of hubWsUrl."
+        },
+        "fleet.heartbeatIntervalMs": {
+          "type": "number",
+          "default": 10000,
+          "description": "Heartbeat interval in milliseconds."
+        },
+        "fleet.claude.allowDangerouslySkipPermissions": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "**Opt-in, dangerous.** When enabled, the Fleet `claude` shim prepends `--allow-dangerously-skip-permissions` so Claude does not prompt for tool permissions in shimmed integrated terminals. Off by default; Fleet never enables permission-skipping silently. Leave OFF unless you understand the risk."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "fleet.showStatus",
+        "title": "Fleet: Show Connection Status"
+      }
+    ]
+  },
   "scripts": {
     "build": "tsc --noEmit && tsc",
     "lint": "eslint src --ext ts",
-    "test": "echo 'no extension tests yet (EXTSKEL S8)' && exit 0",
+    "test": "jest --forceExit",
     "clean": "rm -rf out"
   },
+  "dependencies": {
+    "ws": "^8.21.0"
+  },
   "devDependencies": {
-    "@types/vscode": "^1.93.0",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20.0.0",
-    "typescript": "^5.4.0",
+    "@types/vscode": "^1.93.0",
+    "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
-    "eslint": "^8.57.0"
+    "eslint": "^8.57.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.11",
+    "typescript": "^5.4.0"
   },
-  "contributes": {},
-  "activationEvents": []
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "roots": [
+      "<rootDir>/src"
+    ],
+    "testMatch": [
+      "**/__tests__/**/*.test.ts"
+    ],
+    "moduleNameMapper": {
+      "^vscode$": "<rootDir>/src/__mocks__/vscode.ts"
+    },
+    "collectCoverageFrom": [
+      "src/**/*.ts",
+      "!src/__mocks__/**",
+      "!src/__tests__/**"
+    ],
+    "fakeTimers": {
+      "enableGlobally": false
+    }
+  }
 }

@@ -1,0 +1,8 @@
+{
+  "session_id": "0199f3aa-claude-session-1",
+  "transcript_path": "/Users/dev/.claude/projects/proj/0199f3aa-claude-session-1.jsonl",
+  "cwd": "/Users/dev/project",
+  "hook_event_name": "PermissionRequest",
+  "tool_name": "Bash",
+  "permission": "allow"
+}

@@ -1,0 +1,23 @@
+[package]
+name = "fleet-host-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Fleet host core — pure-Rust inbox view-model (snapshot+delta → InboxView) for the Tauri host face"
+
+[lib]
+name = "fleet_host_core"
+
+# A pure-Rust view-model: NO I/O, NO async, NO window/GUI glue. It consumes
+# protocol snapshots+deltas and projects them into an `InboxView` (PLAN S19,
+# WORK_GRAPH G3). The thin Tauri shell wraps this crate but lives elsewhere.
+[dependencies]
+fleet-protocol = { path = "../fleet-protocol" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+proptest = "1"
+serde_json = { workspace = true }

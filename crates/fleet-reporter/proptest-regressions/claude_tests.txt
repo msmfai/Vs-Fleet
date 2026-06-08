@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 64526e742068e67028019ef2e3381e6bc690da07745e9d52970180c56eca186c # shrinks to events = [ArbEvent { kind: Stop, done: true, stop_hook_active: false }, ArbEvent { kind: SubagentStop, done: false, stop_hook_active: false }]

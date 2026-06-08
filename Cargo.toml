@@ -5,6 +5,7 @@ members = [
     "crates/fleet-hub",
     "crates/fleet-reporter",
     "crates/fleet-cli",
+    "crates/fleet-host-core",
 ]
 
 [workspace.package]
