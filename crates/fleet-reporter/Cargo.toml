@@ -1,0 +1,33 @@
+[package]
+name = "fleet-reporter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Fleet Reporter — agent-side reporter library + binary"
+
+[lib]
+name = "fleet_reporter"
+
+[[bin]]
+name = "fleet-reporter"
+path = "src/main.rs"
+
+[dependencies]
+fleet-protocol = { path = "../fleet-protocol" }
+fleet-hub = { path = "../fleet-hub" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = "0.23"
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tokio-tungstenite = "0.23"
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }

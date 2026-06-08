@@ -1,0 +1,25 @@
+# Rust / Cargo
+target/
+Cargo.lock
+
+# Node / pnpm
+node_modules/
+packages/*/node_modules/
+packages/*/out/
+pnpm-lock.yaml
+
+# Editor / IDE
+.vscode/settings.json
+.idea/
+*.iml
+*.swp
+*.swo
+.DS_Store
+
+# Build artifacts
+dist/
+*.vsix
+
+# OS
+.DS_Store
+Thumbs.db

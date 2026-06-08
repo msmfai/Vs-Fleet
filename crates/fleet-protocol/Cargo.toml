@@ -1,0 +1,30 @@
+[package]
+name = "fleet-protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Fleet wire protocol types — JSON-serializable, schema-versioned, transport-agnostic"
+
+[lib]
+name = "fleet_protocol"
+
+[features]
+# `schema` pulls in schemars so the JSON Schema artifact can be generated and a
+# conformance test can validate it. Kept behind a feature so the wire types stay
+# dependency-light for downstream crates that only need serde.
+default = ["schema"]
+schema = ["dep:schemars"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+schemars = { version = "0.8", optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+proptest = "1"
+schemars = "0.8"
+jsonschema = "0.18"

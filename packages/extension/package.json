@@ -1,0 +1,26 @@
+{
+  "name": "fleet-extension",
+  "version": "0.1.0",
+  "description": "Fleet VS Code extension — Open-VSX-publishable, engine ^1.93.0 (S0 scaffold)",
+  "private": true,
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "main": "./out/extension.js",
+  "scripts": {
+    "build": "tsc --noEmit && tsc",
+    "lint": "eslint src --ext ts",
+    "test": "echo 'no extension tests yet (EXTSKEL S8)' && exit 0",
+    "clean": "rm -rf out"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.93.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0"
+  },
+  "contributes": {},
+  "activationEvents": []
+}
