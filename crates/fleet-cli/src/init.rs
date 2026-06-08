@@ -124,14 +124,17 @@ impl InitConfig {
     }
 
     /// The path to pass to hook commands for the reporter socket.
+    ///
+    /// Defers to [`fleet_protocol::default_reporter_socket`] — the single source
+    /// of truth shared with `fleet-reporter --serve` and the VS Code extension —
+    /// unless an explicit `reporter_socket` override is set (tests / custom
+    /// layouts). This guarantees the hooks we write target exactly the socket the
+    /// reporter binds.
     pub fn effective_reporter_socket(&self) -> PathBuf {
         if let Some(p) = &self.reporter_socket {
             return p.clone();
         }
-        if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
-            return PathBuf::from(xdg).join("fleet").join("reporter.sock");
-        }
-        std::env::temp_dir().join("fleet").join("reporter.sock")
+        fleet_protocol::default_reporter_socket()
     }
 }
 
@@ -163,10 +166,16 @@ fn build_claude_hooks(reporter_socket: &Path) -> serde_json::Value {
         serde_json::json!({
             "hooks": [{
                 "type": "command",
-                // Pass stdin (the hook payload) through to the relay via a
-                // shell pipeline; embed the socket path literally.
+                // Frame the hook payload as the reporter `--serve` receiver
+                // expects: one line of `"<agent-tag> <compact-json>\n"`. We strip
+                // any CR/LF from the payload (`tr -d '\r\n'`) so the whole JSON is
+                // exactly one line, prepend the `claude` agent tag (the payload
+                // shape alone can't disambiguate Claude vs Codex), and terminate
+                // with a newline. `nc -U` delivers it to the reporter socket;
+                // `|| true` keeps Claude's own flow alive on any relay error
+                // (observer-not-owner, PLAN §3 invariant 3).
                 "command": format!(
-                    "printf '%s' \"$(cat)\" | nc -U {socket_path} 2>/dev/null || true",
+                    "printf 'claude %s\\n' \"$(cat | tr -d '\\r\\n')\" | nc -U {socket_path} 2>/dev/null || true",
                 ),
                 "description": format!("fleet: relay {} to reporter", hook_type),
                 // The FLEET_MARKER tag lets `fleet init --check` / `fleet uninit`

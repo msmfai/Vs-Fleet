@@ -43,6 +43,7 @@
 pub mod commands;
 pub mod events;
 pub mod objects;
+pub mod paths;
 pub mod rollup;
 pub mod state;
 
@@ -64,6 +65,7 @@ pub use objects::{
     AgentKind, AgentRun, Editor, EditorKind, Extra, Location, LocationGlyph, LocationKind, Server,
     ServerKind, Session,
 };
+pub use paths::{default_reporter_socket, REPORTER_SOCKET_ENV};
 pub use state::{Confidence, State, Urgency};
 
 #[cfg(test)]

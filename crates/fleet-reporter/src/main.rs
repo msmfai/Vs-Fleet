@@ -8,10 +8,22 @@
 //!   `[--unix <path>]`     — Hub unix-socket fast path (`cfg(unix)` only)
 //!   `[--session-id <id>]` — durable session id to register under
 //!
+//! ## Serve mode (the hook-receiver — makes Fleet actually run)
+//!   `--serve [--ws <url>] [--unix <hub.sock>] [--socket <reporter.sock>]
+//!            [--session-id <id>]`
+//! Connects to the Hub (like real mode), then **binds the reporter socket** and
+//! listens for Claude/Codex hook payloads, turning each into Hub deltas via the
+//! detection adapters (see [`fleet_reporter::serve`]). The reporter socket
+//! defaults to [`fleet_protocol::default_reporter_socket`] — the same path
+//! `fleet init` writes hooks toward and the VS Code extension injects as
+//! `FLEET_REPORTER_SOCKET`. The window session id defaults to the
+//! `FLEET_SESSION_ID` the extension injects.
+//!
 //! ## Fake mode (S4)
 //!   `--fake [--ws <url>] [--delay-ms <ms>]` — scripted fake lifecycle
 //!   `--fake --unix <path>` — unix fast path (`cfg(unix)` only)
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -20,8 +32,9 @@ use fleet_protocol::{
     ServerKind, Session, State, SCHEMA_VERSION,
 };
 use fleet_reporter::{
-    FakeReporter, FakeReporterConfig, Reporter, ReporterConfig, Transport, WsConnector,
+    FakeReporter, FakeReporterConfig, Receiver, Reporter, ReporterConfig, Transport, WsConnector,
 };
+use tokio::sync::Mutex;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -38,7 +51,122 @@ async fn main() -> Result<()> {
         return run_fake(&args, &ws_url).await;
     }
 
+    if args.contains(&"--serve".to_string()) {
+        return run_serve(&args, ws_url).await;
+    }
+
     run_real(&args, ws_url).await
+}
+
+/// SERVE mode: connect to the Hub, register the window session, then bind the
+/// reporter socket and feed every hook payload through the detection adapters.
+async fn run_serve(args: &[String], ws_url: String) -> Result<()> {
+    // The window session id is injected by the VS Code extension as
+    // FLEET_SESSION_ID; `--session-id` overrides; otherwise a local fallback.
+    let session_id = flag_value(args, "--session-id")
+        .or_else(|| std::env::var("FLEET_SESSION_ID").ok())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "sess-local-window".into());
+
+    // The reporter socket to bind: `--socket`, else FLEET_REPORTER_SOCKET / the
+    // canonical default — the SAME path `fleet init` + the extension target.
+    let reporter_socket = flag_value(args, "--socket")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(fleet_protocol::default_reporter_socket);
+
+    // Connector to the HUB (note: `--unix` here is the *Hub* socket, distinct
+    // from the reporter socket we bind below).
+    let connector: Box<dyn fleet_reporter::Connector> = {
+        #[cfg(unix)]
+        {
+            if let Some(path) = flag_value(args, "--unix") {
+                Box::new(fleet_reporter::UnixConnector::new(
+                    std::path::PathBuf::from(path),
+                ))
+            } else {
+                Box::new(WsConnector::new(ws_url.clone()))
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            Box::new(WsConnector::new(ws_url.clone()))
+        }
+    };
+
+    let reporter = Reporter::new(ReporterConfig::new(&session_id), connector);
+    let (reporter, handle, rx) = reporter.with_channel();
+    let task = tokio::spawn(reporter.run(rx));
+
+    // Register the window session so the Hub (and faces) show it immediately,
+    // before any agent run arrives.
+    handle.upsert_session(window_session(&session_id));
+    info!(%session_id, socket = %reporter_socket.display(), "REPSERVE hook-receiver starting");
+
+    let receiver = Arc::new(Mutex::new(Receiver::new()));
+
+    // Race the accept loop against Ctrl-C so the binary shuts down cleanly.
+    let serve = fleet_reporter::serve_unix(reporter_socket.clone(), receiver, handle.clone());
+    tokio::select! {
+        res = serve => {
+            res?;
+        }
+        _ = tokio::signal::ctrl_c() => {
+            info!("interrupt received; shutting down hook-receiver");
+        }
+    }
+
+    // Best-effort: remove our socket file so we don't leave a stale path.
+    std::fs::remove_file(&reporter_socket).ok();
+    handle.shutdown();
+    // The reporter task owns the Hub link; give it a moment to flush, ignoring a
+    // join error on abrupt shutdown.
+    let _ = task.await;
+    Ok(())
+}
+
+/// The session shell for a VS Code editor window hosting agent terminals.
+fn window_session(id: &str) -> Session {
+    let mut s = window_session_base(id);
+    s.editor = Some(fleet_protocol::Editor {
+        kind: Some(fleet_protocol::EditorKind::Vscode),
+        focus_hint: Some(id.to_string()),
+        extra: Extra::new(),
+    });
+    s
+}
+
+fn window_session_base(id: &str) -> Session {
+    Session {
+        schema_version: SCHEMA_VERSION,
+        session_id: id.into(),
+        title: std::env::current_dir()
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "fleet window".into()),
+        location: Location {
+            kind: LocationKind::Local,
+            label: "laptop".into(),
+            glyph: LocationGlyph::Laptop,
+            attach_hint: None,
+            extra: Extra::new(),
+        },
+        editor: None,
+        server: Server {
+            kind: ServerKind::Local,
+            version: None,
+            extra: Extra::new(),
+        },
+        runs: vec![],
+        rollup_state: State::Idle,
+        rollup_urgency: None,
+        muted: false,
+        soloed: false,
+        unread: false,
+        tags: vec![],
+        policy: None,
+        updated_at: fleet_reporter::fake::now_iso8601(),
+        extra: Extra::new(),
+    }
 }
 
 /// REPCORE real mode: register a session + working run, then run the framework.
