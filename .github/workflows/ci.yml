@@ -48,7 +48,47 @@ jobs:
         run: cargo build --workspace --all-targets
 
       - name: cargo test
-        run: cargo test --workspace --all-targets
+        run: cargo test --workspace --all-targets --all-features
+
+  coverage:
+    name: Coverage (gate floor)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust + llvm-tools
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Cache Cargo registry + build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cov-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cov-
+
+      # Collect once, report several times (avoids re-instrumenting the build).
+      - name: Collect coverage
+        run: cargo llvm-cov --workspace --all-features --no-report
+
+      - name: Summary
+        run: cargo llvm-cov report --summary-only
+
+      # Phase-gate floors (WORK_GRAPH.md §3): workspace >= 80%, the G0-frozen
+      # protocol + hub contracts >= 85%.
+      - name: Enforce workspace floor (lines >= 80%)
+        run: cargo llvm-cov report --fail-under-lines 80
+
+      - name: Enforce protocol+hub floor (lines >= 85%)
+        run: cargo llvm-cov report --package fleet-protocol --package fleet-hub --fail-under-lines 85
 
   pnpm:
     name: pnpm (${{ matrix.os }})

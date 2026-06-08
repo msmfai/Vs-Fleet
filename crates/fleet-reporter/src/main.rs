@@ -28,7 +28,7 @@ async fn main() -> Result<()> {
     }
 
     // Parse optional flags.
-    let ws_url = flag_value(&args, "--ws").unwrap_or_else(|| "ws://127.0.0.1:7703".into());
+    let ws_url = flag_value(&args, "--ws").unwrap_or_else(|| "ws://127.0.0.1:51777".into());
     let delay_ms: u64 = flag_value(&args, "--delay-ms")
         .and_then(|v| v.parse().ok())
         .unwrap_or(200);
