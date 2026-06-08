@@ -7,12 +7,13 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header>
+    <header data-tauri-drag-region>
       <span class="brand">Fleet</span>
       <span id="status" class="status">connecting…</span>
+      <button id="spawn" class="spawn" title="New Server">+</button>
     </header>
-    <main id="inbox">
-      <p class="empty">No sessions yet.</p>
+    <main id="rail">
+      <p class="empty">No servers configured.</p>
     </main>
     <script src="main.js"></script>
   </body>

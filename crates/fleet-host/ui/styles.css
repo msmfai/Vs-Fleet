@@ -1,10 +1,12 @@
 :root {
-  --bg: #0f1115;
-  --panel: #171a21;
-  --panel-hi: #1e2230;
+  --bg: #0d0f14;
+  --panel: #161a22;
+  --panel-hi: #1d222e;
+  --sel: #232a3a;
+  --line: #000;
   --text: #e6e9ef;
   --muted: #8a91a0;
-  --blue: #2563eb;
+  --faint: #5b6270;
   --working: #3b82f6;
   --waiting: #f59e0b;
   --idle: #6b7280;
@@ -23,71 +25,104 @@ html, body {
   font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-user-select: none;
   user-select: none;
+  overflow-y: auto;
 }
 
 header {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  padding: 10px 14px;
-  border-bottom: 1px solid #000;
+  /* Top inset clears the macOS traffic lights overlaid on the rail; this strip
+     is the window drag handle (the editor's top is VS Code's own toolbar). */
+  padding: 30px 13px 11px 13px;
+  border-bottom: 1px solid var(--line);
   background: var(--panel);
   position: sticky;
   top: 0;
+  z-index: 1;
 }
+.brand { font-weight: 800; letter-spacing: 0.5px; font-size: 14px; }
 
-.brand { font-weight: 700; letter-spacing: 0.4px; }
+.spawn {
+  margin-left: auto;
+  width: 22px; height: 22px;
+  border: 1px solid var(--faint);
+  background: transparent; color: var(--text);
+  border-radius: 6px; cursor: pointer;
+  font-size: 15px; line-height: 1; padding: 0;
+}
+.spawn:hover { background: var(--panel-hi); border-color: var(--muted); }
 
-.status { font-size: 11px; color: var(--muted); }
-.status.connected { color: var(--done); }
+.close {
+  border: none; background: transparent; color: var(--faint);
+  cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px;
+  opacity: 0; transition: opacity 0.1s;
+}
+.srv:hover .close { opacity: 1; }
+.close:hover { color: var(--error); }
+
+.status { font-size: 10.5px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.status.connected::before { background: var(--done); }
+.status.waiting { color: var(--waiting); }
+.status.waiting::before { background: var(--waiting); animation: pulse 1.4s infinite; }
 .status.disconnected { color: var(--error); }
+.status.disconnected::before { background: var(--error); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 
-main { padding: 8px; }
+main { padding: 6px; }
+.empty { color: var(--faint); text-align: center; margin-top: 40px; font-size: 12px; }
 
-.empty { color: var(--muted); text-align: center; margin-top: 40px; }
-
-.tab {
+.srv {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 11px;
-  margin: 5px 0;
-  background: var(--panel);
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 10px;
+  margin: 4px 0;
+  background: transparent;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-left: 3px solid var(--idle);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.1s;
 }
-.tab:hover { background: var(--panel-hi); }
-.tab.attention { border-color: var(--waiting); }
-.tab.muted { opacity: 0.5; }
+.srv:hover { background: var(--panel); }
+.srv.selected { background: var(--sel); border-color: rgba(255,255,255,0.06); }
 
-.glyph {
-  font-size: 15px;
-  width: 18px;
-  text-align: center;
+.srv.working { border-left-color: var(--working); }
+.srv.waiting { border-left-color: var(--waiting); }
+.srv.idle    { border-left-color: var(--idle); }
+.srv.done    { border-left-color: var(--done); }
+.srv.error   { border-left-color: var(--error); }
+.srv.dead    { border-left-color: var(--dead); opacity: 0.6; }
+.srv.attention { border-color: rgba(245,158,11,0.5); background: rgba(245,158,11,0.07); }
+
+.srv.pending { opacity: 0.9; }
+.glyph.spinner {
+  width: 12px; height: 12px;
+  border: 2px solid var(--faint);
+  border-top-color: var(--working);
+  border-radius: 50%;
+  display: inline-block;
+  animation: spin 0.8s linear infinite;
+  margin: 2px 1px 0;
 }
-.tab.working .glyph { color: var(--working); }
-.tab.waiting .glyph { color: var(--waiting); }
-.tab.idle    .glyph { color: var(--idle); }
-.tab.done    .glyph { color: var(--done); }
-.tab.error   .glyph { color: var(--error); }
-.tab.dead    .glyph { color: var(--dead); }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.glyph { font-size: 14px; width: 15px; text-align: center; line-height: 1.4; }
+.srv.working .glyph { color: var(--working); }
+.srv.waiting .glyph { color: var(--waiting); }
+.srv.idle    .glyph { color: var(--idle); }
+.srv.done    .glyph { color: var(--done); }
+.srv.dead    .glyph { color: var(--dead); }
 
 .body { flex: 1; min-width: 0; }
-.title {
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sub { font-size: 11px; color: var(--muted); display: flex; gap: 8px; }
+.label { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sub { margin-top: 2px; }
+.preview { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.preview.muted { color: var(--faint); }
+.srv.waiting .preview { color: #f3c163; }
 
-.badge {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--panel-hi);
-  color: var(--muted);
-}
-.badge.attention { background: var(--waiting); color: #1a1300; }
-.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--blue); }
-.dot.hidden { visibility: hidden; }
+.right { display: flex; align-items: center; min-width: 12px; padding-top: 2px; }
+.badge { font-size: 10px; font-weight: 700; color: #1a1300; background: var(--waiting); padding: 1px 6px; border-radius: 999px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--working); box-shadow: 0 0 0 3px rgba(59,130,246,0.18); }

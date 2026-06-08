@@ -40,6 +40,9 @@ pub struct RenderedTab {
     pub soloed: bool,
     pub unread: bool,
     pub run_count: usize,
+    /// The rolled-up run's last message — the inbox preview line (what Claude
+    /// said on idle/done, "Approve …?" on waiting). `None` when absent.
+    pub last_message: Option<String>,
 }
 
 fn state_label(s: TabState) -> &'static str {
@@ -69,6 +72,7 @@ fn render_tab(t: &SessionTab) -> RenderedTab {
         soloed: t.soloed,
         unread: t.unread,
         run_count: t.run_count,
+        last_message: t.last_message.clone(),
     }
 }
 
@@ -147,6 +151,16 @@ mod tests {
         assert_eq!(t.agent, "claude");
         assert_eq!(r.waiting_count, 1);
         assert!(r.connected);
+    }
+
+    #[test]
+    fn surfaces_the_rolled_up_run_last_message_as_preview() {
+        let mut model = InboxModel::new();
+        let mut s = session_with_run("s1", "main", State::Idle);
+        s.runs[0].last_message = Some("All tests pass.".into());
+        model.apply(Event::snapshot(vec![s]));
+        let r = render(&model.view(), true);
+        assert_eq!(r.tabs[0].last_message.as_deref(), Some("All tests pass."));
     }
 
     #[test]

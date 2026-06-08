@@ -13,13 +13,21 @@
 //!   for every live update. The static frontend (no bundler — `withGlobalTauri`)
 //!   invokes `get_inbox` then `listen("inbox", …)`.
 
+mod bridge;
 mod hub_client;
+mod mux;
 mod render;
+mod spawn;
 
 use std::sync::{Arc, Mutex};
 
 use render::RenderedInbox;
+use tauri::Manager;
 use tracing_subscriber::EnvFilter;
+
+/// Fixed loopback port for the command-bridge WS server, so each code-server can
+/// be launched with `FLEET_BRIDGE_URL=ws://127.0.0.1:<this>` before Fleet starts.
+const BRIDGE_PORT: u16 = 51778;
 
 /// The webview's initial pull of current inbox state (live updates arrive via the
 /// `inbox` event). App-defined command — not gated by the v2 capability ACL.
@@ -40,23 +48,73 @@ fn main() {
         .unwrap_or_else(|| "ws://127.0.0.1:51777".to_string());
 
     let shared: hub_client::Shared = Arc::new(Mutex::new(RenderedInbox::default()));
+    let registry = bridge::BridgeRegistry::new();
 
     tauri::Builder::default()
         .manage(shared.clone())
-        .invoke_handler(tauri::generate_handler![get_inbox])
+        .manage(mux::MuxState::new())
+        .manage(registry.clone())
+        .manage(spawn::ServerSupervisor::new(BRIDGE_PORT))
+        .invoke_handler(tauri::generate_handler![
+            get_inbox,
+            mux::get_servers,
+            mux::selected_server,
+            mux::select_server,
+            mux::spawn_server,
+            mux::close_server
+        ])
+        .on_menu_event(|app, event| {
+            let id = event.id().as_ref();
+            if id == "spawn:new" {
+                if let Some(sup) = app.try_state::<spawn::ServerSupervisor>() {
+                    let _ = sup.spawn();
+                }
+            } else if id == "spawn:close-current" {
+                if let (Some(sup), Some(mux)) = (
+                    app.try_state::<spawn::ServerSupervisor>(),
+                    app.try_state::<mux::MuxState>(),
+                ) {
+                    if let Some(active) = mux.selected.lock().ok().and_then(|g| g.clone()) {
+                        sup.close(&active);
+                    }
+                }
+            } else if let Some(server_id) = id.strip_prefix("server:") {
+                mux::select(app, server_id.to_string());
+            } else if let Some(command) = id.strip_prefix("cmd:") {
+                // Forward a VS Code command to the active server's bridge.
+                if let (Some(mux), Some(reg)) = (
+                    app.try_state::<mux::MuxState>(),
+                    app.try_state::<bridge::BridgeRegistry>(),
+                ) {
+                    if let Some(active) = mux.selected.lock().ok().and_then(|g| g.clone()) {
+                        reg.send_command(&active, command);
+                    }
+                }
+            }
+        })
         .setup(move |app| {
             let handle = app.handle().clone();
+            let bridge_handle = app.handle().clone();
             let shared = shared.clone();
             let ws_url = ws_url.clone();
-            // The Hub link lives on its own thread with its own tokio runtime so
-            // Tauri owns the main thread for the window event loop.
+            let registry = registry.clone();
+            // The Hub link + the command-bridge / phone-home server share one
+            // background runtime so Tauri owns the main thread for the event loop.
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
-                    .expect("build hub-link runtime");
-                rt.block_on(hub_client::run(handle, shared, ws_url));
+                    .expect("build background runtime");
+                rt.block_on(async move {
+                    if let Err(e) = bridge::serve(bridge_handle, registry, BRIDGE_PORT).await {
+                        tracing::error!(error = %e, "bridge server failed to bind");
+                    }
+                    hub_client::run(handle, shared, ws_url).await;
+                });
             });
+
+            mux::build_window(app)?;
+            mux::build_menu(app)?;
             Ok(())
         })
         .run(tauri::generate_context!())
