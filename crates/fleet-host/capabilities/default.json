@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability for the main Fleet window: core defaults (event listen, window, app) so the static frontend can receive inbox updates.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

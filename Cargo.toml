@@ -8,6 +8,12 @@ members = [
     "crates/fleet-host-core",
     "crates/fleet-e2e",
 ]
+# fleet-host is the Tauri GUI app. It is a STANDALONE crate (its own workspace),
+# deliberately excluded from this workspace so `cargo build --workspace` in CI
+# (which also runs on Linux) never builds the native webview stack — Tauri on
+# Linux needs webkit2gtk/pkg-config the portable test matrix does not install.
+# The host app is a macOS GUI, built and run separately on macOS.
+exclude = ["crates/fleet-host"]
 
 [workspace.package]
 version = "0.1.0"

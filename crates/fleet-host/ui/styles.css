@@ -1,0 +1,93 @@
+:root {
+  --bg: #0f1115;
+  --panel: #171a21;
+  --panel-hi: #1e2230;
+  --text: #e6e9ef;
+  --muted: #8a91a0;
+  --blue: #2563eb;
+  --working: #3b82f6;
+  --waiting: #f59e0b;
+  --idle: #6b7280;
+  --done: #22c55e;
+  --error: #ef4444;
+  --dead: #4b5563;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid #000;
+  background: var(--panel);
+  position: sticky;
+  top: 0;
+}
+
+.brand { font-weight: 700; letter-spacing: 0.4px; }
+
+.status { font-size: 11px; color: var(--muted); }
+.status.connected { color: var(--done); }
+.status.disconnected { color: var(--error); }
+
+main { padding: 8px; }
+
+.empty { color: var(--muted); text-align: center; margin-top: 40px; }
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  margin: 5px 0;
+  background: var(--panel);
+  border: 1px solid transparent;
+  border-radius: 9px;
+}
+.tab:hover { background: var(--panel-hi); }
+.tab.attention { border-color: var(--waiting); }
+.tab.muted { opacity: 0.5; }
+
+.glyph {
+  font-size: 15px;
+  width: 18px;
+  text-align: center;
+}
+.tab.working .glyph { color: var(--working); }
+.tab.waiting .glyph { color: var(--waiting); }
+.tab.idle    .glyph { color: var(--idle); }
+.tab.done    .glyph { color: var(--done); }
+.tab.error   .glyph { color: var(--error); }
+.tab.dead    .glyph { color: var(--dead); }
+
+.body { flex: 1; min-width: 0; }
+.title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sub { font-size: 11px; color: var(--muted); display: flex; gap: 8px; }
+
+.badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--panel-hi);
+  color: var(--muted);
+}
+.badge.attention { background: var(--waiting); color: #1a1300; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--blue); }
+.dot.hidden { visibility: hidden; }
