@@ -1,12 +1,13 @@
-//! Server supervisor — Fleet **spawns** new code-servers (and closes ones it
+//! Server supervisor — Fleet **spawns** new VS Code web servers (and closes ones it
 //! spawned). A spawned server is launched with the phone-home env, so it dials
 //! Fleet's bridge and appears in the rail on its own — Fleet never pulls it.
 //!
 //! Launches Microsoft's official **VS Code** web server (`code serve-web`) with a SHARED
-//! `--extensions-dir` (the `fleet-bridge` installed once) and a PER-SERVER
-//! `--server-data-dir` (so concurrent servers don't collide). (Was code-server; switched
-//! to the official server for the full MS Marketplace + clean aarch64-darwin packaging —
-//! fine for personal / own-hardware use; see NORTH_STAR on the licensing line.)
+//! `fleet-bridge` extension install and a PER-SERVER `--server-data-dir` (so concurrent
+//! servers don't collide). `serve-web` reads extensions from `<server-data-dir>/extensions`,
+//! so Fleet installs the bridge there before launch. (Was code-server; switched to the
+//! official server for the full MS Marketplace + clean aarch64-darwin packaging — fine for
+//! personal / own-hardware use; see NORTH_STAR on the licensing line.)
 //!
 //! Each server also gets the **agent-state pipeline** so its rail tab reflects a
 //! running agent:
@@ -17,7 +18,7 @@
 //!     lifecycle payload to that socket. So `claude` in the server's terminal
 //!     lights up its tab (working / waiting / idle) with zero user setup.
 //!
-//! Env knobs: `FLEET_EDITOR_BIN`, `FLEET_EDITOR_EXTENSIONS_DIR`,
+//! Env knobs: `FLEET_EDITOR_BIN`, `FLEET_BRIDGE_VSIX`,
 //! `FLEET_REPORTER_BIN`, `FLEET_CLAUDE_BIN`.
 //!
 //! ## Spawn modes
@@ -84,7 +85,7 @@ impl ServerSupervisor {
         }
     }
 
-    /// Spawn a new code-server (+ its reporter + claude shim) and record it.
+    /// Spawn a new VS Code web server (+ its reporter + claude shim) and record it.
     /// Returns its [`Server`]; Fleet adds it to the rail immediately.
     fn spawn_local(&self) -> std::io::Result<crate::mux::Server> {
         let n = self.counter.fetch_add(1, Ordering::SeqCst);
@@ -135,13 +136,10 @@ impl ServerSupervisor {
             .map_err(|e| tracing::warn!(%id, error = %e, "claude shim not installed"))
             .ok();
 
-        // --- the editor: code-server --------------------------------------------
-        // NOTE: `code serve-web` has NO `--extensions-dir`; the fleet-bridge extension
-        // (observe/act + rail registration) must be installed into the served VS Code
-        // Server's extensions another way (e.g. `code --install-extension <vsix>`) — this
-        // is an open item for the serve-web swap (the rail won't register without it).
+        // --- the editor: VS Code serve-web --------------------------------------
         let user_data = base.join(format!("cs-userdata-{id}"));
         let editor = std::env::var("FLEET_EDITOR_BIN").unwrap_or_else(|_| "code".into());
+        install_fleet_bridge(&editor, &user_data)?;
         let url = format!("http://127.0.0.1:{port}/?folder={}", folder.display());
         let (cs_out, cs_err) = log_files(&format!("cs-{id}"));
 
@@ -152,9 +150,14 @@ impl ServerSupervisor {
             _ => shim_dir.display().to_string(),
         };
 
-        // The SAME code-server flags + Fleet phone-home env the SSH path uses, so a
+        // The SAME serve-web flags + Fleet phone-home env the SSH path uses, so a
         // local and a remote server are launched identically (only the location differs).
-        let args = serve_web_args("127.0.0.1", port, &user_data.to_string_lossy(), &folder.to_string_lossy());
+        let args = serve_web_args(
+            "127.0.0.1",
+            port,
+            &user_data.to_string_lossy(),
+            &folder.to_string_lossy(),
+        );
         let env = fleet_env(
             &reporter_socket.to_string_lossy(),
             &id,
@@ -169,7 +172,7 @@ impl ServerSupervisor {
         let child = cmd.stdout(cs_out).stderr(cs_err).spawn()?;
         children.push(child);
 
-        tracing::info!(%id, port, "spawned code-server + reporter");
+        tracing::info!(%id, port, "spawned VS Code serve-web + reporter");
         let server = crate::mux::Server {
             id: id.clone(),
             label: id.clone(),
@@ -318,9 +321,18 @@ impl ServerSupervisor {
         // The SAME invocation as local — bound to the remote loopback; the bridge dials
         // the -R bridge tunnel back to Fleet.
         let args = serve_web_args("127.0.0.1", r_cs, &remote_userdata, &remote_ws);
-        let env = fleet_env(&remote_sock, &id, &format!("ws://127.0.0.1:{r_bridge}"), &url);
+        let env = fleet_env(
+            &remote_sock,
+            &id,
+            &format!("ws://127.0.0.1:{r_bridge}"),
+            &url,
+        );
 
-        let env_str = env.iter().map(|(k, v)| format!("{k}={}", shq(v))).collect::<Vec<_>>().join(" ");
+        let env_str = env
+            .iter()
+            .map(|(k, v)| format!("{k}={}", shq(v)))
+            .collect::<Vec<_>>()
+            .join(" ");
         let args_str = args.iter().map(|a| shq(a)).collect::<Vec<_>>().join(" ");
         // Workspace: clone FLEET_SPAWN_REPO into the remote workspace (repo-as-workspace),
         // else just create it. Then reporter (background, dials the -R hub tunnel) +
@@ -353,12 +365,18 @@ impl ServerSupervisor {
         let (out, err) = log_files(&format!("ssh-{id}"));
         let child = Command::new("ssh")
             .args([
-                "-o", "ExitOnForwardFailure=yes",
-                "-o", "ServerAliveInterval=15",
-                "-o", "ServerAliveCountMax=3",
-                "-L", &format!("{local_editor}:127.0.0.1:{r_cs}"),
-                "-R", &format!("{r_hub}:127.0.0.1:{local_hub}"),
-                "-R", &format!("{r_bridge}:127.0.0.1:{local_bridge}"),
+                "-o",
+                "ExitOnForwardFailure=yes",
+                "-o",
+                "ServerAliveInterval=15",
+                "-o",
+                "ServerAliveCountMax=3",
+                "-L",
+                &format!("{local_editor}:127.0.0.1:{r_cs}"),
+                "-R",
+                &format!("{r_hub}:127.0.0.1:{local_hub}"),
+                "-R",
+                &format!("{r_bridge}:127.0.0.1:{local_bridge}"),
                 &target,
                 &remote_cmd,
             ])
@@ -372,7 +390,10 @@ impl ServerSupervisor {
             label: format!("{id} @ {target}"),
             url,
         };
-        self.children.lock().unwrap().insert(id.clone(), vec![child]);
+        self.children
+            .lock()
+            .unwrap()
+            .insert(id.clone(), vec![child]);
         self.servers.lock().unwrap().push(server.clone());
         Ok(server)
     }
@@ -452,6 +473,103 @@ fn inspect_url(docker: &str, name: &str) -> Option<String> {
         return None;
     }
     Some(format!("http://127.0.0.1:{host_port}/"))
+}
+
+/// Install the Fleet bridge VSIX into the extension store that `code serve-web`
+/// actually reads: `<server-data-dir>/extensions`. This is intentionally tied to
+/// the per-server data dir, because `serve-web` ignores the desktop/user extension
+/// store when `--server-data-dir` is set.
+fn install_fleet_bridge(editor: &str, server_data: &Path) -> std::io::Result<()> {
+    let extensions_dir = fleet_bridge_extensions_dir(server_data);
+    if fleet_bridge_installed(&extensions_dir) {
+        return Ok(());
+    }
+
+    std::fs::create_dir_all(&extensions_dir)?;
+    let vsix = find_fleet_bridge_vsix().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "fleet-bridge VSIX not found (set FLEET_BRIDGE_VSIX or bundle fleet-bridge.vsix)",
+        )
+    })?;
+
+    let out = Command::new(editor)
+        .arg("--install-extension")
+        .arg(&vsix)
+        .arg("--extensions-dir")
+        .arg(&extensions_dir)
+        .arg("--force")
+        .output()?;
+    if out.status.success() {
+        tracing::info!(extensions_dir = %extensions_dir.display(), "installed fleet-bridge extension");
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let detail = if stderr.is_empty() { stdout } else { stderr };
+    Err(std::io::Error::other(format!(
+        "failed to install fleet-bridge extension with `{editor}`: {detail}"
+    )))
+}
+
+fn fleet_bridge_extensions_dir(server_data: &Path) -> PathBuf {
+    server_data.join("extensions")
+}
+
+fn fleet_bridge_installed(extensions_dir: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(extensions_dir) else {
+        return false;
+    };
+    entries.filter_map(Result::ok).any(|entry| {
+        entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.starts_with("fleet-team.fleet-bridge-"))
+    })
+}
+
+fn find_fleet_bridge_vsix() -> Option<PathBuf> {
+    if let Ok(path) = std::env::var("FLEET_BRIDGE_VSIX") {
+        let path = PathBuf::from(path);
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+
+    let mut dirs = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            dirs.push(exe_dir.to_path_buf());
+            if let Some(contents_dir) = exe_dir.parent() {
+                dirs.push(contents_dir.join("Resources"));
+            }
+        }
+    }
+    dirs.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/fleet-bridge"));
+
+    for dir in dirs {
+        let named = dir.join("fleet-bridge.vsix");
+        if named.is_file() {
+            return Some(named);
+        }
+        if let Some(found) = first_vsix_in(&dir) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn first_vsix_in(dir: &Path) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("vsix"))
+        })
 }
 
 /// Install a `claude` shim in `shim_dir` that wraps the real `claude` with a
@@ -561,7 +679,12 @@ fn serve_web_args(host: &str, port: u16, server_data: &str, default_folder: &str
 /// `FLEET_BRIDGE_URL`, the reporter writes `FLEET_REPORTER_SOCKET`, and the rail tab is
 /// keyed by `FLEET_SERVER_ID`/`FLEET_SESSION_ID`. Identical keys for local and remote;
 /// only the values (paths/ports) differ by location.
-fn fleet_env(reporter_socket: &str, id: &str, bridge_url: &str, server_url: &str) -> Vec<(String, String)> {
+fn fleet_env(
+    reporter_socket: &str,
+    id: &str,
+    bridge_url: &str,
+    server_url: &str,
+) -> Vec<(String, String)> {
     vec![
         ("FLEET_REPORTER_SOCKET".into(), reporter_socket.into()),
         ("FLEET_SESSION_ID".into(), id.into()),
@@ -616,16 +739,34 @@ mod tests {
 
     #[test]
     fn resolve_repo_shorthands_prefer_github_then_gitlab() {
-        assert_eq!(resolve_repo("owner/repo"), "https://github.com/owner/repo.git");
-        assert_eq!(resolve_repo("gh:owner/repo"), "https://github.com/owner/repo.git");
-        assert_eq!(resolve_repo("gl:owner/repo"), "https://gitlab.com/owner/repo.git");
-        assert_eq!(resolve_repo("owner/repo.git"), "https://github.com/owner/repo.git");
+        assert_eq!(
+            resolve_repo("owner/repo"),
+            "https://github.com/owner/repo.git"
+        );
+        assert_eq!(
+            resolve_repo("gh:owner/repo"),
+            "https://github.com/owner/repo.git"
+        );
+        assert_eq!(
+            resolve_repo("gl:owner/repo"),
+            "https://gitlab.com/owner/repo.git"
+        );
+        assert_eq!(
+            resolve_repo("owner/repo.git"),
+            "https://github.com/owner/repo.git"
+        );
     }
 
     #[test]
     fn resolve_repo_full_urls_pass_through() {
-        assert_eq!(resolve_repo("https://github.com/o/r.git"), "https://github.com/o/r.git");
-        assert_eq!(resolve_repo("git@github.com:o/r.git"), "git@github.com:o/r.git");
+        assert_eq!(
+            resolve_repo("https://github.com/o/r.git"),
+            "https://github.com/o/r.git"
+        );
+        assert_eq!(
+            resolve_repo("git@github.com:o/r.git"),
+            "git@github.com:o/r.git"
+        );
         assert_eq!(resolve_repo("ssh://git@host/o/r"), "ssh://git@host/o/r");
     }
 
@@ -640,5 +781,27 @@ mod tests {
     fn ws_port_parses_with_or_without_trailing_slash() {
         assert_eq!(ws_port("ws://127.0.0.1:51777"), Some(51777));
         assert_eq!(ws_port("ws://127.0.0.1:51777/"), Some(51777));
+    }
+
+    #[test]
+    fn bridge_extensions_dir_lives_under_server_data() {
+        assert_eq!(
+            fleet_bridge_extensions_dir(Path::new("/tmp/fleet-server-data")),
+            PathBuf::from("/tmp/fleet-server-data/extensions")
+        );
+    }
+
+    #[test]
+    fn bridge_installed_detects_fleet_bridge_directory() {
+        let dir = std::env::temp_dir().join(format!(
+            "fleet-bridge-installed-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("fleet-team.fleet-bridge-0.2.0")).unwrap();
+
+        assert!(fleet_bridge_installed(&dir));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

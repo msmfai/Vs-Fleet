@@ -15,6 +15,7 @@ PROFILE="${1:-release}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 APP="$HERE/Fleet.app"
 BIN="$HERE/target/$PROFILE/fleet-host"
+BRIDGE_VSIX="$HERE/../../packages/fleet-bridge/fleet-bridge-0.2.0.vsix"
 
 echo "building fleet-host ($PROFILE)..."
 if [ "$PROFILE" = "release" ]; then
@@ -28,6 +29,11 @@ echo "assembling $APP..."
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/fleet-host"
+if [ -f "$BRIDGE_VSIX" ]; then
+  cp "$BRIDGE_VSIX" "$APP/Contents/Resources/fleet-bridge.vsix"
+else
+  echo "warning: fleet-bridge VSIX not found at $BRIDGE_VSIX"
+fi
 
 # Convert the PNG icon to .icns (best-effort; the app still runs without it).
 ICON_LINE=""
