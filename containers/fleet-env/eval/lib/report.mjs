@@ -1,7 +1,8 @@
 // Reporter — console + JSON (§3.5 frozen schema) + JUnit XML + self-contained HTML
 // (screenshots embedded as base64 data-URIs). Track A shipped the console+JSON stub;
 // Track F (this file) ADDS the XML/HTML emitters. The JSON shape is unchanged so all
-// emitters consume the same Report object.
+// emitters consume the same Report object. The review HTML is a screenshot-first
+// artifact for human inspection; eval.html remains the row-oriented CI report.
 //
 //   { run: {startedAt,image,scenarios:N,behaviours:M},
 //     results: [ {scenario,behaviour,pass,detail,evidence,machineDelta,
@@ -250,11 +251,145 @@ ${rows}
     console.log(`[eval] wrote HTML report → ${path}`);
   }
 
+  // ─── Screenshot review page ────────────────────────────────────────────────
+  // One self-contained page for flicking through captured screens with the row's
+  // detail, rationale, provenance, and evidence beside the image.
+  toReviewHTML() {
+    const s = this.summary();
+    const shots = [];
+    for (const r of this.results) {
+      for (const p of Array.isArray(r.screenshots) ? r.screenshots : []) {
+        shots.push({ row: r, path: p });
+      }
+    }
+    const cards = shots.map((it, i) => this._reviewShot(it.row, it.path, i, shots.length)).join("\n");
+    const empty = shots.length ? "" : `<section class="empty">
+  <h2>No screenshots captured</h2>
+  <p>This run produced result rows, but none of them had a readable screenshot path.</p>
+</section>`;
+
+    return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fleet screenshot review — ${escHtml(this.run.startedAt)}</title>
+<style>
+  :root { color-scheme: dark; --bg: #101214; --panel: #171b20; --line: #303741; --text: #eceff1; --muted: #aeb7c2; --ok: #49c172; --bad: #f05b5b; --warn: #e4bd4f; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 18px; background: rgba(16, 18, 20, 0.96); border-bottom: 1px solid var(--line); }
+  h1 { margin: 0; font-size: 16px; font-weight: 700; }
+  .meta { color: var(--muted); font-size: 12px; }
+  .counts { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .pill { border: 1px solid var(--line); border-radius: 999px; padding: 3px 8px; font-size: 12px; color: var(--muted); }
+  .pill.pass { color: var(--ok); } .pill.fail { color: var(--bad); } .pill.skip { color: var(--warn); }
+  main { scroll-snap-type: y proximity; }
+  .shot { min-height: calc(100vh - 49px); scroll-snap-align: start; display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; padding: 18px; border-bottom: 1px solid var(--line); }
+  .frame { min-width: 0; display: flex; align-items: center; justify-content: center; background: #0a0c0e; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .frame img { display: block; max-width: 100%; max-height: calc(100vh - 88px); object-fit: contain; }
+  .context { align-self: start; max-height: calc(100vh - 88px); overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px; }
+  .kicker { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  h2 { margin: 0 0 6px; font-size: 17px; line-height: 1.25; }
+  .id { color: var(--muted); overflow-wrap: anywhere; }
+  .status { display: inline-block; margin: 10px 0; border-radius: 999px; padding: 3px 8px; font-weight: 700; font-size: 12px; border: 1px solid var(--line); }
+  .status.pass { color: var(--ok); } .status.fail, .status.error { color: var(--bad); } .status.skip { color: var(--warn); }
+  dl { display: grid; grid-template-columns: 96px 1fr; gap: 6px 10px; margin: 10px 0 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  pre { margin: 0; padding: 10px; background: #0c0f12; border-radius: 4px; overflow: auto; white-space: pre-wrap; font-size: 12px; }
+  code { background: #0c0f12; border-radius: 4px; padding: 1px 4px; }
+  .empty { padding: 32px; color: var(--muted); }
+  @media (max-width: 900px) {
+    header { position: static; align-items: flex-start; flex-direction: column; }
+    .shot { grid-template-columns: 1fr; }
+    .context { max-height: none; }
+    .frame img { max-height: 70vh; }
+  }
+</style></head>
+<body>
+<header>
+  <div>
+    <h1>Fleet screenshot review</h1>
+    <div class="meta">${shots.length} screenshot(s) · image <code>${escHtml(this.run.image)}</code> · started ${escHtml(this.run.startedAt)} · ${(s.durationMs / 1000).toFixed(1)}s</div>
+  </div>
+  <div class="counts">
+    <span class="pill pass">${s.pass} pass</span>
+    <span class="pill fail">${s.fail} fail</span>
+    <span class="pill skip">${s.skipped} skip</span>
+  </div>
+</header>
+<main>
+${cards}
+${empty}
+</main>
+<script>
+(() => {
+  const shots = [...document.querySelectorAll(".shot")];
+  const nearest = () => shots.reduce((best, el) => {
+    const d = Math.abs(el.getBoundingClientRect().top);
+    return !best || d < best.d ? { el, d } : best;
+  }, null)?.el;
+  window.addEventListener("keydown", (ev) => {
+    const keys = ["ArrowDown", "ArrowRight", "PageDown", " ", "j", "ArrowUp", "ArrowLeft", "PageUp", "k"];
+    if (!keys.includes(ev.key)) return;
+    const at = Math.max(0, shots.indexOf(nearest()));
+    const dir = ["ArrowUp", "ArrowLeft", "PageUp", "k"].includes(ev.key) ? -1 : 1;
+    const next = shots[Math.min(shots.length - 1, Math.max(0, at + dir))];
+    if (next) { ev.preventDefault(); next.scrollIntoView({ block: "start" }); }
+  });
+})();
+</script>
+</body></html>
+`;
+  }
+
+  _reviewShot(r, path, index, total) {
+    const uri = imgDataURI(path);
+    const cls = statusClass(r);
+    const label = statusLabel(r);
+    const p = provLabel(r.provenance);
+    const evidence = r.evidence && Object.keys(r.evidence).length
+      ? `<dt>evidence</dt><dd><pre>${escHtml(JSON.stringify(r.evidence, null, 2))}</pre></dd>`
+      : "";
+    const rationale = r.rationale
+      ? `<dt>look for</dt><dd><pre>${escHtml(String(r.rationale).trim())}</pre></dd>`
+      : "";
+    const image = uri
+      ? `<img src="${uri}" alt="${escHtml(baseName(path))}">`
+      : `<p class="id">missing screenshot: ${escHtml(path)}</p>`;
+    return `<section class="shot" id="shot-${index + 1}">
+  <div class="frame">${image}</div>
+  <aside class="context">
+    <div class="kicker">${index + 1} / ${total} · ${escHtml(baseName(path))}</div>
+    <h2>${escHtml(r.title || r.behaviour || "(unnamed)")}</h2>
+    <div class="id">${escHtml(r.scenario || "")}${r.scenarioTitle ? " · " + escHtml(r.scenarioTitle) : ""}</div>
+    <div class="id">${escHtml(r.behaviour || "")}</div>
+    <div class="status ${cls}">${label}</div>
+    <dl>
+      ${r.detail ? `<dt>happened</dt><dd>${escHtml(r.detail)}</dd>` : ""}
+      ${r.error ? `<dt>error</dt><dd>${escHtml(String(r.error))}</dd>` : ""}
+      ${r.skipped ? `<dt>skipped</dt><dd>${escHtml(String(r.skipped))}</dd>` : ""}
+      ${p ? `<dt>changed</dt><dd><code>${escHtml(p)}</code>${r.provenance?.file ? ` ${escHtml(r.provenance.file)}` : ""}</dd>` : ""}
+      ${r.timingsMs ? `<dt>timing</dt><dd><code>${escHtml(JSON.stringify(r.timingsMs))}</code></dd>` : ""}
+      ${r.machineDelta && Object.keys(r.machineDelta).length ? `<dt>machine</dt><dd><code>${escHtml(JSON.stringify(r.machineDelta))}</code></dd>` : ""}
+      ${rationale}
+      ${evidence}
+    </dl>
+  </aside>
+</section>`;
+  }
+
+  writeReviewHTML(path) {
+    writeFileSync(path, this.toReviewHTML());
+    console.log(`[eval] wrote screenshot review → ${path}`);
+  }
+
   // Write all configured artifacts at once. Paths default off; pass what you want.
-  writeAll({ json, junit, html } = {}) {
+  writeAll({ json, junit, html, review } = {}) {
     if (json) this.writeJSON(json);
     if (junit) this.writeJUnit(junit);
     if (html) this.writeHTML(html);
+    if (review) this.writeReviewHTML(review);
   }
 
   // Console epilogue + exit-code signal. Unexpected = fail or error (not skip).
@@ -266,6 +401,7 @@ ${rows}
     if (process.env.FLEET_EVAL_JSON) this.writeJSON(process.env.FLEET_EVAL_JSON);
     if (process.env.FLEET_EVAL_JUNIT) this.writeJUnit(process.env.FLEET_EVAL_JUNIT);
     if (process.env.FLEET_EVAL_HTML) this.writeHTML(process.env.FLEET_EVAL_HTML);
+    if (process.env.FLEET_EVAL_REVIEW) this.writeReviewHTML(process.env.FLEET_EVAL_REVIEW);
     this._summarizeUnexpected();
     console.log(`\n[eval] RESULT: ${s.pass} pass, ${s.fail} fail, ${s.skipped} skipped` +
       ` (${s.durationMs}ms)`);
@@ -316,6 +452,18 @@ function xmlEscapeText(s) {
 }
 
 function baseName(p) { return String(p).split("/").pop(); }
+
+function statusClass(r) {
+  if (r.skipped) return "skip";
+  if (r.error) return "error";
+  return r.pass ? "pass" : "fail";
+}
+
+function statusLabel(r) {
+  if (r.skipped) return "SKIP";
+  if (r.error) return "ERROR";
+  return r.pass ? "PASS" : "FAIL";
+}
 
 // "[commit·date]" provenance label (registry stamps {commit,date,file} per test).
 function provLabel(p) {
