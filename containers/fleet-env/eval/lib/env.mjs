@@ -37,6 +37,7 @@ export class Env {
     this.page = null;
     this.bootError = null; // set when reset fails in an expected-failure scenario
     this.claudeAuthed = false; // true once the container's claude can authenticate
+    this._screenshots = [];
   }
 
   // Inject claude auth into the running container so agent.* behaviours can run.
@@ -190,7 +191,14 @@ export class Env {
     const path = `${OUT}/${this.id}-${tag}.png`;
     if (!this.page) return path;
     await this.page.screenshot({ path });
+    this._screenshots.push(path);
     return path;
+  }
+
+  drainScreenshots() {
+    const paths = this._screenshots;
+    this._screenshots = [];
+    return [...new Set(paths)];
   }
 
   // §3.2: ALWAYS cleans up — browser then container — swallowing errors.

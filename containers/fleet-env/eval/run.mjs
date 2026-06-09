@@ -120,9 +120,12 @@ function missingCaps(env, needs) {
 
 // ─── Run one behaviour against an env, building the §3.5 result row ──────────
 async function runBehaviour(env, scenario, behaviour) {
+  env.drainScreenshots?.();
   const row = {
     scenario: scenario.id,
+    scenarioTitle: scenario.title || "",
     behaviour: behaviour.id,
+    title: behaviour.title || "",
     pass: false,
     detail: "",
     // Provenance for one-glance interrogation of a break: what/why + when it last changed.
@@ -151,20 +154,22 @@ async function runBehaviour(env, scenario, behaviour) {
       row.detail = res.detail || "";
       if (res.evidence) row.evidence = res.evidence;
       row.timingsMs = { effect: effectMs };
-      return row;
+    } else {
+      row.pass = !!res.pass;
+      row.detail = res.detail || "";
+      if (res.evidence) row.evidence = res.evidence;
+      row.machineDelta = machineDelta(before, after);
+      row.timingsMs = { effect: effectMs };
     }
-    row.pass = !!res.pass;
-    row.detail = res.detail || "";
-    if (res.evidence) row.evidence = res.evidence;
-    row.machineDelta = machineDelta(before, after);
-    row.timingsMs = { effect: effectMs };
-    // Screenshots the behaviour captured via observe(tag) land in OUT keyed by tag.
-    const shot = await env.screenshot(`${behaviour.id}.result`).catch(() => null);
-    if (shot) row.screenshots = [shot];
   } catch (e) {
     row.error = e?.message || String(e);
     row.timingsMs = { effect: Date.now() - tAct0 };
   }
+  // Screenshots captured via observe(tag), behaviour-owned env.screenshot(tag),
+  // and this final result frame are all attached to the row for review artifacts.
+  await env.screenshot(`${behaviour.id}.result`).catch(() => null);
+  const shots = env.drainScreenshots?.() || [];
+  if (shots.length) row.screenshots = shots;
   return row;
 }
 
@@ -236,7 +241,8 @@ async function bootOrReport(env, scenario, behaviours, reporter) {
       // included so the (otherwise un-run) cell is still interrogable in the report.
       for (const b of behaviours) {
         reporter.add({
-          scenario: scenario.id, behaviour: b.id, pass: true,
+          scenario: scenario.id, scenarioTitle: scenario.title || "",
+          behaviour: b.id, title: b.title || "", pass: true,
           detail: `boot-failed-as-expected (expectBoot:${expect}): ${env.bootError}`,
           ...provFor(b),
         });
@@ -245,7 +251,8 @@ async function bootOrReport(env, scenario, behaviours, reporter) {
       // Report each intended behaviour as an error so the matrix stays accountable.
       for (const b of behaviours) {
         reporter.add({
-          scenario: scenario.id, behaviour: b.id, pass: false,
+          scenario: scenario.id, scenarioTitle: scenario.title || "",
+          behaviour: b.id, title: b.title || "", pass: false,
           error: `env boot failed: ${env.bootError}`,
           ...provFor(b),
         });

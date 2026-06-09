@@ -85,6 +85,7 @@ All land in `$(OUT)` (default `/tmp/fleet-eval`, override with `OUT=` or
 | `eval.json` | the §3.5 result schema (machine-readable; the source of truth) |
 | `eval.xml`  | **JUnit XML** — one `<testsuite>` per scenario, one `<testcase>` per row; CI (GitLab/GitHub/Jenkins) ingests this for pass/fail/skip + per-test timing |
 | `eval.html` | **self-contained HTML** — screenshots embedded as base64 data-URIs, so it opens anywhere (including a CI artifact viewer) with no external assets; failures auto-expanded |
+| `index.html` | **screenshot review page** — screenshot-first, keyboard-scrollable gallery with the row detail, rationale, provenance, machineΔ, timings, and evidence beside each image |
 | `*.png`     | per-behaviour before/after screenshots (also embedded into the HTML) |
 
 The console stream shows live `PASS / FAIL / SKIP / ERROR` per cell with the
@@ -100,6 +101,7 @@ emit them from a bare `node run.mjs` invocation, set those env vars yourself:
 ```bash
 FLEET_EVAL_JUNIT=/tmp/fleet-eval/eval.xml \
 FLEET_EVAL_HTML=/tmp/fleet-eval/eval.html \
+FLEET_EVAL_REVIEW=/tmp/fleet-eval/index.html \
   node run.mjs --parallel 6 --json /tmp/fleet-eval/eval.json
 ```
 
@@ -107,7 +109,8 @@ FLEET_EVAL_HTML=/tmp/fleet-eval/eval.html \
 
 `make eval` is the single entrypoint: it produces all three reports, GCs orphan
 containers, and exits non-zero on unexpected failures. Point your CI at `eval.xml`
-for the test report and publish `eval.html` as a browsable artifact. Use
+for the test report and publish `eval.html` plus `index.html` as browsable
+artifacts. Use
 `RETRIES=1`–`2` in CI to absorb the occasional published-port flap (`PLAN.md §8`)
 without going red on a genuinely-passing behaviour.
 

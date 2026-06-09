@@ -9,8 +9,8 @@
 #   make gc                    remove orphan eval containers + dangling images
 #   make clean                 gc + wipe the artifacts dir
 #
-# Reports land in $(OUT): eval.json (§3.5), eval.xml (JUnit), eval.html (screenshots
-# embedded). run.mjs auto-emits XML/HTML via FLEET_EVAL_JUNIT / FLEET_EVAL_HTML and
+# Reports land in $(OUT): eval.json (§3.5), eval.xml (JUnit), eval.html (row report),
+# index.html (screenshot review). run.mjs auto-emits XML/HTML via FLEET_EVAL_* and
 # the JSON via --json. Exit code is non-zero on any unexpected fail/error.
 
 SHELL      := /bin/bash
@@ -44,11 +44,13 @@ endif
 JSON  := $(OUT)/eval.json
 JUNIT := $(OUT)/eval.xml
 HTML  := $(OUT)/eval.html
+REVIEW := $(OUT)/index.html
 
 # Exported so run.mjs's Reporter.finish() emits the XML/HTML without extra flags.
 export FLEET_EVAL_OUT   := $(OUT)
 export FLEET_EVAL_JUNIT := $(JUNIT)
 export FLEET_EVAL_HTML  := $(HTML)
+export FLEET_EVAL_REVIEW := $(REVIEW)
 
 .PHONY: eval list soak gc clean reports help install
 
@@ -76,7 +78,7 @@ eval:
 	  if [ $$rc -eq 0 ]; then echo "[make] retry passed — treating prior failures as flaky"; fi; \
 	done; \
 	$(MAKE) --no-print-directory gc; \
-	echo "[make] reports → $(JSON)  $(JUNIT)  $(HTML)"; \
+	echo "[make] reports → $(JSON)  $(JUNIT)  $(HTML)  $(REVIEW)"; \
 	exit $$rc
 
 # Run the matrix ROUNDS times back-to-back (stability + leak hunting). Stops on the
@@ -93,7 +95,7 @@ list:
 	@$(NODE) run.mjs --list
 
 reports:
-	@echo "$(JSON)"; echo "$(JUNIT)"; echo "$(HTML)"
+	@echo "$(JSON)"; echo "$(JUNIT)"; echo "$(HTML)"; echo "$(REVIEW)"
 
 # Garbage-collect: kill/remove any leftover eval containers (name fleet-eval-*) and
 # prune dangling images. Safe to run anytime; never touches non-eval containers.
