@@ -90,12 +90,33 @@ impl ServerSupervisor {
         let port = free_port()?;
 
         let base = std::env::temp_dir().join("fleet-mux");
+        let _ = std::fs::create_dir_all(&base);
         let folder = base.join(format!("ws-{id}"));
-        let _ = std::fs::create_dir_all(&folder);
-        let _ = std::fs::write(
-            folder.join(format!("{id}.md")),
-            format!("# {id}\n\nSpawned by Fleet at port {port}.\nRun `claude` in the terminal — this tab will light up.\n"),
-        );
+        // The workspace is either a fresh clone of FLEET_SPAWN_REPO (repo-as-workspace,
+        // the north-star ergonomic) or an empty folder with a hint file.
+        match std::env::var("FLEET_SPAWN_REPO") {
+            Ok(spec) if !spec.trim().is_empty() => {
+                let url = resolve_repo(&spec);
+                let ok = Command::new("git")
+                    .args(["clone", "--depth", "1", &url, &folder.to_string_lossy()])
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false);
+                if ok {
+                    tracing::info!(%id, %url, "cloned repo into workspace");
+                } else {
+                    tracing::warn!(%id, %url, "git clone failed; using an empty workspace");
+                    let _ = std::fs::create_dir_all(&folder);
+                }
+            }
+            _ => {
+                let _ = std::fs::create_dir_all(&folder);
+                let _ = std::fs::write(
+                    folder.join(format!("{id}.md")),
+                    format!("# {id}\n\nSpawned by Fleet at port {port}.\nRun `claude` in the terminal — this tab will light up.\n"),
+                );
+            }
+        }
 
         // --- agent-state pipeline: a per-server reporter + a claude shim ---------
         let reporter_socket = base.join(format!("reporter-{id}.sock"));
@@ -302,14 +323,24 @@ impl ServerSupervisor {
 
         let env_str = env.iter().map(|(k, v)| format!("{k}={}", shq(v))).collect::<Vec<_>>().join(" ");
         let args_str = args.iter().map(|a| shq(a)).collect::<Vec<_>>().join(" ");
-        // Reporter (background, dials the -R hub tunnel) then code-server (foreground);
-        // an EXIT trap reaps the reporter when ssh drops.
+        // Workspace: clone FLEET_SPAWN_REPO into the remote workspace (repo-as-workspace),
+        // else just create it. Then reporter (background, dials the -R hub tunnel) +
+        // code-server (foreground); an EXIT trap reaps the reporter when ssh drops.
+        let ws_prep = match std::env::var("FLEET_SPAWN_REPO") {
+            Ok(spec) if !spec.trim().is_empty() => format!(
+                "git clone --depth 1 {} {} 2>/dev/null || mkdir -p {};",
+                shq(&resolve_repo(&spec)),
+                shq(&remote_ws),
+                shq(&remote_ws)
+            ),
+            _ => format!("mkdir -p {};", shq(&remote_ws)),
+        };
         let remote_cmd = format!(
-            "mkdir -p {ws} {exts} {ud} 2>/dev/null; rm -f {sock}; \
+            "{ws_prep} mkdir -p {exts} {ud} 2>/dev/null; rm -f {sock}; \
              {rep} --serve --ws ws://127.0.0.1:{rhub} --socket {sock} --session-id {id} >/tmp/fleet-rep-{id}.log 2>&1 & \
              RPID=$!; trap 'kill $RPID 2>/dev/null' EXIT INT TERM; \
              env {env} {ed} {args}; kill $RPID 2>/dev/null",
-            ws = shq(&remote_ws),
+            ws_prep = ws_prep,
             exts = shq(&remote_exts),
             ud = shq(&remote_userdata),
             sock = shq(&remote_sock),
@@ -547,6 +578,22 @@ fn ws_port(url: &str) -> Option<u16> {
     url.rsplit(':').next()?.trim_end_matches('/').parse().ok()
 }
 
+/// Resolve a repo spec to a clone URL. Full URLs (`https://…`, `git@…`, `ssh://…`) pass
+/// through. Shorthands prefer GitHub then GitLab: `owner/repo` / `gh:owner/repo` →
+/// GitHub, `gl:owner/repo` → GitLab. (Auth is left to the user's existing git creds —
+/// ssh keys / credential helper — exactly like a normal `git clone`.)
+fn resolve_repo(spec: &str) -> String {
+    let s = spec.trim();
+    if s.contains("://") || s.starts_with("git@") {
+        return s.to_string();
+    }
+    if let Some(r) = s.strip_prefix("gl:") {
+        return format!("https://gitlab.com/{}.git", r.trim_end_matches(".git"));
+    }
+    let r = s.strip_prefix("gh:").unwrap_or(s).trim_end_matches(".git");
+    format!("https://github.com/{r}.git")
+}
+
 /// `(stdout, stderr)` redirected to `<temp>/fleet-mux/<name>.log` so spawned
 /// processes are debuggable (falls back to null if the file can't be created).
 fn log_files(name: &str) -> (Stdio, Stdio) {
@@ -556,5 +603,38 @@ fn log_files(name: &str) -> (Stdio, Stdio) {
     match std::fs::File::create(&path).and_then(|f| Ok((f.try_clone()?, f))) {
         Ok((out, err)) => (Stdio::from(out), Stdio::from(err)),
         Err(_) => (Stdio::null(), Stdio::null()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_repo_shorthands_prefer_github_then_gitlab() {
+        assert_eq!(resolve_repo("owner/repo"), "https://github.com/owner/repo.git");
+        assert_eq!(resolve_repo("gh:owner/repo"), "https://github.com/owner/repo.git");
+        assert_eq!(resolve_repo("gl:owner/repo"), "https://gitlab.com/owner/repo.git");
+        assert_eq!(resolve_repo("owner/repo.git"), "https://github.com/owner/repo.git");
+    }
+
+    #[test]
+    fn resolve_repo_full_urls_pass_through() {
+        assert_eq!(resolve_repo("https://github.com/o/r.git"), "https://github.com/o/r.git");
+        assert_eq!(resolve_repo("git@github.com:o/r.git"), "git@github.com:o/r.git");
+        assert_eq!(resolve_repo("ssh://git@host/o/r"), "ssh://git@host/o/r");
+    }
+
+    #[test]
+    fn shq_single_quotes_and_escapes() {
+        assert_eq!(shq("simple"), "'simple'");
+        assert_eq!(shq("a b"), "'a b'");
+        assert_eq!(shq("it's"), "'it'\\''s'");
+    }
+
+    #[test]
+    fn ws_port_parses_with_or_without_trailing_slash() {
+        assert_eq!(ws_port("ws://127.0.0.1:51777"), Some(51777));
+        assert_eq!(ws_port("ws://127.0.0.1:51777/"), Some(51777));
     }
 }
