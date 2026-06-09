@@ -32,6 +32,26 @@ showing it the moment it's ready and its agent's state pinging you when it needs
 
 ---
 
+## Scope — locked now (dogfooding)
+
+The end-state above is the destination, not the current build. **Right now the scope is
+deliberately `local` + *existing* `ssh`, kept extensible** — enough to dogfood Fleet as a
+daily driver for keeping one's own local (and existing-remote) VS Code sessions organised
+and multiplexed. Cloud provisioning is **deferred** until the local+SSH experience is good
+enough to live in.
+
+- **In scope now**: spawn / switch / close local code-servers; deploy to an existing SSH
+  host you already reach; the rail (multiplex + organise); agent-state; repo-as-workspace.
+- **Kept extensible, not built**: the spawn seam (`SpawnMode` + the one-shared-invocation
+  deploy) stays clean so a `Provider` layer + cloud backends slot in later — but **no cloud
+  code until we've earned it by dogfooding**.
+- **Out of scope now**: provisioning machines, OS/image selection, cloud APIs/credentials.
+
+The bar is *"I use this every day instead of raw VS Code windows,"* not *"it can spin up a
+Hetzner box."*
+
+---
+
 ## Architecture — the through-lines (don't lock these off)
 
 **One spawn, many locations.** A server is launched by *one* invocation
@@ -84,16 +104,21 @@ the user's existing git credentials.
 - **Assumption**: the host / provisioned machine already has `code-server` (and the
   fleet stack). Fleet doesn't ship the editor binary.
 
-## Roadmap toward the north star
+## Roadmap
 
-1. **Git integration** — spawn takes a repo (GitHub/GitLab), clones it into the
-   workspace home. Composes with every provider. *(near-term, testable locally)*
-2. **Provider abstraction** — generalize `SpawnMode` → a `Provider` trait; SSH stays
-   the deploy primitive underneath.
-3. **Cloud providers** — Hetzner / DigitalOcean / AWS: provision a box → SSH target →
+**Now — make local + existing SSH dogfoodable (the locked scope):**
+1. ✅ **Git integration** — repo-as-workspace (`FLEET_SPAWN_REPO`), local + SSH.
+2. **Daily-driver polish** — reliable spawn / switch / close; the rail as a real
+   *organiser* (sensible labels, the agent-state ping that actually fires); deploy to an
+   existing SSH host you already reach; close cleans up (no ghost tabs/processes).
+
+**Later — deferred until the above is lived-in:**
+3. **Provider abstraction** — generalize `SpawnMode` → a `Provider` trait (the extensible
+   seam); SSH stays the deploy primitive underneath.
+4. **Cloud providers** — Hetzner / DigitalOcean / AWS: provision a box → SSH target →
    existing deploy + call-home.
-4. **OS/image selection** — container vs bare-metal NixOS, driven by `cluster-bootstrap`.
-5. **One-gesture flow** — pick repo + provider + OS → a live workspace that phones home.
+5. **OS/image selection** — container vs bare-metal NixOS, driven by `cluster-bootstrap`.
+6. **One-gesture flow** — pick repo + provider + OS → a live workspace that phones home.
 
 ---
 
