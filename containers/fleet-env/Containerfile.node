@@ -1,0 +1,33 @@
+# Fleet environment image — NODE variant (Track G, §7 `+node` scenario).
+#
+# FROM the base fleet-env image so it inherits everything already proven:
+# code-server (Open-VSX) + Claude Code + fleet-bridge + fleet-reporter + the claude
+# hook-wrapper + workspace-trust disabled. We add the Node/TypeScript toolchain and
+# a matching Open-VSX language extension so the diagnostics/format behaviours (§6)
+# have a language server to drive.
+#
+# NOTE: the base image already installs `nodejs`/`npm` (needed for Claude Code), so
+# the JS/TS language service that ships with code-server is already live; ESLint
+# adds the lint diagnostics that the §6 behaviours assert on.
+#
+# Build (do NOT run here — integration/build-variants.sh does it):
+#   docker build -t fleet-env-node:latest \
+#     -f containers/fleet-env/Containerfile.node containers/fleet-env
+#
+# Scenarios target this via `scenario.image: "fleet-env-node:latest"`.
+
+FROM fleet-env:latest
+
+# Toolchain: TypeScript + ESLint available on PATH so lint/format behaviours have a
+# real binary to run. (node/npm are inherited from the base image.)
+USER root
+RUN npm install -g typescript eslint
+
+USER coder
+# The Open-VSX ESLint extension surfaces lint diagnostics in the editor. The
+# built-in TS/JS language service handles syntax diagnostics. Workspace trust is
+# already disabled by the base image so the extension activates headless.
+RUN code-server --install-extension dbaeumer.vscode-eslint
+
+ENV FLEET_LANG=node
+ENTRYPOINT ["/usr/local/bin/fleet-entrypoint.sh"]
