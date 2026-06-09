@@ -117,6 +117,10 @@ export class Env {
     return r;
   }
 
+  // Fire a command without awaiting a reply — for commands whose executeCommand
+  // promise doesn't resolve headlessly. Verify the effect via observe().
+  fire(command, args = []) { this.hub.fire(this.id, { type: "command", id: command, args }); }
+
   // §3.2: raw bridge round-trip for §3.3 actions/queries. Throws on explicit !ok.
   async request(msg) {
     const r = await this.hub.request(this.id, msg);

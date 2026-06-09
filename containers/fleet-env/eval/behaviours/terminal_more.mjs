@@ -94,8 +94,10 @@ export const behaviours = [
       await env.act("workbench.action.terminal.new");
       await sleep(2000);
       const opened = await env.observe("terminal.kill.opened");
-      await env.act("workbench.action.terminal.kill");
-      await sleep(2000);
+      // kill's executeCommand promise doesn't resolve headlessly — fire it and
+      // verify the effect via observation rather than blocking on a reply.
+      env.fire("workbench.action.terminal.kill");
+      await sleep(2500);
       const after = await env.observe("terminal.kill.after");
       return {
         pass: opened.vscode.terminalCount >= 1 && after.vscode.terminalCount < opened.vscode.terminalCount,
