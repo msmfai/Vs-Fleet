@@ -54,7 +54,7 @@ fn main() {
         .manage(shared.clone())
         .manage(mux::MuxState::new())
         .manage(registry.clone())
-        .manage(spawn::ServerSupervisor::new(BRIDGE_PORT))
+        .manage(spawn::ServerSupervisor::new(BRIDGE_PORT, ws_url.clone()))
         .invoke_handler(tauri::generate_handler![
             get_inbox,
             mux::get_servers,
@@ -115,6 +115,19 @@ fn main() {
 
             mux::build_window(app)?;
             mux::build_menu(app)?;
+
+            // Test harness hook: auto-spawn N servers on startup so an integration
+            // test can drive Fleet without clicking (`FLEET_AUTOSPAWN=n`).
+            if let Some(n) = std::env::var("FLEET_AUTOSPAWN")
+                .ok()
+                .and_then(|s| s.parse::<usize>().ok())
+            {
+                if let Some(sup) = app.try_state::<spawn::ServerSupervisor>() {
+                    for _ in 0..n {
+                        let _ = sup.spawn();
+                    }
+                }
+            }
             Ok(())
         })
         .run(tauri::generate_context!())
