@@ -77,6 +77,7 @@ impl ServerSupervisor {
     pub fn spawn(&self) -> std::io::Result<crate::mux::Server> {
         match spawn_mode() {
             SpawnMode::Container => self.spawn_container(),
+            SpawnMode::Ssh => self.spawn_ssh(),
             SpawnMode::Local => self.spawn_local(),
         }
     }
@@ -126,33 +127,26 @@ impl ServerSupervisor {
             _ => shim_dir.display().to_string(),
         };
 
-        let child = Command::new(&editor)
-            .args([
-                "--bind-addr",
-                &format!("127.0.0.1:{port}"),
-                "--auth",
-                "none",
-                "--disable-telemetry",
-                "--disable-update-check",
-                "--extensions-dir",
-                &exts_dir,
-                "--user-data-dir",
-                &user_data.to_string_lossy(),
-                &folder.to_string_lossy(),
-            ])
-            .env("PATH", path)
-            .env("FLEET_REPORTER_SOCKET", &reporter_socket)
-            .env("FLEET_SESSION_ID", &id)
-            .env(
-                "FLEET_BRIDGE_URL",
-                format!("ws://127.0.0.1:{}", self.bridge_port),
-            )
-            .env("FLEET_SERVER_ID", &id)
-            .env("FLEET_SERVER_LABEL", &id)
-            .env("FLEET_SERVER_URL", &url)
-            .stdout(cs_out)
-            .stderr(cs_err)
-            .spawn()?;
+        // The SAME code-server flags + Fleet phone-home env the SSH path uses, so a
+        // local and a remote server are launched identically (only the location differs).
+        let args = code_server_args(
+            &format!("127.0.0.1:{port}"),
+            &exts_dir,
+            &user_data.to_string_lossy(),
+            &folder.to_string_lossy(),
+        );
+        let env = fleet_env(
+            &reporter_socket.to_string_lossy(),
+            &id,
+            &format!("ws://127.0.0.1:{}", self.bridge_port),
+            &url,
+        );
+        let mut cmd = Command::new(&editor);
+        cmd.args(&args).env("PATH", path);
+        for (k, v) in &env {
+            cmd.env(k, v);
+        }
+        let child = cmd.stdout(cs_out).stderr(cs_err).spawn()?;
         children.push(child);
 
         tracing::info!(%id, port, "spawned code-server + reporter");
@@ -261,6 +255,99 @@ impl ServerSupervisor {
         Ok(server)
     }
 
+    /// Deploy a server to a **remote SSH host** (`FLEET_SSH_TARGET`, e.g. `user@host`)
+    /// by running the EXACT SAME code-server + reporter invocation as `spawn_local`,
+    /// but over `ssh` with tunnels so the deployed server can call home:
+    ///   - `-L <local>:127.0.0.1:<remote cs>`     the editor surface, reachable locally;
+    ///   - `-R <remote hub>:127.0.0.1:<Hub>`       the reporter dials home → the Hub;
+    ///   - `-R <remote bridge>:127.0.0.1:<bridge>` the bridge dials home → Fleet's rail.
+    ///
+    /// The remote must already have `code-server` (with the fleet-bridge extension in
+    /// `FLEET_REMOTE_EXTENSIONS_DIR`) and `fleet-reporter` available — knobs:
+    /// `FLEET_REMOTE_EDITOR_BIN`, `FLEET_REMOTE_REPORTER_BIN`, `FLEET_REMOTE_EXTENSIONS_DIR`.
+    /// Closing the server kills the ssh process, tearing down the tunnels and (via
+    /// SIGHUP + an EXIT trap) the remote code-server + reporter.
+    fn spawn_ssh(&self) -> std::io::Result<crate::mux::Server> {
+        let target = std::env::var("FLEET_SSH_TARGET")
+            .map_err(|_| std::io::Error::other("FLEET_SSH_TARGET not set (e.g. user@host)"))?;
+        let n = self.counter.fetch_add(1, Ordering::SeqCst);
+        let id = format!("server-{n}");
+
+        // local_editor is free on THIS host; the remote ports are bound on the remote
+        // by ssh's tunnels (ExitOnForwardFailure makes a collision fail loudly).
+        let local_editor = free_port()?;
+        let r_cs = 18000 + (n as u16 % 1000);
+        let r_hub = 19000 + (n as u16 % 1000);
+        let r_bridge = 20000 + (n as u16 % 1000);
+        let local_hub = ws_port(&self.hub_url).unwrap_or(51777);
+        let local_bridge = self.bridge_port;
+
+        // Remote paths, relative to the ssh login home.
+        let remote_ws = format!(".fleet/ws-{id}");
+        let remote_sock = format!("/tmp/fleet-reporter-{id}.sock");
+        let remote_exts =
+            std::env::var("FLEET_REMOTE_EXTENSIONS_DIR").unwrap_or_else(|_| ".fleet/cs-exts".into());
+        let remote_userdata = format!(".fleet/cs-userdata-{id}");
+        let remote_editor =
+            std::env::var("FLEET_REMOTE_EDITOR_BIN").unwrap_or_else(|_| "code-server".into());
+        let remote_reporter =
+            std::env::var("FLEET_REMOTE_REPORTER_BIN").unwrap_or_else(|_| "fleet-reporter".into());
+
+        // The editor surface is reached locally through the -L tunnel.
+        let url = format!("http://127.0.0.1:{local_editor}/");
+        // The SAME invocation as local — bound to the remote loopback; the bridge dials
+        // the -R bridge tunnel back to Fleet.
+        let args = code_server_args(&format!("127.0.0.1:{r_cs}"), &remote_exts, &remote_userdata, &remote_ws);
+        let env = fleet_env(&remote_sock, &id, &format!("ws://127.0.0.1:{r_bridge}"), &url);
+
+        let env_str = env.iter().map(|(k, v)| format!("{k}={}", shq(v))).collect::<Vec<_>>().join(" ");
+        let args_str = args.iter().map(|a| shq(a)).collect::<Vec<_>>().join(" ");
+        // Reporter (background, dials the -R hub tunnel) then code-server (foreground);
+        // an EXIT trap reaps the reporter when ssh drops.
+        let remote_cmd = format!(
+            "mkdir -p {ws} {exts} {ud} 2>/dev/null; rm -f {sock}; \
+             {rep} --serve --ws ws://127.0.0.1:{rhub} --socket {sock} --session-id {id} >/tmp/fleet-rep-{id}.log 2>&1 & \
+             RPID=$!; trap 'kill $RPID 2>/dev/null' EXIT INT TERM; \
+             env {env} {ed} {args}; kill $RPID 2>/dev/null",
+            ws = shq(&remote_ws),
+            exts = shq(&remote_exts),
+            ud = shq(&remote_userdata),
+            sock = shq(&remote_sock),
+            rep = shq(&remote_reporter),
+            rhub = r_hub,
+            id = id,
+            env = env_str,
+            ed = shq(&remote_editor),
+            args = args_str,
+        );
+
+        let (out, err) = log_files(&format!("ssh-{id}"));
+        let child = Command::new("ssh")
+            .args([
+                "-o", "ExitOnForwardFailure=yes",
+                "-o", "ServerAliveInterval=15",
+                "-o", "ServerAliveCountMax=3",
+                "-L", &format!("{local_editor}:127.0.0.1:{r_cs}"),
+                "-R", &format!("{r_hub}:127.0.0.1:{local_hub}"),
+                "-R", &format!("{r_bridge}:127.0.0.1:{local_bridge}"),
+                &target,
+                &remote_cmd,
+            ])
+            .stdout(out)
+            .stderr(err)
+            .spawn()?;
+
+        tracing::info!(%id, %target, local_editor, r_cs, "deployed code-server over ssh");
+        let server = crate::mux::Server {
+            id: id.clone(),
+            label: format!("{id} @ {target}"),
+            url,
+        };
+        self.children.lock().unwrap().insert(id.clone(), vec![child]);
+        self.servers.lock().unwrap().push(server.clone());
+        Ok(server)
+    }
+
     /// Close (kill) a Fleet-spawned server — its code-server AND reporter (local
     /// mode), or its container (`docker rm -f`, container mode) — and drop it from
     /// the rail.
@@ -293,16 +380,19 @@ impl ServerSupervisor {
     }
 }
 
-/// Which launch path `spawn()` takes. `FLEET_SPAWN_MODE=container` opts into Docker;
-/// anything else (incl. unset) keeps the default local-process path.
+/// Which launch path `spawn()` takes. `FLEET_SPAWN_MODE=container` opts into Docker,
+/// `=ssh` deploys to the remote in `FLEET_SSH_TARGET`; anything else (incl. unset)
+/// keeps the default local-process path.
 enum SpawnMode {
     Local,
     Container,
+    Ssh,
 }
 
 fn spawn_mode() -> SpawnMode {
     match std::env::var("FLEET_SPAWN_MODE").as_deref() {
         Ok("container") => SpawnMode::Container,
+        Ok("ssh") => SpawnMode::Ssh,
         _ => SpawnMode::Local,
     }
 }
@@ -412,6 +502,49 @@ fn claude_hooks_settings(reporter_socket: &Path) -> serde_json::Value {
 fn free_port() -> std::io::Result<u16> {
     let l = std::net::TcpListener::bind("127.0.0.1:0")?;
     Ok(l.local_addr()?.port())
+}
+
+/// The code-server flags Fleet launches with — identical for local and remote spawns,
+/// so a server behaves the same wherever it runs.
+fn code_server_args(bind: &str, exts_dir: &str, user_data: &str, folder: &str) -> Vec<String> {
+    vec![
+        "--bind-addr".into(),
+        bind.into(),
+        "--auth".into(),
+        "none".into(),
+        "--disable-telemetry".into(),
+        "--disable-update-check".into(),
+        "--extensions-dir".into(),
+        exts_dir.into(),
+        "--user-data-dir".into(),
+        user_data.into(),
+        folder.into(),
+    ]
+}
+
+/// The Fleet phone-home env every spawned editor carries: the bridge dials
+/// `FLEET_BRIDGE_URL`, the reporter writes `FLEET_REPORTER_SOCKET`, and the rail tab is
+/// keyed by `FLEET_SERVER_ID`/`FLEET_SESSION_ID`. Identical keys for local and remote;
+/// only the values (paths/ports) differ by location.
+fn fleet_env(reporter_socket: &str, id: &str, bridge_url: &str, server_url: &str) -> Vec<(String, String)> {
+    vec![
+        ("FLEET_REPORTER_SOCKET".into(), reporter_socket.into()),
+        ("FLEET_SESSION_ID".into(), id.into()),
+        ("FLEET_BRIDGE_URL".into(), bridge_url.into()),
+        ("FLEET_SERVER_ID".into(), id.into()),
+        ("FLEET_SERVER_LABEL".into(), id.into()),
+        ("FLEET_SERVER_URL".into(), server_url.into()),
+    ]
+}
+
+/// POSIX single-quote a string for safe interpolation into a remote `ssh` shell command.
+fn shq(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// The port a `ws://127.0.0.1:PORT` URL points at (to reverse-tunnel the Hub home).
+fn ws_port(url: &str) -> Option<u16> {
+    url.rsplit(':').next()?.trim_end_matches('/').parse().ok()
 }
 
 /// `(stdout, stderr)` redirected to `<temp>/fleet-mux/<name>.log` so spawned
