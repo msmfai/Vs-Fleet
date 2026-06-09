@@ -50,10 +50,10 @@ which is why `+` (new server) failed with no feedback.
 
 ## Known open items (block a clean local daily-driver)
 
-- **fleet-bridge install for serve-web** — `code serve-web` has no `--extensions-dir`, so
-  the bridge (observe/act + rail registration) must be installed into the served VS Code
-  Server another way (e.g. `code --install-extension <vsix>`). Until then a server starts
-  but won't register in the rail.
+- ✅ **fleet-bridge install for serve-web** — verified on VS Code 1.123.0:
+  `code serve-web --server-data-dir <D>` loads extensions from `<D>/extensions`.
+  Fleet now installs the bundled `fleet-bridge` VSIX there before starting each local
+  server.
 - **fleet-reporter discovery** — the bundled `Fleet.app` can't find `fleet-reporter` on a
   GUI-launch PATH; bundle it into the `.app` / look next-to-exe.
 - **Binary discovery on GUI launch** — apps opened from Finder don't inherit your shell
