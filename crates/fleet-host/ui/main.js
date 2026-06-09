@@ -17,6 +17,7 @@ let servers = [];          // registered (phoned home) — from the backend
 let pending = [];          // [{id, label}] spawned but not yet registered
 let selected = null;
 let inbox = { tabs: [], waiting_count: 0, connected: false };
+let statusOverride = null;
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -47,10 +48,14 @@ function displayed() {
 }
 
 function render() {
-  statusEl.textContent = inbox.connected
-    ? inbox.waiting_count > 0 ? `${inbox.waiting_count} waiting` : "connected"
-    : "disconnected";
-  statusEl.className = "status " + (inbox.connected ? (inbox.waiting_count ? "waiting" : "connected") : "disconnected");
+  statusEl.textContent = statusOverride || (
+    inbox.connected
+      ? inbox.waiting_count > 0 ? `${inbox.waiting_count} waiting` : "connected"
+      : "disconnected"
+  );
+  statusEl.className = "status " + (
+    statusOverride ? "disconnected" : inbox.connected ? (inbox.waiting_count ? "waiting" : "connected") : "disconnected"
+  );
 
   const list = displayed();
   railEl.replaceChildren();
@@ -96,11 +101,17 @@ function render() {
 }
 
 async function spawnServer() {
+  statusOverride = null;
+  render();
   try {
     const id = await invoke("spawn_server");
     pending.push({ id, label: id });
     selectServer(id); // shows the loading page + selects the pending tab
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    statusOverride = `spawn failed: ${String(e)}`;
+    render();
+    setTimeout(() => { statusOverride = null; render(); }, 8000);
+  }
 }
 
 function closeServer(id) {

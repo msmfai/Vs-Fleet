@@ -154,9 +154,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const connect = (): void => {
     if (disposed) return;
-    ws = new WebSocket(url);
+    const socket = new WebSocket(url);
+    ws = socket;
 
-    ws.on("open", () => {
+    socket.on("open", () => {
       // Phone home: the server PUSHES its registration to Fleet (id + the URL
       // Fleet should embed + a label + the capabilities it supports). Fleet
       // never pulls a server list.
@@ -168,10 +169,10 @@ export function activate(context: vscode.ExtensionContext): void {
         caps: CAPS,
       };
       log(`ws open → hello ${JSON.stringify(registration)}`);
-      ws?.send(JSON.stringify(registration));
+      socket.send(JSON.stringify(registration));
     });
 
-    const send = (obj: unknown): void => ws?.send(JSON.stringify(obj));
+    const send = (obj: unknown): void => socket.send(JSON.stringify(obj));
     const reply = (reqId: unknown, ok: boolean, extra: Record<string, unknown> = {}): void => {
       if (reqId != null) send({ type: "result", reqId, ok, ...extra });
     };
@@ -206,7 +207,7 @@ export function activate(context: vscode.ExtensionContext): void {
       return vscode.window.activeTerminal ?? vscode.window.terminals[0];
     };
 
-    ws.on("message", (data: WebSocket.RawData) => {
+    socket.on("message", (data: WebSocket.RawData) => {
       let msg: Record<string, unknown>;
       try {
         msg = JSON.parse(data.toString());
@@ -411,14 +412,14 @@ export function activate(context: vscode.ExtensionContext): void {
     });
 
     const reconnect = (): void => {
-      if (disposed || retry) return;
+      if (disposed || retry || ws !== socket) return;
       retry = setTimeout(() => {
         retry = null;
         connect();
       }, 1000);
     };
-    ws.on("close", reconnect);
-    ws.on("error", () => ws?.close());
+    socket.on("close", reconnect);
+    socket.on("error", () => socket.close());
   };
 
   connect();
