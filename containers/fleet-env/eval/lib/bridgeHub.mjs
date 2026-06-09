@@ -88,6 +88,10 @@ export class BridgeHub {
   query(id, extra = {}) { return this.send(id, { type: "query", ...extra }); }
   // Generic request for the rest of §3.3 (openFile/typeText/termSend/fileContent/…).
   request(id, msg, ms = 15000) { return this.send(id, msg, ms); }
+  // Fire-and-forget: send without a reqId so the bridge runs it but does NOT reply.
+  // For commands whose executeCommand promise doesn't resolve headlessly (e.g.
+  // terminal.kill) — fire it, then verify the effect via observe().
+  fire(id, msg) { const ws = this.conns.get(id); if (ws) ws.send(JSON.stringify(msg)); }
 
   close() { try { this.wss.close(); } catch {} }
 }
