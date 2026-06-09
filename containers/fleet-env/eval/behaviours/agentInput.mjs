@@ -182,6 +182,19 @@ export const behaviours = [
     async run(env) {
       const sessionTitle = env.id; // FLEET_SESSION_TITLE == FLEET_SERVER_ID == env.id
 
+      // Auth gate. claude must be authenticated inside the container. macOS Keychain
+      // auth isn't mountable into Linux, so without ANTHROPIC_API_KEY (forwarded by
+      // the harness) or a ~/.claude/.credentials.json file, claude can't run — SKIP.
+      const hasAuth = !!process.env.ANTHROPIC_API_KEY ||
+        (process.env.HOME && existsSync(`${process.env.HOME}/.claude/.credentials.json`));
+      if (!hasAuth) {
+        return {
+          pass: false,
+          skipped: "container claude not authenticated — set ANTHROPIC_API_KEY (or have ~/.claude/.credentials.json); macOS Keychain auth can't be mounted",
+          detail: "skipped: no claude auth available to the container",
+        };
+      }
+
       // Hub-availability gate. The integration phase starts the Hub on the host;
       // if it isn't reachable (or `fleet` CLI is absent / session never registered),
       // SKIP cleanly rather than hard-fail. `skipped` is honored by the reporter
