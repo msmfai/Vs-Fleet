@@ -182,15 +182,13 @@ export const behaviours = [
     async run(env) {
       const sessionTitle = env.id; // FLEET_SESSION_TITLE == FLEET_SERVER_ID == env.id
 
-      // Auth gate. claude must be authenticated inside the container. macOS Keychain
-      // auth isn't mountable into Linux, so without ANTHROPIC_API_KEY (forwarded by
-      // the harness) or a ~/.claude/.credentials.json file, claude can't run — SKIP.
-      const hasAuth = !!process.env.ANTHROPIC_API_KEY ||
-        (process.env.HOME && existsSync(`${process.env.HOME}/.claude/.credentials.json`));
-      if (!hasAuth) {
+      // Auth gate. The harness authenticates the container's claude in reset()
+      // (ANTHROPIC_API_KEY passthrough, or the host's subscription OAuth piped from
+      // the macOS Keychain into the container). If that didn't land, SKIP cleanly.
+      if (!env.claudeAuthed) {
         return {
           pass: false,
-          skipped: "container claude not authenticated — set ANTHROPIC_API_KEY (or have ~/.claude/.credentials.json); macOS Keychain auth can't be mounted",
+          skipped: "container claude not authenticated — set ANTHROPIC_API_KEY, or ensure the 'Claude Code-credentials' Keychain item is accessible (FLEET_CLAUDE_OAUTH=0 to disable injection)",
           detail: "skipped: no claude auth available to the container",
         };
       }

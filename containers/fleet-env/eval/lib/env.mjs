@@ -36,6 +36,31 @@ export class Env {
     this.browser = null;
     this.page = null;
     this.bootError = null; // set when reset fails in an expected-failure scenario
+    this.claudeAuthed = false; // true once the container's claude can authenticate
+  }
+
+  // Inject claude auth into the running container so agent.* behaviours can run.
+  // Two sources: ANTHROPIC_API_KEY (forwarded as a container env), or the host's
+  // subscription OAuth from the macOS Keychain piped straight into the container's
+  // ~/.claude/.credentials.json (the value never passes through the harness/logs).
+  // Returns true if the container ends up authenticated.
+  async _injectClaudeAuth() {
+    if (process.env.ANTHROPIC_API_KEY) return true; // already passed via -e
+    if (process.env.FLEET_CLAUDE_OAUTH === "0") return false;
+    const pipe =
+      `security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null | ` +
+      `docker exec -i ${this.name} sh -c ` +
+      `'mkdir -p ~/.claude && cat > ~/.claude/.credentials.json && chmod 600 ~/.claude/.credentials.json'`;
+    for (let i = 0; i < 5; i++) {
+      try {
+        execSync(pipe, { stdio: ["ignore", "ignore", "ignore"], shell: "/bin/bash", timeout: 30000 });
+        if (sh(`docker exec ${this.name} sh -c 'test -s ~/.claude/.credentials.json && echo ok'`).includes("ok")) {
+          return true;
+        }
+      } catch { /* container not exec-able yet / no keychain access — retry/fall through */ }
+      await sleep(1500);
+    }
+    return false;
   }
 
   // Build the `docker run` argv from the scenario's docker opts (§3.4).
@@ -109,6 +134,9 @@ export class Env {
 
     await this.hub.waitFor(this.id);
     await sleep(2500); // let the workbench settle
+
+    // Authenticate the container's claude (for agent.* behaviours) once it's live.
+    this.claudeAuthed = await this._injectClaudeAuth();
 
     // Scenario setup runs after the env is live (git clone / write files / inject).
     if (this.scenario?.setup) await this.scenario.setup(this);
