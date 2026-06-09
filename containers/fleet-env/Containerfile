@@ -1,0 +1,44 @@
+# Fleet environment image — a self-contained code-server workspace that phones
+# home to the Hub on the host. Built for Apple Containers (linux/arm64).
+#
+#   container build -t fleet-env:latest -f containers/fleet-env/Containerfile .
+#
+# Run (Fleet does this per environment):
+#   container run -d --name <id> \
+#     -e FLEET_SERVER_ID=<id> [-e FLEET_HOST_ADDR=<gateway>] fleet-env:latest
+# The host is auto-detected as the default-route gateway; reporter + bridge dial
+# it for phone-home. code-server serves on :8080 (reachable from the host by the
+# container's IP). Agent auth: mount creds at /home/coder/.claude or pass a token.
+
+# ---- Stage 1: compile the linux fleet-reporter from the workspace -------------
+FROM rust:1-bookworm AS reporter
+WORKDIR /src
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+RUN cargo build --release -p fleet-reporter && cp target/release/fleet-reporter /fleet-reporter
+
+# ---- Stage 2: the self-contained Fleet environment ----------------------------
+FROM codercom/code-server:latest
+USER root
+
+# netcat for the hook relay (claude → reporter unix socket); node/npm for the agent
+# (code-server bundles its own node but doesn't expose npm); claude code (agent).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends netcat-openbsd ca-certificates nodejs npm \
+ && rm -rf /var/lib/apt/lists/* \
+ && npm install -g @anthropic-ai/claude-code
+
+COPY --from=reporter /fleet-reporter /usr/local/bin/fleet-reporter
+COPY containers/fleet-env/entrypoint.sh /usr/local/bin/fleet-entrypoint.sh
+COPY containers/fleet-env/hooks.json /etc/fleet/hooks.json
+RUN chmod +x /usr/local/bin/fleet-entrypoint.sh /usr/local/bin/fleet-reporter
+
+# The fleet-bridge extension (the server's command-forwarding + self-registration
+# channel to Fleet) + the `claude` wrapper that adds our lifecycle hooks.
+COPY packages/fleet-bridge/fleet-bridge-0.1.2.vsix /tmp/fleet-bridge.vsix
+USER coder
+RUN code-server --install-extension /tmp/fleet-bridge.vsix \
+ && printf '\n# Fleet: wrap claude with lifecycle hooks (command bypasses this fn → no recursion)\nclaude() { command claude --settings /etc/fleet/hooks.json "$@"; }\n' >> /home/coder/.bashrc
+
+ENV FLEET_HUB_PORT=51777 FLEET_BRIDGE_PORT=51778 FLEET_REPORTER_SOCKET=/tmp/fleet-reporter.sock
+ENTRYPOINT ["/usr/local/bin/fleet-entrypoint.sh"]

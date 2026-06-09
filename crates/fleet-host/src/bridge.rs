@@ -95,7 +95,10 @@ impl BridgeRegistry {
 /// Start the bridge WS server on `127.0.0.1:port`. `app` is used to emit
 /// [`SERVERS_CHANGED`] so the rail re-renders as servers come and go.
 pub async fn serve(app: AppHandle, registry: BridgeRegistry, port: u16) -> std::io::Result<()> {
-    let listener = TcpListener::bind(("127.0.0.1", port)).await?;
+    // Loopback by default; `FLEET_BRIDGE_ADDR=0.0.0.0` lets containerized servers
+    // reach the bridge over the host gateway.
+    let addr = std::env::var("FLEET_BRIDGE_ADDR").unwrap_or_else(|_| "127.0.0.1".into());
+    let listener = TcpListener::bind((addr.as_str(), port)).await?;
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
             let app = app.clone();

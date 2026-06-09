@@ -1,0 +1,23 @@
+{
+  "_comment": "Fleet lifecycle hooks (claude --settings). Each event relays its payload, tagged 'claude' with CR/LF stripped, to the env's reporter unix socket. Observer-only: '|| true' so claude never fails on a relay error.",
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "printf 'claude %s\\n' \"$(cat | tr -d '\\r\\n')\" | nc -U /tmp/fleet-reporter.sock 2>/dev/null || true" } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "printf 'claude %s\\n' \"$(cat | tr -d '\\r\\n')\" | nc -U /tmp/fleet-reporter.sock 2>/dev/null || true" } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "printf 'claude %s\\n' \"$(cat | tr -d '\\r\\n')\" | nc -U /tmp/fleet-reporter.sock 2>/dev/null || true" } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "printf 'claude %s\\n' \"$(cat | tr -d '\\r\\n')\" | nc -U /tmp/fleet-reporter.sock 2>/dev/null || true" } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "printf 'claude %s\\n' \"$(cat | tr -d '\\r\\n')\" | nc -U /tmp/fleet-reporter.sock 2>/dev/null || true" } ] }
+    ],
+    "SessionEnd": [
+      { "hooks": [ { "type": "command", "command": "printf 'claude %s\\n' \"$(cat | tr -d '\\r\\n')\" | nc -U /tmp/fleet-reporter.sock 2>/dev/null || true" } ] }
+    ]
+  }
+}

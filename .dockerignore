@@ -1,0 +1,11 @@
+# Keep the container build context small — only Cargo manifests + crates + the
+# bridge vsix + containers/ are actually COPYed.
+target/
+.git/
+node_modules/
+**/node_modules/
+**/target/
+*.log
+crates/fleet-host/gen/
+*.app
+.DS_Store
