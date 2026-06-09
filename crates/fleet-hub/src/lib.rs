@@ -89,8 +89,15 @@ impl Default for HubConfig {
             .ok()
             .and_then(|s| s.parse::<u16>().ok())
             .unwrap_or(DEFAULT_WS_PORT);
+        // Loopback-only by default (the Hub is a local daemon). `FLEET_WS_ADDR`
+        // overrides the bind IP so containerized environments can phone home over
+        // the host bridge interface, e.g. `FLEET_WS_ADDR=0.0.0.0`.
+        let ip: std::net::IpAddr = std::env::var("FLEET_WS_ADDR")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(std::net::IpAddr::from([127, 0, 0, 1]));
         HubConfig {
-            ws_addr: SocketAddr::from(([127, 0, 0, 1], port)),
+            ws_addr: SocketAddr::new(ip, port),
             unix_path: dir.join("hub.sock"),
             lock_path: dir.join("hub.lock"),
             db_path: dir.join("hub.db"),

@@ -139,9 +139,17 @@ fn window_session_base(id: &str) -> Session {
     Session {
         schema_version: SCHEMA_VERSION,
         session_id: id.into(),
-        title: std::env::current_dir()
+        // `FLEET_SESSION_TITLE` overrides the displayed title (containerized
+        // environments set it to their id so sessions are distinguishable); else
+        // the working-directory basename.
+        title: std::env::var("FLEET_SESSION_TITLE")
             .ok()
-            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                std::env::current_dir()
+                    .ok()
+                    .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            })
             .unwrap_or_else(|| "fleet window".into()),
         location: Location {
             kind: LocationKind::Local,
