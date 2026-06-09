@@ -23,6 +23,11 @@
  *           git clone / write files / inject failure, run after boot
  * @property {("ok"|"degraded"|"fail")=} expectBoot   default "ok"
  * @property {string[]=} needs                  bridge caps required by setup; SKIP scenario if absent
+ * @property {string}  rationale                REQUIRED. Full written rationale (multi-line ok): WHAT
+ *                                              edge/condition this scenario reproduces, WHY its expected
+ *                                              boot/behaviour (ok/degraded/fail) is correct, and WHY it
+ *                                              matters (the real-world failure mode it guards). The
+ *                                              harness auto-stamps the last-changed git commit+date.
  */
 
 export {};

@@ -6,10 +6,36 @@
 // they just drop a new `behaviours/foo.mjs` or `scenarios/bar.mjs` and it appears.
 
 import { readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { execSync } from "node:child_process";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+// The last git commit + date that touched a test's source file. AUTO-DERIVED so a
+// test's "last updated" provenance can never go stale — when a test breaks after a
+// refactor, the report shows exactly when its definition last changed. Per-file
+// (tests are grouped by file); cached.
+const _gitCache = new Map();
+export function gitInfo(file) {
+  if (!file) return { commit: "?", date: "?", file: "?" };
+  if (_gitCache.has(file)) return _gitCache.get(file);
+  let info = { commit: "uncommitted", date: "—", file: relative(join(HERE, "../../.."), file) };
+  try {
+    const out = execSync(`git log -1 --format=%h|%cs -- "${file}"`, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    if (out) {
+      const [commit, date] = out.split("|");
+      info = { commit, date, file: info.file };
+    }
+  } catch {
+    /* not a git repo / git absent — leave "uncommitted" */
+  }
+  _gitCache.set(file, info);
+  return info;
+}
 
 function mjsFiles(dir) {
   let names;
@@ -36,7 +62,9 @@ async function loadAll(dir, key) {
       console.warn(`[registry] ${file} has no '${key}' array export — skipped`);
       continue;
     }
-    for (const item of arr) out.push(item);
+    // Tag each test with its source file so the harness can resolve its git
+    // provenance (gitInfo) and surface it in --list + the report.
+    for (const item of arr) { if (item && typeof item === "object") item.__file = file; out.push(item); }
   }
   return out;
 }
