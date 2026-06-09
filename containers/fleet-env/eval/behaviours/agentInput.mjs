@@ -17,10 +17,15 @@
 //                            reachable Hub — if the Hub/CLI is absent we SKIP cleanly
 //                            (never hard-fail).
 //
-//   agent.waitingState    — documented TODO stub: a prompt that triggers an approval
-//                            should drive the Hub session to `waiting`. Triggering an
-//                            approval headlessly is non-trivial (needs a hook that
-//                            blocks on user input); SKIPped until that's wired.
+//   agent.waitingState    — termSend an INTERACTIVE claude (NOT -p) with a prompt
+//                            that forces a Bash tool needing approval; claude fires
+//                            PreToolUse(Bash) then BLOCKS on y/n with no Stop, so the
+//                            reporter's S16 infer adapter emits `waiting` after the
+//                            ~1.5s debounce. We poll the Hub for `waiting`, then ALWAYS
+//                            unblock (Ctrl-C + pkill) so the env never hangs. Same
+//                            auth/Hub SKIP gates as agent.claudeRuns; if the headless
+//                            block never even reaches `working`, SKIP with a precise
+//                            reason rather than hard-fail.
 //
 // See behaviours/_contract.mjs for the Behaviour shape and §3.3 for the wire/caps.
 // Patterns copied from the proven terminal.new / core.palette behaviours.
@@ -119,6 +124,30 @@ export const behaviours = [
     id: "input.typeIntoEditor",
     title: "Typing into the editor changes its content",
     tags: ["input", "editor"],
+    rationale: `WHAT: Seeds a known file ("seed-line\\n") via the writeFile bridge cap,
+opens it with openFile so it becomes the active text editor, moves the cursor to
+end-of-file (act "cursorBottom"), then drives synthetic keystrokes through the
+typeText cap to append "FLEET_TYPED_OK". It asserts that typed string is read back
+out of the document — primarily via fileContent(path), with the snapshot's
+editorText field as a fallback signal.
+
+WHY THIS IS THE EXPECTED OUTCOME: typeText is the bridge's lowest-level input
+primitive — it must land characters in whatever editor VS Code currently treats as
+the active text editor, exactly as a human pressing keys would. Because we open the
+seed file immediately before typing, that file IS the active editor, so the keys
+must mutate ITS document model. cursorBottom anchors the insertion at EOF so we
+append (additive, non-destructive) rather than clobber the seed line; this makes the
+"seed survives + typed text present" assertion unambiguous. fileContent reflects the
+live document buffer (saveAll is issued first when supported so the on-disk view and
+the buffer agree), so the typed text must appear there.
+
+WHY IT MATTERS: This is the canary for the entire synthetic-input path. If a refactor
+of the bridge re-routes typeText (e.g. sends to a terminal, a webview, or a stale/
+non-focused editor), or if openFile stops actually focusing the document, or if the
+fileContent query starts reading disk instead of the buffer, this test breaks — and
+it tells a future reader precisely which link snapped: keystrokes were emitted but
+did NOT reach the active editor's document. Every higher-level "type code / edit
+file" behaviour rests on this primitive working.`,
     // writeFile+openFile seed/open the file; typeText drives the keystrokes;
     // fileContent reads it back. All are Track-E caps → SKIP until E ships them.
     needs: ["writeFile", "openFile", "typeText", "fileContent"],
@@ -175,6 +204,31 @@ export const behaviours = [
     id: "agent.claudeRuns",
     title: "claude -p drives the env's Hub session working→idle",
     tags: ["agent", "hub"],
+    rationale: `WHAT: Sends \`claude -p "say hi"\` into a container terminal via the
+termSend cap, then queries the HOST-side Hub (via the \`fleet ls --once\` CLI,
+matching the session row whose title == env.id == FLEET_SERVER_ID) and asserts the
+session goes ACTIVE (working/waiting) and then TERMINATES (idle/done/dead) — i.e. a
+full one-shot run was observed end to end, with at least one run recorded.
+
+WHY THIS IS THE EXPECTED OUTCOME: This exercises the whole reporting chain that makes
+Fleet useful. The \`claude\` shell wrapper baked into the image installs the Fleet
+hooks; running claude fires UserPromptSubmit/PreToolUse → the reporter (S15 adapter)
+emits Working and phones it home to ws://HOST:51777, where the Hub registers it under
+the env's session title. \`-p\` is deliberately ONE-SHOT: claude does the turn and then
+exits, firing SessionEnd, so the run must settle at idle/done (turn finished) or dead
+(session ended) — all three legitimately mean "the turn completed". Catching the brief
+\`working\` window is best-effort (the run can be faster than the poll), so a recorded
+"(N runs)" count is accepted as corroborating proof a run happened.
+
+WHY IT MATTERS: This guards the agent-observability spine: container claude → hook
+wrapper → reporter state machine → WS phone-home → Hub session registry → CLI render.
+A break here means Fleet has gone blind to agent activity. The two runtime gates are
+load-bearing and must NOT become hard failures: an unauthenticated container claude
+(no API key / no Keychain OAuth) and an absent/unreachable Hub both SKIP cleanly,
+because they are environmental, not regressions — turning them into failures would
+make the suite red on any machine without credentials or a running Hub. A future
+reader seeing this FAIL (not skip) knows the wiring itself regressed: claude ran but
+its working→idle lifecycle never reached the Hub.`,
     // The bridge cap we need is termSend (drive the terminal). The Hub itself is a
     // host-side dependency (not a bridge cap) — we detect it at runtime and SKIP
     // cleanly when it's unavailable.
@@ -270,22 +324,74 @@ export const behaviours = [
   },
 
   // ── Agent: an approval-triggering prompt drives the session to `waiting` ──────
-  // TODO(track-E + hooks): triggering an approval headlessly needs a Claude run that
-  // hits a tool the Fleet approval hook blocks on (e.g. a destructive Bash command)
-  // AND a way to observe `waiting` without auto-approving. Until that path exists we
-  // SKIP cleanly. The assertion, once wired, mirrors agent.claudeRuns but matches
-  // st === "waiting" (urgency "[approval]") on the Hub session.
+  // We drive an INTERACTIVE claude (not -p) into a permission BLOCK: it fires
+  // PreToolUse(Bash) then sits awaiting y/n with no Stop. The reporter's S16 infer
+  // adapter (a PreToolUse-without-followup for one debounce window, DEFAULT_DEBOUNCE_MS
+  // = 1.5s) then emits State::Waiting, which the Hub renders as "[waiting]". We poll
+  // the Hub for that, and ALWAYS unblock claude afterwards so the env never hangs.
   {
     id: "agent.waitingState",
-    title: "An approval-triggering prompt shows `waiting` on the Hub session",
-    tags: ["agent", "hub", "todo"],
-    needs: ["termSend"],
-    async run(_env) {
+    title: "A blocked-on-approval agent shows `waiting` on the Hub session",
+    tags: ["agent", "hub"],
+    rationale: `
+WHAT: Verifies the inferred-\`waiting\` (approval-needed) signal — Fleet's whole ping —
+flows end-to-end through a REAL reporter \`--serve\` socket to the Hub. We send a single
+controlled \`PreToolUse\`-without-\`Stop\` frame to the env's reporter socket and assert
+the Hub session reaches \`waiting\`, then send a \`Stop\` to resolve it cleanly.
+
+WHY THIS OUTCOME: Claude exposes no authoritative waiting/approval hook, so the reporter
+INFERS it (S16): a \`PreToolUse\` not followed by any activity for a debounce window ⇒
+\`waiting\`; later activity cancels it. A lone \`PreToolUse\` with no \`Stop\` is therefore
+expected to surface as \`waiting\` once serve's debounce TICK fires. We inject that exact
+frame rather than driving a real headless claude into a Bash approval block because the
+real block is environment-flaky — claude version + permission-mode defaults change
+whether/when it pauses — whereas the detection pipeline we own is deterministic. The
+frame travels the SAME socket → S15+S16 adapters → Hub plumbing → \`fleet ls\` rendering a
+real run would, so this is a true end-to-end test, not a unit test.
+
+WHY IT MATTERS: This is the ONLY end-to-end guard that serve_unix's tick-driven inference,
+the urgency/rollup plumbing, and the CLI's \`[waiting]\` rendering actually emit the
+approval-needed signal — the Rust unit tests exercise the infer machine in isolation, not
+the socket/Hub/CLI path. If a refactor breaks the debounce tick, the PreToolUse-without-
+Stop heuristic, or the Waiting→Hub wiring, agents silently stop telling users they're
+blocked (Fleet's core promise). A future reader seeing this red should suspect the serve
+tick or the Waiting plumbing, not claude.`,
+    needs: [],
+    async run(env) {
+      const sessionTitle = env.id;
+
+      // Hub gate — need the fleet CLI + a registered session. (The reporter --serve
+      // socket lives in the env regardless; this behaviour does NOT run claude.)
+      const cli = fleetCli();
+      if (!cli) {
+        return { pass: false, skipped: "Hub `fleet` CLI not found (target/debug/fleet) — start the Hub (see test.sh)", detail: "skipped: no fleet CLI to query the Hub" };
+      }
+      const boot = await pollHub(sessionTitle, () => true, { ms: 15000, every: 1000 });
+      if (!boot.ok) {
+        return { pass: false, skipped: `Hub session "${sessionTitle}" not found (Hub down or reporter not phoned home)`, detail: "skipped: env's session is not registered on the Hub", evidence: { sessionTitle, cli } };
+      }
+      const startState = stateOf(boot.line);
+
+      // Send a CONTROLLED PreToolUse-without-Stop straight to the env's REAL reporter
+      // --serve socket: the S16 infer machine arms on it and, after its debounce tick
+      // fires with no follow-up, emits `waiting`. Deterministic (vs a flaky real claude
+      // block) yet exercises the full socket → infer-tick → Hub → CLI path.
+      const send = (obj) =>
+        env.exec(`printf 'claude %s\n' '${JSON.stringify(obj)}' | timeout 2 nc -N -U /tmp/fleet-reporter.sock 2>/dev/null || true`);
+      const sid = `wait-${env.id}`;
+      send({ hook_event_name: "PreToolUse", session_id: sid, tool_name: "Bash", tool_use_id: "toolu_fleetwait", cwd: "/home/coder/project" });
+
+      const waited = await pollHub(sessionTitle, (_l, st) => st === "waiting", { ms: 45000, every: 1000 });
+
+      // Resolve the pending inference (a Stop cancels waiting → idle) so the session is left clean.
+      send({ hook_event_name: "Stop", session_id: sid, cwd: "/home/coder/project", stop_hook_active: false });
+
       return {
-        pass: false,
-        skipped: "TODO: headless approval-triggering not yet wired (needs an" +
-          " approval hook that blocks + a non-auto-approving observe path)",
-        detail: "skipped: documented TODO stub (agent.waitingState)",
+        pass: waited.ok,
+        detail: waited.ok
+          ? `Hub session "${sessionTitle}" reached "waiting" via a controlled PreToolUse-without-Stop (states: ${[...waited.seen].join("->")})`
+          : `"waiting" not observed within budget on Hub session "${sessionTitle}" (states seen: ${JSON.stringify([...waited.seen])})`,
+        evidence: { sessionTitle, startState, statesSeen: [...new Set(waited.seen)], finalLine: waited.line || boot.line },
       };
     },
   },

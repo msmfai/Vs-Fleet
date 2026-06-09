@@ -39,6 +39,13 @@ export class Reporter {
     if (r.detail) console.log(`[eval]      ${r.detail}`);
     if (r.skipped) console.log(`[eval]      skipped: ${r.skipped}`);
     if (r.error) console.log(`[eval]      error: ${r.error}`);
+    // For an unexpected/skip row, surface what/why/when right where it happened:
+    // provenance ([commit·date]) + the test's rationale, so a break is interrogable.
+    if (r.skipped || r.error || !r.pass) {
+      const p = provLabel(r.provenance);
+      if (p) console.log(`[eval]      provenance: ${p}`);
+      if (r.rationale) for (const ln of rationaleLines(r.rationale)) console.log(`[eval]      why: ${ln}`);
+    }
     if (r.machineDelta && Object.keys(r.machineDelta).length) {
       console.log(`[eval]      machineΔ ${JSON.stringify(r.machineDelta)}`);
     }
@@ -187,6 +194,16 @@ ${rows}
     if (r.detail) kv.push(`<dt>detail</dt><dd>${escHtml(r.detail)}</dd>`);
     if (r.skipped) kv.push(`<dt>skipped</dt><dd>${escHtml(String(r.skipped))}</dd>`);
     if (r.error) kv.push(`<dt>error</dt><dd class="err">${escHtml(String(r.error))}</dd>`);
+    // For unexpected/skip rows, surface the what/why/when so a break is interrogable
+    // straight from the HTML: provenance ([commit·date], links to file) + rationale.
+    if (r.skipped || r.error || !r.pass) {
+      const p = provLabel(r.provenance);
+      if (p) {
+        const f = r.provenance?.file;
+        kv.push(`<dt>provenance</dt><dd><code>${escHtml(p)}</code>${f ? ` <span class="scn">${escHtml(f)}</span>` : ""}</dd>`);
+      }
+      if (r.rationale) kv.push(`<dt>rationale</dt><dd><pre>${escHtml(String(r.rationale).trim())}</pre></dd>`);
+    }
     if (r.machineDelta && Object.keys(r.machineDelta).length) {
       kv.push(`<dt>machineΔ</dt><dd><code>${escHtml(JSON.stringify(r.machineDelta))}</code></dd>`);
     }
@@ -249,9 +266,32 @@ ${rows}
     if (process.env.FLEET_EVAL_JSON) this.writeJSON(process.env.FLEET_EVAL_JSON);
     if (process.env.FLEET_EVAL_JUNIT) this.writeJUnit(process.env.FLEET_EVAL_JUNIT);
     if (process.env.FLEET_EVAL_HTML) this.writeHTML(process.env.FLEET_EVAL_HTML);
+    this._summarizeUnexpected();
     console.log(`\n[eval] RESULT: ${s.pass} pass, ${s.fail} fail, ${s.skipped} skipped` +
       ` (${s.durationMs}ms)`);
     return s.fail === 0; // true ⇒ exit 0
+  }
+
+  // Collate every FAIL/ERROR/SKIP row at the end of the run, each annotated with its
+  // provenance ([commit·date]) and rationale, so the "what failed / why / when it
+  // last changed" is one glance away without scrolling the streamed log.
+  _summarizeUnexpected() {
+    const fails = this.results.filter((r) => !r.skipped && (r.error || !r.pass));
+    const skips = this.results.filter((r) => r.skipped);
+    if (!fails.length && !skips.length) return;
+    const emit = (heading, rows, reasonOf) => {
+      if (!rows.length) return;
+      console.log(`\n[eval] ${heading} (${rows.length}):`);
+      for (const r of rows) {
+        const p = provLabel(r.provenance);
+        console.log(`[eval]   ${r.scenario} × ${r.behaviour}${p ? "  " + p : ""}`);
+        const reason = reasonOf(r);
+        if (reason) console.log(`[eval]       ${reason}`);
+        if (r.rationale) for (const ln of rationaleLines(r.rationale)) console.log(`[eval]       why: ${ln}`);
+      }
+    };
+    emit("FAILURES", fails, (r) => r.error ? `error: ${r.error}` : (r.detail || "assertion failed"));
+    emit("SKIPS", skips, (r) => `skipped: ${r.skipped}`);
   }
 }
 
@@ -276,6 +316,17 @@ function xmlEscapeText(s) {
 }
 
 function baseName(p) { return String(p).split("/").pop(); }
+
+// "[commit·date]" provenance label (registry stamps {commit,date,file} per test).
+function provLabel(p) {
+  if (!p || (!p.commit && !p.date)) return "";
+  return `[${p.commit || "?"}·${p.date || "?"}]`;
+}
+
+// Rationale can be multi-line prose; yield trimmed non-empty lines for the console.
+function rationaleLines(r) {
+  return String(r).split("\n").map((l) => l.trim()).filter(Boolean);
+}
 
 // Read a PNG/JPEG off disk and return a base64 data: URI; null if unreadable.
 function imgDataURI(p) {

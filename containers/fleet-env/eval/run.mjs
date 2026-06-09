@@ -90,10 +90,13 @@ function freePort() {
 }
 
 // ─── Matrix selection ────────────────────────────────────────────────────────
-// A behaviour applies to a scenario when its `scenarios` list includes the id, OR
-// (default) when it lists none and the scenario id starts with "base".
+// A behaviour applies to a scenario when its `scenarios` list includes the id; OR
+// (no explicit list) a "smoke"-tagged behaviour applies to EVERY scenario — so each
+// edge-case scenario gets booted + smoke-tested; OR (default, non-smoke) only the
+// "base*" scenarios. Explicit `scenarios` always wins over the smoke broadening.
 function behaviourAppliesTo(b, scenario) {
   if (Array.isArray(b.scenarios) && b.scenarios.length) return b.scenarios.includes(scenario.id);
+  if ((b.tags || []).includes("smoke")) return true;
   return scenario.id.startsWith("base");
 }
 
@@ -200,28 +203,62 @@ async function runScenario(hub, scenario, behaviours, reporter, args, idPrefix) 
   }
 }
 
-// Boot an env, honoring expectBoot. A scenario declared expectBoot:"fail" that
-// fails to boot is reported as an expected pass (not an error / hang).
+// Max wall-clock we'll wait for a scenario's env to boot before declaring the boot
+// failed. Bounds a hung reset() so an expected-fail scenario can never hang the run.
+const BOOT_TIMEOUT_MS = Number(process.env.FLEET_BOOT_TIMEOUT_MS || 180000);
+
+// Per-test provenance/rationale, so a boot-driven row reads like any other row:
+// what it was, why, and when it last changed (auto-stamped git commit+date).
+function provFor(b) {
+  return { rationale: b?.rationale || null, provenance: gitInfo(b?.__file) };
+}
+
+// Boot an env, honoring expectBoot. The boot wait is BOUNDED (BOOT_TIMEOUT_MS) so a
+// scenario can never hang the run. On failure:
+//   • expectBoot "fail"/"degraded" → EXPECTED: each intended behaviour is recorded as
+//     a pass with a "boot-failed-as-expected" detail (carrying its provenance +
+//     rationale), and the scenario short-circuits cleanly (env.bootError set, caller
+//     skips running behaviours). Never an error, never a hang.
+//   • expectBoot "ok" (default) → a real FAIL: each intended behaviour is recorded as
+//     an error so the matrix stays accountable.
 async function bootOrReport(env, scenario, behaviours, reporter) {
+  let timer;
   try {
-    await env.reset();
+    await Promise.race([
+      env.reset(),
+      new Promise((_, rej) => {
+        timer = setTimeout(
+          () => rej(new Error(`boot timed out after ${BOOT_TIMEOUT_MS}ms`)),
+          BOOT_TIMEOUT_MS,
+        );
+      }),
+    ]);
   } catch (e) {
     env.bootError = e?.message || String(e);
-    const expectFail = scenario.expectBoot === "fail";
-    if (expectFail) {
-      reporter.add({
-        scenario: scenario.id, behaviour: "(boot)", pass: true,
-        detail: `boot failed as expected (expectBoot:fail): ${env.bootError}`,
-      });
+    const expect = scenario.expectBoot || "ok";
+    const expectedToFail = expect === "fail" || expect === "degraded";
+    if (expectedToFail) {
+      // Record each intended behaviour as an EXPECTED pass — provenance/rationale
+      // included so the (otherwise un-run) cell is still interrogable in the report.
+      for (const b of behaviours) {
+        reporter.add({
+          scenario: scenario.id, behaviour: b.id, pass: true,
+          detail: `boot-failed-as-expected (expectBoot:${expect}): ${env.bootError}`,
+          ...provFor(b),
+        });
+      }
     } else {
       // Report each intended behaviour as an error so the matrix stays accountable.
       for (const b of behaviours) {
         reporter.add({
           scenario: scenario.id, behaviour: b.id, pass: false,
           error: `env boot failed: ${env.bootError}`,
+          ...provFor(b),
         });
       }
     }
+  } finally {
+    clearTimeout(timer);
   }
 }
 

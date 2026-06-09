@@ -44,6 +44,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::UnixListener;
@@ -51,8 +52,20 @@ use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 
 use crate::claude::ClaudeAdapter;
+use crate::claude_infer::ClaudeInferAdapter;
 use crate::codex::CodexAdapter;
 use crate::reporter::{ReporterCommand, ReporterHandle};
+
+/// How often the receiver advances the S16 inference clock (the debounce TICK).
+///
+/// A `PreToolUse`-without-followup only becomes an inferred `Waiting` once the
+/// debounce window *elapses with no new input*. Since no further hook frame may
+/// arrive while the human is sat on an approval, `serve_unix` must drive the
+/// machine forward itself. This interval is the granularity of that drive: it
+/// must be comfortably finer than [`crate::claude_infer::DEFAULT_DEBOUNCE_MS`]
+/// so the inferred waiting surfaces within roughly one window of the real
+/// stall, but coarse enough not to spin.
+const INFER_TICK_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Which agent a hook frame came from. The frame's leading tag selects this; the
 /// payload shapes alone cannot (they overlap), so the sender must declare it.
@@ -121,14 +134,50 @@ pub fn parse_frame(line: &str) -> Result<(Agent, &str), DriftError> {
 /// owning its per-session/-thread state machines and minting stable Fleet
 /// run-ids. Shared across connections (a window's hooks may arrive on many
 /// short-lived socket connections, but they belong to the same sessions).
-#[derive(Debug, Default)]
+///
+/// ## The `Waiting` half (S16 inference, additive over S15)
+///
+/// The [`ClaudeAdapter`] is the authoritative S15 hooks path: it drives
+/// `working`/`idle`/`done` but — by design — **never** emits [`State::Waiting`],
+/// because in the native UI no hook announces an approval (PLAN s1). "Waiting"
+/// (the ping — the core of Fleet) is *inferred* by a second, parallel adapter,
+/// [`ClaudeInferAdapter`] (S16): a claude `PreToolUse` not followed by activity
+/// for a debounce window ⇒ inferred `Waiting`; any later activity cancels it.
+///
+/// So each Claude frame is fed to **both** adapters: the S15 adapter produces
+/// the working/idle/done deltas, and the infer adapter arms/cancels/resolves the
+/// waiting inference. The infer adapter's *fire* happens on a [`tick`](Self::tick)
+/// once the debounce elapses with no new frame, which [`serve_unix`] drives on a
+/// periodic timer. Both adapters key on the claude `session_id`, so they agree on
+/// the durable run anchor even though they mint independent Fleet run-ids.
+#[derive(Debug)]
 pub struct Receiver {
     claude: ClaudeAdapter,
+    /// The S16 inferred-`Waiting` adapter, fed every Claude frame in parallel
+    /// with `claude` and advanced by [`Self::tick`].
+    infer: ClaudeInferAdapter,
     codex: CodexAdapter,
+    /// Monotonic origin for the inference clock. Both [`Self::process`] (frame
+    /// timestamps) and [`Self::tick`] (debounce advance) measure `now_ms`
+    /// relative to this single instant, so they share one timeline.
+    start: Instant,
     /// Total frames accepted (for `--serve` observability / tests).
     frames: u64,
     /// Frames dropped by the drift guard (for observability / tests).
     dropped: u64,
+}
+
+impl Default for Receiver {
+    fn default() -> Self {
+        Receiver {
+            claude: ClaudeAdapter::default(),
+            infer: ClaudeInferAdapter::new(),
+            codex: CodexAdapter::default(),
+            start: Instant::now(),
+            frames: 0,
+            dropped: 0,
+        }
+    }
 }
 
 impl Receiver {
@@ -146,17 +195,29 @@ impl Receiver {
         self.dropped
     }
 
+    /// Milliseconds since this receiver's monotonic origin — the shared clock the
+    /// infer adapter uses to relate frame arrivals to debounce ticks.
+    fn now_ms(&self) -> u64 {
+        self.start.elapsed().as_millis() as u64
+    }
+
     /// Run one framed line through the whole pipeline, returning the commands to
     /// forward (empty on any drift). Pure w.r.t. I/O; fully unit-testable.
     pub fn process(&mut self, line: &str) -> Vec<ReporterCommand> {
+        self.process_at(line, self.now_ms())
+    }
+
+    /// Like [`Self::process`] but at an explicit monotonic `now_ms` — the
+    /// injection point that makes the debounce timing unit-testable (the infer
+    /// adapter arms at this `now_ms`; a later `tick(now_ms + window)` fires).
+    pub fn process_at(&mut self, line: &str, now_ms: u64) -> Vec<ReporterCommand> {
         self.frames += 1;
         match parse_frame(line) {
             Ok((agent, body)) => {
-                let cmds = self.dispatch(agent, body);
                 // An adapter that returns no commands for a well-formed line is a
                 // legitimate no-op (e.g. PostToolUse liveness with nothing to
                 // change), not a drift — don't count it as dropped.
-                cmds
+                self.dispatch(agent, body, now_ms)
             }
             Err(e) => {
                 self.dropped += 1;
@@ -166,10 +227,32 @@ impl Receiver {
         }
     }
 
-    /// Stage 2: route the body to the agent's adapter (the stateful step).
-    fn dispatch(&mut self, agent: Agent, body: &str) -> Vec<ReporterCommand> {
+    /// Advance the S16 inference clock with no new frame, firing any debounce that
+    /// has now elapsed (the inferred `Waiting` ping) and auto-resolutions. Returns
+    /// the commands to forward. Called on a periodic timer by [`serve_unix`].
+    pub fn tick(&mut self) -> Vec<ReporterCommand> {
+        self.tick_at(self.now_ms())
+    }
+
+    /// Like [`Self::tick`] but at an explicit monotonic `now_ms` (test injection).
+    pub fn tick_at(&mut self, now_ms: u64) -> Vec<ReporterCommand> {
+        self.infer.tick(now_ms)
+    }
+
+    /// Stage 2: route the body to the agent's adapter(s) (the stateful step).
+    ///
+    /// For Claude this fans out to **both** the authoritative S15 adapter (the
+    /// working/idle/done path) and the S16 infer adapter (the inferred-`Waiting`
+    /// path). The S15 commands lead; any waiting-inference command (an arm
+    /// auto-resolution surfaced immediately, e.g. activity cancelling a raised
+    /// waiting) follows. The debounce *fire* itself is deferred to [`Self::tick`].
+    fn dispatch(&mut self, agent: Agent, body: &str, now_ms: u64) -> Vec<ReporterCommand> {
         match agent {
-            Agent::Claude => self.claude.ingest_json(body),
+            Agent::Claude => {
+                let mut cmds = self.claude.ingest_json(body);
+                cmds.extend(self.infer.ingest_json(body, now_ms));
+                cmds
+            }
             Agent::Codex => self.codex.ingest_json(body),
         }
     }
@@ -207,6 +290,36 @@ pub async fn serve_unix(
     }
     let listener = bind_reclaiming(&socket_path).await?;
     info!(socket = %socket_path.display(), "reporter --serve listening for hook frames");
+
+    // The debounce TICK. A `PreToolUse`-without-followup inferred `Waiting` only
+    // fires once the debounce window elapses with *no new frame* — and while the
+    // human sits on an approval, no new frame arrives. So we must advance the
+    // infer machine ourselves on a periodic timer, forwarding any inferred
+    // `Waiting` (and its later auto-resolution) it emits. This runs for the life
+    // of the receiver and is dropped/aborted with it.
+    {
+        let receiver = receiver.clone();
+        let handle = handle.clone();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(INFER_TICK_INTERVAL);
+            // Skip-missed so a stalled lock can't pile up backlogged ticks; we
+            // only ever need the *latest* clock advance.
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                ticker.tick().await;
+                let cmds = {
+                    let mut rx = receiver.lock().await;
+                    rx.tick()
+                };
+                for cmd in cmds {
+                    // If the reporter loop has exited, stop ticking.
+                    if !handle.send(cmd) {
+                        return;
+                    }
+                }
+            }
+        });
+    }
 
     loop {
         let (stream, _addr) = match listener.accept().await {
@@ -470,6 +583,101 @@ mod tests {
         assert!(sock.exists(), "stale socket file present");
         let l = bind_reclaiming(&sock).await;
         assert!(l.is_ok(), "stale socket must be reclaimed: {:?}", l.err());
+    }
+
+    fn claude_pretool(session: &str) -> String {
+        format!(
+            r#"{{"hook_event_name":"PreToolUse","session_id":"{session}","cwd":"/repo","tool_name":"Bash"}}"#
+        )
+    }
+
+    // ── S16 inference wiring: the Waiting half, additive over S15 ─────────────
+
+    #[test]
+    fn pretool_then_tick_past_debounce_infers_waiting() {
+        use crate::claude_infer::DEFAULT_DEBOUNCE_MS;
+        let mut rx = Receiver::new();
+        let window = DEFAULT_DEBOUNCE_MS;
+
+        // A PreToolUse at t=0: S15 drives Working; the infer adapter arms but does
+        // NOT yet emit Waiting (the debounce hasn't elapsed).
+        let cmds = rx.process_at(&format!("claude {}", claude_pretool("sess-W")), 0);
+        assert!(
+            !cmds.iter().any(|c| matches!(
+                c,
+                ReporterCommand::UpsertRun(r) if r.state == State::Waiting
+            )),
+            "no Waiting before the debounce elapses"
+        );
+
+        // A tick before the window: still no Waiting.
+        let cmds = rx.tick_at(window - 1);
+        assert!(cmds.is_empty(), "a tick before the window is a no-op");
+
+        // A tick at/after the window: the inferred Waiting fires.
+        let cmds = rx.tick_at(window);
+        let run = cmds
+            .iter()
+            .find_map(|c| match c {
+                ReporterCommand::UpsertRun(r) => Some(r.clone()),
+                _ => None,
+            })
+            .expect("tick past the debounce should infer a Waiting run");
+        assert_eq!(run.state, State::Waiting, "the inferred ping");
+        assert_eq!(
+            run.native_id, "sess-W",
+            "the inference keys on the same claude session_id"
+        );
+        assert_eq!(
+            run.confidence,
+            fleet_protocol::Confidence::Inferred,
+            "inferred waiting is never High (invariant 5)"
+        );
+    }
+
+    #[test]
+    fn activity_before_debounce_cancels_the_inference() {
+        use crate::claude_infer::DEFAULT_DEBOUNCE_MS;
+        let mut rx = Receiver::new();
+        let window = DEFAULT_DEBOUNCE_MS;
+
+        // Arm at t=0, then a Stop at t=window/2 cancels the pending inference.
+        rx.process_at(&format!("claude {}", claude_pretool("sess-X")), 0);
+        rx.process_at(&format!("claude {}", claude_stop("sess-X")), window / 2);
+
+        // A tick well past the original window must NOT fire a Waiting.
+        let cmds = rx.tick_at(window * 5);
+        assert!(
+            !cmds.iter().any(|c| matches!(
+                c,
+                ReporterCommand::UpsertRun(r) if r.state == State::Waiting
+            )),
+            "a cancelled debounce never fires Waiting"
+        );
+    }
+
+    #[test]
+    fn s15_working_idle_path_stays_intact_and_never_waits() {
+        // The additive infer adapter must not disturb the S15 working/idle path:
+        // a prompt → Working, a stop → Idle, and neither emits Waiting.
+        let mut rx = Receiver::new();
+        let cmds = rx.process(&format!("claude {}", claude_prompt("sess-Y")));
+        assert!(cmds.iter().any(|c| matches!(
+            c,
+            ReporterCommand::UpsertRun(r) if r.state == State::Working
+        )));
+        let cmds = rx.process(&format!("claude {}", claude_stop("sess-Y")));
+        assert!(cmds.iter().any(|c| matches!(
+            c,
+            ReporterCommand::UpsertRun(r) if r.state == State::Idle
+        )));
+        assert!(
+            !cmds.iter().any(|c| matches!(
+                c,
+                ReporterCommand::UpsertRun(r) if r.state == State::Waiting
+            )),
+            "the S15 path never fabricates Waiting"
+        );
     }
 
     #[test]
