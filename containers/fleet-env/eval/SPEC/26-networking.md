@@ -41,8 +41,7 @@ Exact facts asserted here:
   `exec("printenv FLEET_HUB_URL")` == that string.
 - why: the explicit `FLEET_HOST_ADDR` override must win over the default-route auto-detect; if it
   doesn't, the container dials the wrong host and never phones home under colima.
-- status: partial (env.mjs always sets `-e FLEET_HOST_ADDR=host.docker.internal`; banner is
-  logged; no test asserts the derived URLs)
+- status: implemented (net.derivedDialUrls)
 
 ### L2.NET.002 — HOST falls back to the default-route gateway when FLEET_HOST_ADDR is unset
 - layer: L2
@@ -72,8 +71,7 @@ Exact facts asserted here:
 - why: this is THE container→host primitive the whole agent pipeline rides on (§8). If
   host.docker.internal stops resolving under a colima upgrade, every reporter/bridge dial fails
   even though both endpoints are individually healthy.
-- status: TODO (no test execs a reachability probe; reachability is implied by a successful
-  bridge registration but never directly asserted)
+- status: implemented (net.hostDockerInternalReachable)
 
 ### L2.NET.004 — host Hub binds 0.0.0.0 (FLEET_WS_ADDR) so containers can reach it
 - layer: L2
@@ -87,8 +85,7 @@ Exact facts asserted here:
   == 0; with `FLEET_WS_ADDR` unset (default 127.0.0.1) the container probe would FAIL.
 - why: the default loopback bind is invisible to containers — the single most common
   "phone-home silently does nothing" misconfig (§8). Pins that the suite/desktop set 0.0.0.0.
-- status: implemented (run.mjs startHub `FLEET_WS_ADDR:"0.0.0.0"`; test.sh same — but the
-  cross-namespace reachability is not asserted, only the bind flag is set)
+- status: implemented (net.hubBoundAllInterfaces — cross-namespace reachability asserted)
 
 ### L2.NET.005 — Fleet command-bridge binds 0.0.0.0 (FLEET_BRIDGE_ADDR) for container registration
 - layer: L2
@@ -118,7 +115,7 @@ Exact facts asserted here:
 - why: the editor is only reachable because code-server binds 0.0.0.0 (NOT loopback inside the
   container) AND Docker publishes it. A loopback in-container bind would make the published port
   dead despite a healthy container.
-- status: implemented (env.reset http-wait on the published port; exercised by base boot)
+- status: implemented (net.publishedPortReachable — curl 302/200 + `docker port` mapping asserted)
 
 ### L2.NET.007 — published port is unique per env (free-port allocation, no collision)
 - layer: L2
@@ -173,8 +170,7 @@ Exact facts asserted here:
   round-trip completes under the 15s `BridgeHub.send` timeout.
 - why: the hello proves inbound; a query round-trip proves the FULL duplex command channel works
   over host.docker.internal, which is what native-menu command forwarding depends on.
-- status: implemented (every behaviour's `env.observe()`/`act()` is a host↔container round-trip;
-  proven by terminal.new etc.)
+- status: implemented (net.bridgeQueryRoundTrip — direct duplex Snapshot round-trip assertion)
 
 ### L2.NET.011 — EDGE: --network none disables phone-home but code-server runs locally
 - layer: L2
@@ -280,5 +276,4 @@ Exact facts asserted here:
 - why: pins the trust boundary (serve.rs `restrict_socket_perms` 0600) — hook frames can mutate
   reported agent state, so that channel must NOT be network-reachable; only the already-trusted
   reporter→Hub dial leaves the container.
-- status: TODO (serve.rs binds + chmods the socket 0600; no eval test execs the socket perms /
-  asserts no hook TCP port exists)
+- status: implemented (net.reporterSocketLocalOnly)

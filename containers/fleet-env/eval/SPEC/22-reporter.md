@@ -131,7 +131,7 @@ test already covers them; the L2 socket→Hub→CLI end-to-end is mostly `TODO` 
 - expected: one `UpsertRun(run)` with `run.state == Idle`
 - assert: `UpsertRun.state == State::Idle`; `rx.frames_seen() == 2`, `rx.frames_dropped() == 0`
 - why: `Stop` is the **the** completion signal for the native UI; absent a completion marker it's conservatively Idle (D9), never over-claiming Done.
-- status: implemented (serve test `process_claude_prompt_then_stop_drives_working_then_idle`)
+- status: implemented (serve test `process_claude_prompt_then_stop_drives_working_then_idle`; end-to-end socket→Hub also via behaviour `reporter.promptWorkingThenStopIdle`)
 
 ### L2.RPT.012 — PreToolUse → Working + liveness; last_message == "Running <tool>…"
 - layer: L1/L2
@@ -528,7 +528,7 @@ test already covers them; the L2 socket→Hub→CLI end-to-end is mostly `TODO` 
 - expected: `600`
 - assert: `exec` output trimmed == `"600"` (unix); `restrict_socket_perms` set `0o600`
 - why: a hook frame can mutate this window's reported agent state, so the socket is a local trust boundary — no other local user may connect and inject spoofed frames (defence-in-depth).
-- status: TODO (Rust sets 0600 but no eval behaviour stats the live socket; add an env-exec assertion)
+- status: implemented (behaviour `reporter.socketMode0600`)
 
 ### L2.RPT.065 — EDGE: a blank line on the socket is skipped without counting as drift
 - layer: L2
@@ -635,7 +635,7 @@ test already covers them; the L2 socket→Hub→CLI end-to-end is mostly `TODO` 
 - expected: the Hub session shows TWO distinct runs (run count ≥2 / two run-ids), each independently transitionable
 - assert: Hub session row shows `(2 runs)` (or ≥2); resolving sess-A to idle leaves sess-B's state untouched
 - why: one reporter multiplexes many claude invocations; concurrent sessions must produce independent runs under one session shell — cross-contamination would mislabel one agent with another's state.
-- status: TODO (Rust `process_two_sessions_get_distinct_runs` proves distinct run-ids at the adapter; the end-to-end two-runs-on-Hub assertion is not yet a behaviour)
+- status: implemented (behaviour `reporter.twoSessionsTwoRuns`)
 
 ---
 

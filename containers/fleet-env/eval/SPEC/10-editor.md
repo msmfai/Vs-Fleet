@@ -39,7 +39,7 @@ durability/the filesystem truth.
 - assert: `before.activeEditor === after.activeEditor` OR reply `ok:false`; `exec test -f PROJECT/does-not-exist.txt` still false (open didn't create it)
 - edges: empty-precondition edge of L1.EDITOR.001 (target file absent)
 - why: openFile must not silently materialise a nonexistent file as the active editor nor create it on disk
-- status: TODO
+- status: implemented (editor.openMissingNoop)
 
 ### L1.EDITOR.003 — Close the active (Welcome) tab shrinks openTabs by one
 - layer: L1
@@ -74,7 +74,7 @@ durability/the filesystem truth.
 - expected: `openTabs.length` → 0 and `activeEditor` → null
 - assert: `after.openTabs.length === 0`; `after.activeEditor == null`
 - why: bulk-close path distinct from single close; guards group teardown reflecting in the snapshot
-- status: TODO
+- status: implemented (editor.closeAllEmpties)
 
 ### L1.EDITOR.006 — Split editor right yields two visible editors
 - layer: L1
@@ -111,7 +111,7 @@ durability/the filesystem truth.
 - expected: `visibleEditors.length` → 2 (vertical split)
 - assert: `after.visibleEditors.length === before.visibleEditors.length + 1`
 - why: distinct orientation command from `splitEditor`; both must register a new visible group
-- status: TODO
+- status: implemented (editor.splitDown)
 
 ### L1.EDITOR.009 — Next/previous editor cycles the active editor among open tabs
 - layer: L1
@@ -123,7 +123,7 @@ durability/the filesystem truth.
 - expected: nextEditor moves `activeEditor` to a different tab; previousEditor returns it
 - assert: after nextEditor, `activeEditor` basename != `b.txt`; after previousEditor, `activeEditor` basename == `b.txt`
 - why: tab navigation must change the snapshot's activeEditor deterministically; guards the cycle wiring
-- status: TODO
+- status: implemented (editor.nextPrevCycles)
 
 ### L1.EDITOR.010 — Reopen closed editor restores the last-closed tab
 - layer: L1
@@ -200,7 +200,7 @@ durability/the filesystem truth.
 - assert: `after.openTabs.length === before.openTabs.length + 1`; `after.activeEditor` matches `/^Untitled|untitled:/` (label or path)
 - edges: repeat → each call adds another `Untitled-N`
 - why: untitled docs have no on-disk path; guards the snapshot representing scheme-only editors and the count delta
-- status: TODO
+- status: implemented (editor.newUntitled)
 
 ### L1.EDITOR.016 — Diff editor opens for a modified tracked file
 - layer: L1
@@ -301,7 +301,7 @@ durability/the filesystem truth.
 - expected: the selection spans from (0,0) to the document end
 - assert: `after.selection.start == {line:0,character:0}` AND `after.selection.end.line == 2` (last line index)
 - why: guards the `selection` Snapshot field reporting a real multi-line range; foundation for selection-based input tests (see 1a-input)
-- status: TODO
+- status: implemented (editor.selectAll)
 
 ### L1.EDITOR.024 — Navigate Back / Forward restores prior editor positions
 - layer: L1
@@ -366,4 +366,4 @@ durability/the filesystem truth.
 - assert: `after.openTabs.length === before.openTabs.length` (no +1); `activeEditor` basename == `c.txt`
 - edges: repeat edge of L1.EDITOR.001 — idempotent open
 - why: guards openFile idempotence; a regression opening duplicate tabs would inflate openTabs and leak editors
-- status: TODO
+- status: implemented (editor.openSameNoDup)

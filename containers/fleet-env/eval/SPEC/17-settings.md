@@ -29,7 +29,7 @@ both — entries assert via that helper, not a fixed shape.
 - expected: returns the live boolean default (true on stock VS Code)
 - assert: `settingValue(r)` is a boolean (=== true on default image); reply `ok:true`
 - why: smoke for the read path — proves `getConfiguration(section).get(leaf)` resolves a known key to a real value, the prerequisite for every toggle assertion below. A `undefined` here means the section/leaf split in extension.ts regressed.
-- status: partial(read path exercised inside `settings.toggleMinimap`; no standalone read-only behaviour)
+- status: implemented (behaviour `settings.readMinimapDefault`)
 
 ### L1.SET.002 — Read an unknown setting key returns undefined, not an error
 - layer: L1
@@ -41,7 +41,7 @@ both — entries assert via that helper, not a fixed shape.
 - expected: reply `ok:true` with value `undefined` (VS Code returns undefined for unknown keys, not a throw)
 - assert: reply `ok:true`; `settingValue(r) === undefined`
 - why: EDGE (missing key) — distinguishes "key absent (undefined)" from "query failed (ok:false)". Guards the contract that the read path never throws on an unknown key, so a `undefined` in a toggle test means "not set", not "query broken".
-- status: TODO
+- status: implemented (behaviour `settings.readUnknownKey`)
 
 ### L1.SET.003 — Read a setting with an empty key fails cleanly
 - layer: L1
@@ -53,7 +53,7 @@ both — entries assert via that helper, not a fixed shape.
 - expected: reply `ok:false` with error "setting requires key" (extension.ts throws on empty key)
 - assert: env.request returns `ok:false`; `error` contains "requires key"
 - why: EDGE (bad input) — the handler explicitly guards empty keys; this pins that contract so a future caller gets a clear failure rather than a silent `getConfiguration("").get("")` surprise.
-- status: TODO
+- status: implemented (behaviour `settings.readEmptyKeyFails`)
 
 ### L1.SET.010 — Toggle Minimap flips editor.minimap.enabled (config-backed — VERIFIABLE)
 - layer: L1
@@ -77,7 +77,7 @@ both — entries assert via that helper, not a fixed shape.
 - expected: net config value back to B
 - assert: `setting {key:"editor.minimap.enabled"}` after the pair === B
 - why: EDGE (round-trip) — a boolean toggle must be its own inverse at the config layer; guards a regression where the toggle latches or drifts. Builds directly on the SET.010 read/write loop.
-- status: TODO
+- status: implemented (behaviour `settings.minimapRoundtrip`)
 
 ### L1.SET.020 — Toggle Word Wrap is a per-editor override — NOT verifiable via `setting`
 - layer: L1
@@ -89,7 +89,7 @@ both — entries assert via that helper, not a fixed shape.
 - expected: the on-screen wrap toggles BUT `editor.wordWrap` in config is UNCHANGED (it's a transient per-editor view override)
 - assert: re-read `setting {key:"editor.wordWrap"}` → assert it is UNCHANGED vs baseline (proving the override does not touch config); pass = "config correctly unchanged"
 - why: THE LESSON encoded as a positive test — documents that word-wrap is a per-editor override the `setting` query can't see, so the correct observable is "config did NOT move". Prevents a future contributor from "fixing" the minimap test to use word-wrap and getting a vacuous pass. The real wrap state would need a Track-D editor-view observable.
-- status: TODO
+- status: implemented (behaviour `settings.wordWrapNotConfigBacked`)
 
 ### L1.SET.021 — toggleWordWrap with NO active editor resolves or no-ops cleanly
 - layer: L1
@@ -101,7 +101,7 @@ both — entries assert via that helper, not a fixed shape.
 - expected: resolves ok (no editor → nothing to wrap; must not throw)
 - assert: env.act does not throw (`ok:true`)
 - why: EDGE (missing precondition) — an editor-scoped setting command must degrade gracefully with no editor; guards a reject-instead-of-noop regression.
-- status: TODO
+- status: implemented (behaviour `settings.toggleWordWrapNoEditor`)
 
 ### L1.SET.030 — Toggle Auto Save flips files.autoSave (config-backed — VERIFIABLE)
 - layer: L1
@@ -113,7 +113,7 @@ both — entries assert via that helper, not a fixed shape.
 - expected: the `files.autoSave` configuration value changes (e.g. "off" ↔ "afterDelay")
 - assert: re-read `setting {key:"files.autoSave"}` → `after`; assert `after !== before && after !== undefined`
 - why: a second config-backed toggle (covers the File-menu Auto Save id) to prove the read/write loop generalizes beyond booleans to string-valued settings — `files.autoSave` is a string enum, exercising a different value type through the same `setting` path.
-- status: TODO
+- status: implemented (behaviour `settings.toggleAutoSave`)
 
 ### L1.SET.031 — Auto Save toggled on then off returns files.autoSave to baseline
 - layer: L1
@@ -125,7 +125,7 @@ both — entries assert via that helper, not a fixed shape.
 - expected: net value back to baseline string
 - assert: `setting {key:"files.autoSave"}` after the pair === baseline
 - why: EDGE (round-trip on a string enum) — pairs with SET.030; guards that the enum toggle cycles cleanly rather than advancing through states unevenly.
-- status: TODO
+- status: implemented (behaviour `settings.autoSaveRoundtrip`)
 
 ### L1.SET.040 — Write a setting via writeFile to settings.json, read it back
 - layer: L1
@@ -138,7 +138,7 @@ both — entries assert via that helper, not a fixed shape.
 - assert: `setting {key:"editor.fontSize"}` → `settingValue(r) === 17`
 - machine-state: one fs change (the settings.json write) visible in `docker diff`
 - why: proves the WRITE-via-disk → READ-via-bridge loop (the workspace-settings path, distinct from a command-driven toggle); guards that VS Code's config watcher picks up a bridge-written settings.json. Names the exact key/value so the read-back is unambiguous.
-- status: TODO
+- status: implemented (behaviour `settings.writeSettingsJson`)
 
 ### L1.SET.041 — Malformed settings.json does not crash the config read
 - layer: L1
@@ -150,7 +150,7 @@ both — entries assert via that helper, not a fixed shape.
 - expected: the read still resolves (`ok:true`) returning the prior/default value (VS Code ignores an unparseable settings file, surfaces a Problems entry, does not crash the ext-host)
 - assert: reply `ok:true`; `settingValue(r)` is a number or undefined (NOT a thrown bridge error)
 - why: EDGE (failure injection) — a corrupt settings file must not take down the `setting` query path; guards ext-host resilience. The diagnostic that VS Code raises could additionally be asserted via the `diagnostics` query (cross-ref 15-diagnostics).
-- status: TODO
+- status: implemented (behaviour `settings.malformedSettingsJson`)
 
 ### L1.SET.050 — Workspace-scoped setting overrides the user/default scope
 - layer: L1
@@ -162,7 +162,7 @@ both — entries assert via that helper, not a fixed shape.
 - expected: the effective value is the workspace override (2), not the default (4)
 - assert: `settingValue(r) === 2`
 - why: proves the `getConfiguration` scope resolution returns the EFFECTIVE (workspace-winning) value, not just the default — the documented behaviour of the `setting` handler's section/leaf split. Guards a regression where the bridge reads only user/default scope.
-- status: TODO
+- status: implemented (behaviour `settings.workspaceOverride`)
 
 ### L1.SET.060 — A command-driven toggle and a settings.json write agree on the same key
 - layer: L1
@@ -174,7 +174,7 @@ both — entries assert via that helper, not a fixed shape.
 - expected: the config value flips relative to the file-written baseline
 - assert: `setting {key:"editor.minimap.enabled"}` after toggle === true (i.e. !the written false)
 - why: EDGE (interaction) — proves the command toggle and the file write target the SAME config key and compose predictably; guards against the toggle writing a different scope than the file (which would make them silently diverge).
-- status: TODO
+- status: implemented (behaviour `settings.toggleAndWriteAgree`)
 
 ### L1.SET.070 — Reading a setting before any editor opens still resolves (config is global)
 - layer: L1
@@ -186,4 +186,4 @@ both — entries assert via that helper, not a fixed shape.
 - expected: resolves ok with the config value (config does not depend on an open editor)
 - assert: reply `ok:true`; `settingValue(r)` is a boolean
 - why: EDGE (empty editor state) — `getConfiguration` is workspace/global, not editor-scoped, so the read must work with no editor; distinguishes config reads (always available) from editor-view state (needs an editor). Complements the per-editor-override lesson in SET.020.
-- status: TODO
+- status: implemented (behaviour `settings.readBeforeEditor`)

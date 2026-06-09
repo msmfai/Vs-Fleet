@@ -43,7 +43,7 @@ isolation because they mutate a repo. The snapshot field for SCM (when present) 
 - assert: `env.exec` exit code 0 AND `git rev-parse --is-inside-work-tree == "true"` AND prior `user.email` config still reads `eval@fleet.local`
 - edges: repeat / reinit
 - why: reinit must be benign; guards a setup path that double-inits not corrupting identity config.
-- status: TODO
+- status: implemented (behaviour `git.reinit`)
 
 ### L1.SCM.003 — Open the Source Control view → SCM view container is active
 - layer: L1
@@ -56,7 +56,7 @@ isolation because they mutate a repo. The snapshot field for SCM (when present) 
 - assert: bridge reply `ok:true`; if snapshot exposes activeView/focusedView → matches /scm|source.?control/i; else fall back to ok-returned
 - edges: repeat — already-focused stays focused (idempotent)
 - why: SCM viewlet entry point; guards `workbench.view.scm` registration + activation. Dual posture because snapshot may not expose the active view (mirrors search.findInFiles).
-- status: TODO
+- status: implemented (behaviour `scm.openView`)
 
 ### L1.SCM.004 — Open Source Control in a non-git folder (edge: no repo)
 - layer: L1
@@ -69,7 +69,7 @@ isolation because they mutate a repo. The snapshot field for SCM (when present) 
 - assert: bridge reply `ok:true`; snapshot.scmChanges (if present) == 0 or undefined; no error reply
 - edges: empty/no-repo state
 - why: SCM must degrade gracefully with no provider; a regression that throws on a non-repo workspace would break the viewlet for fresh projects.
-- status: TODO
+- status: implemented (behaviour `scm.openViewNoRepo`)
 
 ### L1.SCM.005 — Modify a tracked file → exactly one working-tree change surfaces
 - layer: L1
@@ -94,7 +94,7 @@ isolation because they mutate a repo. The snapshot field for SCM (when present) 
 - assert: `git status --porcelain` contains a line starting `??` for `untracked-new.txt` AND total changed lines == 1
 - edges: untracked (vs modified) — different porcelain status code
 - why: untracked and modified are distinct SCM states; guards that a new file is counted as a change at all (a regression could only watch tracked paths).
-- status: TODO
+- status: implemented (behaviour `git.untrackedChange`)
 
 ### L1.SCM.007 — Stage a modified file via git.stage command → it moves to the index
 - layer: L1
@@ -263,7 +263,7 @@ isolation because they mutate a repo. The snapshot field for SCM (when present) 
 - assert: `git diff --unified=0 diff-me.txt` output contains `-b` and `+B-CHANGED` AND does NOT contain `-a`/`-c`; if a snapshot diff view is exposed, cross-check it opened
 - edges: opening the actual VS Code diff editor (`git.openChange`) is interactive; assert via git diff plumbing as the deterministic backing
 - why: the SCM diff editor is a projection of `git diff`; asserting the hunk content proves only the changed line is flagged (guards a regression that whole-file-diffs an unchanged file).
-- status: TODO
+- status: implemented (behaviour `git.diffHunk`)
 
 ### L1.SCM.020 — SCM decoration count cross-checks git status (snapshot ↔ plumbing)
 - layer: L1
@@ -289,7 +289,7 @@ isolation because they mutate a repo. The snapshot field for SCM (when present) 
 - assert: mid-merge `git status` shows `UU conflict.txt` AND the file contains `<<<<<<<`/`=======`/`>>>>>>>`; after resolve `git status --porcelain == ""` AND `git rev-list --count HEAD` increased by the merge commit AND `env.exec("cat conflict.txt")` has neither marker nor the losing side
 - edges: conflict state (`UU`), marker presence, then clean resolution
 - why: conflict handling is the hardest SCM state; asserts the full lifecycle (conflict appears → markers present → resolved → clean) via git plumbing, the ground truth behind the merge-conflict UI.
-- status: TODO
+- status: implemented (behaviour `git.mergeConflict`)
 
 ### L1.SCM.022 — Merge with no conflict (edge: clean fast-forward / auto-merge)
 - layer: L1
@@ -302,7 +302,7 @@ isolation because they mutate a repo. The snapshot field for SCM (when present) 
 - assert: `git status --porcelain == ""` AND `env.exec("test -f feat.txt")=="yes"` AND no `<<<<<<<` anywhere in the tree
 - edges: non-conflicting merge (the happy path that must NOT raise conflict markers)
 - why: guards that a clean merge does not spuriously enter the conflict path; the negative case for L1.SCM.021.
-- status: TODO
+- status: implemented (behaviour `git.mergeClean`)
 
 ### L1.SCM.023 — SCM operations on a file outside the repo root (edge: nested/extra-repo path)
 - layer: L1
@@ -315,7 +315,7 @@ isolation because they mutate a repo. The snapshot field for SCM (when present) 
 - assert: `git status --porcelain` in `/home/coder/project` does not reference `outside.txt`; total change count attributable to in-tree edits only
 - edges: file outside the work tree must not pollute SCM state
 - why: guards that the SCM/git boundary is the repo root; a regression that watches the whole fs would surface spurious changes.
-- status: TODO
+- status: implemented (behaviour `git.outsideRepo`)
 
 ### L1.SCM.024 — Commit then verify decorations clear (post-commit clean state)
 - layer: L1
@@ -328,7 +328,7 @@ isolation because they mutate a repo. The snapshot field for SCM (when present) 
 - assert: `git status --porcelain == ""` AND (if exposed) snapshot.scmChanges == 0 after; rev-count increased by 1
 - edges: post-commit the change set must empty (decorations clear)
 - why: completes the diff→commit→clean cycle; guards that the SCM provider re-reads after a commit and does not leave stale decorations.
-- status: TODO
+- status: implemented (behaviour `git.commitClearsChanges`)
 
 ### L1.SCM.025 — git.refresh re-reads working tree after an out-of-band edit (edge: external change)
 - layer: L1
