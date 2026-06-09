@@ -57,16 +57,44 @@ export function activate(context: vscode.ExtensionContext): void {
       ws?.send(JSON.stringify(registration));
     });
 
+    const send = (obj: unknown): void => ws?.send(JSON.stringify(obj));
+
+    // An observation of this VS Code's state — the testable "what happened"
+    // surface (terminals, editors, tabs, diagnostics). Read straight from the
+    // extension API, so it's exact, not scraped from pixels.
+    const snapshot = (): Record<string, unknown> => ({
+      terminals: vscode.window.terminals.map((t) => t.name),
+      terminalCount: vscode.window.terminals.length,
+      activeEditor: vscode.window.activeTextEditor?.document.uri.fsPath ?? null,
+      visibleEditors: vscode.window.visibleTextEditors.map((e) => e.document.uri.fsPath),
+      openTabs: vscode.window.tabGroups.all.flatMap((g) => g.tabs.map((t) => t.label)),
+      diagnostics: vscode.languages
+        .getDiagnostics()
+        .reduce((n, [, ds]) => n + ds.length, 0),
+    });
+
     ws.on("message", (data: WebSocket.RawData) => {
       try {
         const msg = JSON.parse(data.toString());
+        // ACT: run a command; reply with a result if a reqId was given.
         if (msg && msg.type === "command" && typeof msg.id === "string") {
           const args = Array.isArray(msg.args) ? msg.args : [];
           log(`command recv: ${msg.id}`);
           vscode.commands.executeCommand(msg.id, ...args).then(
-            () => log(`command ok: ${msg.id}`),
-            (e) => log(`command ERR: ${msg.id} ${e}`)
+            (value) => {
+              log(`command ok: ${msg.id}`);
+              if (msg.reqId != null) send({ type: "result", reqId: msg.reqId, ok: true, value });
+            },
+            (e) => {
+              log(`command ERR: ${msg.id} ${e}`);
+              if (msg.reqId != null)
+                send({ type: "result", reqId: msg.reqId, ok: false, error: String(e) });
+            }
           );
+        } else if (msg && msg.type === "query") {
+          // OBSERVE: reply with a state snapshot.
+          log(`query recv: reqId=${msg.reqId}`);
+          send({ type: "result", reqId: msg.reqId, ok: true, data: snapshot() });
         }
       } catch (e) {
         log(`bad frame: ${e}`);
