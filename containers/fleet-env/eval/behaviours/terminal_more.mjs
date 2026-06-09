@@ -110,27 +110,35 @@ export const behaviours = [
     },
   },
 
-  // terminal.cwd — run `pwd` and assert the working dir is the workspace project
-  // root. Needs Track-E termSend + terminalText (SKIP until shipped).
+  // terminal.cwd — assert a new terminal opens in the workspace project root.
+  // `fresh` env (no shared-terminal pollution); we write `pwd` to a file and read
+  // it back via the reliable fileContent query — terminalText output-stream capture
+  // depends on shell integration and is racy.
   {
     id: "terminal.cwd",
-    title: "Terminal: pwd reports the workspace project root",
+    title: "Terminal: a new terminal's cwd is the workspace project root",
     tags: ["terminal"],
-    needs: ["termSend", "terminalText"],
+    isolation: "fresh",
+    needs: ["termSend", "fileContent"],
     async run(env) {
       const EXPECT = "/home/coder/project";
+      const marker = "/tmp/fleet-cwd.txt";
       await env.act("workbench.action.terminal.new");
       await sleep(2000);
-      const sent = await env.request({ type: "termSend", text: "pwd" });
-      const name = sent && sent.terminal;
-      const { hit, text } = await waitForTerminalText(env, EXPECT, { name });
+      await env.request({ type: "termSend", text: `pwd > ${marker}` });
+      let text = "";
+      for (let i = 0; i < 12; i++) {
+        await sleep(500);
+        const r = await env.request({ type: "fileContent", path: marker }).catch(() => null);
+        text = (r && (r.text ?? (r.data && r.data.text))) || "";
+        if (text.includes(EXPECT)) break;
+      }
       await env.observe("terminal.cwd.after");
+      const hit = text.includes(EXPECT);
       return {
         pass: hit,
-        detail: hit
-          ? `pwd output contains ${EXPECT} (terminal ${JSON.stringify(name)})`
-          : `pwd never showed ${EXPECT} (last buffer: ${JSON.stringify(text.slice(-120))})`,
-        evidence: { expected: EXPECT, terminal: name, tail: text.slice(-200) },
+        detail: hit ? `terminal cwd is ${EXPECT}` : `cwd file lacked ${EXPECT} (got ${JSON.stringify(text.trim().slice(-120))})`,
+        evidence: { expected: EXPECT, got: text.trim() },
       };
     },
   },
