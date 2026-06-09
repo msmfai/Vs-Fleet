@@ -2,9 +2,11 @@
 //! spawned). A spawned server is launched with the phone-home env, so it dials
 //! Fleet's bridge and appears in the rail on its own — Fleet never pulls it.
 //!
-//! Launches **code-server** (license-clean, Open-VSX — the product editor) with a
-//! SHARED `--extensions-dir` (the `fleet-bridge` installed once) and a PER-SERVER
-//! `--user-data-dir` (so concurrent servers don't collide).
+//! Launches Microsoft's official **VS Code** web server (`code serve-web`) with a SHARED
+//! `--extensions-dir` (the `fleet-bridge` installed once) and a PER-SERVER
+//! `--server-data-dir` (so concurrent servers don't collide). (Was code-server; switched
+//! to the official server for the full MS Marketplace + clean aarch64-darwin packaging —
+//! fine for personal / own-hardware use; see NORTH_STAR on the licensing line.)
 //!
 //! Each server also gets the **agent-state pipeline** so its rail tab reflects a
 //! running agent:
@@ -134,10 +136,12 @@ impl ServerSupervisor {
             .ok();
 
         // --- the editor: code-server --------------------------------------------
-        let exts_dir = std::env::var("FLEET_EDITOR_EXTENSIONS_DIR")
-            .unwrap_or_else(|_| base.join("cs-exts").to_string_lossy().into_owned());
+        // NOTE: `code serve-web` has NO `--extensions-dir`; the fleet-bridge extension
+        // (observe/act + rail registration) must be installed into the served VS Code
+        // Server's extensions another way (e.g. `code --install-extension <vsix>`) — this
+        // is an open item for the serve-web swap (the rail won't register without it).
         let user_data = base.join(format!("cs-userdata-{id}"));
-        let editor = std::env::var("FLEET_EDITOR_BIN").unwrap_or_else(|_| "code-server".into());
+        let editor = std::env::var("FLEET_EDITOR_BIN").unwrap_or_else(|_| "code".into());
         let url = format!("http://127.0.0.1:{port}/?folder={}", folder.display());
         let (cs_out, cs_err) = log_files(&format!("cs-{id}"));
 
@@ -150,12 +154,7 @@ impl ServerSupervisor {
 
         // The SAME code-server flags + Fleet phone-home env the SSH path uses, so a
         // local and a remote server are launched identically (only the location differs).
-        let args = code_server_args(
-            &format!("127.0.0.1:{port}"),
-            &exts_dir,
-            &user_data.to_string_lossy(),
-            &folder.to_string_lossy(),
-        );
+        let args = serve_web_args("127.0.0.1", port, &user_data.to_string_lossy(), &folder.to_string_lossy());
         let env = fleet_env(
             &reporter_socket.to_string_lossy(),
             &id,
@@ -306,11 +305,11 @@ impl ServerSupervisor {
         // Remote paths, relative to the ssh login home.
         let remote_ws = format!(".fleet/ws-{id}");
         let remote_sock = format!("/tmp/fleet-reporter-{id}.sock");
-        let remote_exts =
-            std::env::var("FLEET_REMOTE_EXTENSIONS_DIR").unwrap_or_else(|_| ".fleet/cs-exts".into());
+        // (serve-web has no --extensions-dir; the remote fleet-bridge install is the same
+        // open item as local — see spawn_local.)
         let remote_userdata = format!(".fleet/cs-userdata-{id}");
         let remote_editor =
-            std::env::var("FLEET_REMOTE_EDITOR_BIN").unwrap_or_else(|_| "code-server".into());
+            std::env::var("FLEET_REMOTE_EDITOR_BIN").unwrap_or_else(|_| "code".into());
         let remote_reporter =
             std::env::var("FLEET_REMOTE_REPORTER_BIN").unwrap_or_else(|_| "fleet-reporter".into());
 
@@ -318,7 +317,7 @@ impl ServerSupervisor {
         let url = format!("http://127.0.0.1:{local_editor}/");
         // The SAME invocation as local — bound to the remote loopback; the bridge dials
         // the -R bridge tunnel back to Fleet.
-        let args = code_server_args(&format!("127.0.0.1:{r_cs}"), &remote_exts, &remote_userdata, &remote_ws);
+        let args = serve_web_args("127.0.0.1", r_cs, &remote_userdata, &remote_ws);
         let env = fleet_env(&remote_sock, &id, &format!("ws://127.0.0.1:{r_bridge}"), &url);
 
         let env_str = env.iter().map(|(k, v)| format!("{k}={}", shq(v))).collect::<Vec<_>>().join(" ");
@@ -336,12 +335,11 @@ impl ServerSupervisor {
             _ => format!("mkdir -p {};", shq(&remote_ws)),
         };
         let remote_cmd = format!(
-            "{ws_prep} mkdir -p {exts} {ud} 2>/dev/null; rm -f {sock}; \
+            "{ws_prep} mkdir -p {ud} 2>/dev/null; rm -f {sock}; \
              {rep} --serve --ws ws://127.0.0.1:{rhub} --socket {sock} --session-id {id} >/tmp/fleet-rep-{id}.log 2>&1 & \
              RPID=$!; trap 'kill $RPID 2>/dev/null' EXIT INT TERM; \
              env {env} {ed} {args}; kill $RPID 2>/dev/null",
             ws_prep = ws_prep,
-            exts = shq(&remote_exts),
             ud = shq(&remote_userdata),
             sock = shq(&remote_sock),
             rep = shq(&remote_reporter),
@@ -535,21 +533,27 @@ fn free_port() -> std::io::Result<u16> {
     Ok(l.local_addr()?.port())
 }
 
-/// The code-server flags Fleet launches with — identical for local and remote spawns,
-/// so a server behaves the same wherever it runs.
-fn code_server_args(bind: &str, exts_dir: &str, user_data: &str, folder: &str) -> Vec<String> {
+/// The `code serve-web` invocation Fleet launches — Microsoft's OFFICIAL VS Code web
+/// server. Chosen over code-server for the full MS Marketplace + clean aarch64-darwin
+/// packaging; fine for personal / own-hardware use (see NORTH_STAR + REQUIREMENTS for the
+/// licensing line — it stops being clean only when hosting editors for OTHERS). Identical
+/// for local and remote spawns, so a server behaves the same wherever it runs.
+/// `--without-connection-token` mirrors code-server's `--auth none`: Fleet binds loopback
+/// (local) or tunnels (ssh), so no token is needed. The workspace folder is opened via the
+/// URL `?folder=` rather than a positional arg.
+fn serve_web_args(host: &str, port: u16, server_data: &str, default_folder: &str) -> Vec<String> {
     vec![
-        "--bind-addr".into(),
-        bind.into(),
-        "--auth".into(),
-        "none".into(),
-        "--disable-telemetry".into(),
-        "--disable-update-check".into(),
-        "--extensions-dir".into(),
-        exts_dir.into(),
-        "--user-data-dir".into(),
-        user_data.into(),
-        folder.into(),
+        "serve-web".into(),
+        "--host".into(),
+        host.into(),
+        "--port".into(),
+        port.to_string(),
+        "--without-connection-token".into(),
+        "--accept-server-license-terms".into(),
+        "--server-data-dir".into(),
+        server_data.into(),
+        "--default-folder".into(),
+        default_folder.into(),
     ]
 }
 

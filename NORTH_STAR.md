@@ -92,8 +92,9 @@ the user's existing git credentials.
 ## Where we are
 
 - **Multiplexer**: Tauri host with a Discord-style rail + one embedded editor surface
-  that navigates between servers (`crates/fleet-host`). License-clean **code-server**
-  (Open-VSX), not MS serve-web.
+  that navigates between servers (`crates/fleet-host`). Editor = Microsoft's official **VS
+  Code** (`code serve-web`) for the current personal scope; **code-server** (Open-VSX) is
+  the license-clean swap if/when Fleet hosts editors for others (see Principles).
 - **Agent-state pipeline**: per-server `fleet-reporter --serve` + a `claude` shim →
   Hub → rail (working / waiting / idle / done). Waiting = the ping (Fleet's whole point).
 - **Spawn modes**: `local` (default), `container` (docker `fleet-env` image), `ssh`
@@ -101,7 +102,7 @@ the user's existing git credentials.
 - **Headless test suite**: the `fleet-env` container harness — a hyper-specific spec
   (`containers/fleet-env/eval/SPEC/`, 445 entries) with ~170 behaviours implemented and
   green, each carrying a rationale + auto-stamped git provenance.
-- **Assumption**: the host / provisioned machine already has `code-server` (and the
+- **Assumption**: the host / provisioned machine already has the editor (`code`, VS Code) (and the
   fleet stack). Fleet doesn't ship the editor binary.
 
 ## Roadmap
@@ -126,7 +127,9 @@ the user's existing git credentials.
 
 - **Phone-home, never pull.** Servers establish the connection to Fleet.
 - **One spawn invocation**, parameterized by location — never fork the editor launch.
-- **License-clean** (code-server / Open-VSX).
+- **License-aware editor.** Personal / own-hardware use runs Microsoft's official VS Code
+  (`code serve-web`). Switch to **code-server** (Open-VSX) before hosting editors for
+  others / commercially — that's the line MS's license + Marketplace ToS draw.
 - **Don't lock off the cloud direction** — every design choice should compose with
   "provision a remote machine and let it call home."
 - **Agent-state is the point** — the rail must always reflect what each workspace's
