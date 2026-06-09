@@ -8,7 +8,11 @@
   "engines": { "vscode": "^1.80.0" },
   "categories": ["Other"],
   "main": "./out/extension.js",
+  "extensionKind": ["workspace"],
   "activationEvents": ["onStartupFinished"],
+  "capabilities": {
+    "untrustedWorkspaces": { "supported": true }
+  },
   "contributes": {},
   "scripts": {
     "build": "tsc",

@@ -1,0 +1,10 @@
+{
+  "name": "fleet-eval",
+  "private": true,
+  "type": "module",
+  "description": "Headless behaviour tests for Fleet environments: drive VS Code actions via the bridge, assert the effect, measure state before/after.",
+  "dependencies": {
+    "ws": "^8.21.0",
+    "playwright": "^1.48.0"
+  }
+}
