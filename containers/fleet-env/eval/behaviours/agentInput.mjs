@@ -230,17 +230,20 @@ export const behaviours = [
         { ms: 30000, every: 750 },
       );
 
-      // Then settle back to idle/done (the run finished). This is the success edge.
+      // Then the run terminates. `claude -p` is ONE-SHOT: it fires SessionEnd on
+      // exit, so the run ends at `idle`/`done` (a turn finished) OR `dead` (the
+      // session ended) — all three mean "the turn completed". (An interactive claude
+      // would settle at idle and stay; -p ends the session.)
       const settled = await pollHub(
         sessionTitle,
-        (_l, st) => st === "idle" || st === "done",
+        (_l, st) => st === "idle" || st === "done" || st === "dead",
         { ms: 90000, every: 1500 },
       );
       const after = await env.observe("agent.claudeRuns.after");
 
-      // Pass = we saw the session transition (working/waiting observed) AND it ended
-      // back at idle/done. If the working blip was missed but the session ends idle
-      // AND the snapshot now reports ≥1 run, that still proves a run occurred.
+      // Pass = we saw the session go active (working/waiting) AND it then terminated.
+      // If the working blip was missed but the snapshot reports ≥1 run, that still
+      // proves a run occurred.
       const sawActive = working.ok || settled.seen.includes("working") ||
         settled.seen.includes("waiting");
       const endedQuiet = settled.ok;
