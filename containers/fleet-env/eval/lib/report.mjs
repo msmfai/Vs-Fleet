@@ -212,13 +212,12 @@ ${rows}
       kv.push(`<dt>timingsMs</dt><dd><code>${escHtml(JSON.stringify(r.timingsMs))}</code></dd>`);
     }
 
-    let evidence = "";
+    const body = [`<div class="kv">${kv.join("")}</div>`];
     if (r.evidence && Object.keys(r.evidence).length) {
-      evidence = `<div class="kv"><dt>evidence</dt><dd><pre>${escHtml(
-        JSON.stringify(r.evidence, null, 2))}</pre></dd></div>`;
+      body.push(`<div class="kv"><dt>evidence</dt><dd><pre>${escHtml(
+        JSON.stringify(r.evidence, null, 2))}</pre></dd></div>`);
     }
 
-    let shots = "";
     const paths = Array.isArray(r.screenshots) ? r.screenshots : [];
     if (paths.length) {
       const figs = paths.map((p) => {
@@ -228,7 +227,7 @@ ${rows}
           ? `<figure><img src="${uri}" alt="${cap}" loading="lazy"><figcaption>${cap}</figcaption></figure>`
           : `<figure><figcaption class="err">missing: ${cap}</figcaption></figure>`;
       }).join("");
-      shots = `<div class="shots">${figs}</div>`;
+      body.push(`<div class="shots">${figs}</div>`);
     }
 
     return `<details${open}>
@@ -239,9 +238,7 @@ ${rows}
     <span class="detail" title="${escHtml(r.detail || "")}">${label}${r.detail ? " — " + escHtml(r.detail) : ""}</span>
   </summary>
   <div class="body">
-    <div class="kv">${kv.join("")}</div>
-    ${evidence}
-    ${shots}
+    ${body.join("\n    ")}
   </div>
 </details>`;
   }

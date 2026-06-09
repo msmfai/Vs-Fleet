@@ -1,8 +1,868 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="fleet-eval" tests="1" failures="0" skipped="0" time="10.397">
-  <testsuite name="base" tests="1" failures="0" skipped="0" time="2.740">
-    <testcase classname="base" name="visual.workbenchTabSmoke" time="2.740">
-      <system-out>workbench visible with 2 tab(s); screenshot 1280x720, blackish=0.0003, buckets=73</system-out>
+<testsuites name="fleet-eval" tests="279" failures="2" skipped="0" time="1789.971">
+  <testsuite name="base" tests="171" failures="2" skipped="0" time="2138.481">
+    <testcase classname="base" name="file.create" time="12.380">
+      <system-out>activeEditor="/home/coder/project/fleet-create.txt" (want fleet-create.txt); fileContent matches</system-out>
+    </testcase>
+    <testcase classname="base" name="editor.saveDirty" time="14.973">
+      <system-out>on-disk contains FLEET_SAVED_MARKER (was "")</system-out>
+    </testcase>
+    <testcase classname="base" name="editor.splitRight" time="22.945">
+      <system-out>visibleEditors 1 → 2</system-out>
+    </testcase>
+    <testcase classname="base" name="input.typeIntoEditor" time="26.653">
+      <system-out>typed "FLEET_TYPED_OK" appears in /home/coder/project/fleet-input.txt</system-out>
+    </testcase>
+    <testcase classname="base" name="agent.claudeRuns" time="12.554">
+      <system-out>Hub session "r1-base": idle→working→idle (run completed)</system-out>
+    </testcase>
+    <testcase classname="base" name="agent.waitingState" time="3.888">
+      <system-out>Hub session "r1-base" reached "waiting" via a controlled PreToolUse-without-Stop (states: working-&gt;waiting)</system-out>
+    </testcase>
+    <testcase classname="base" name="file.rename" time="30.113">
+      <system-out>disk renamed; tab references fleet-rename-new.txt: true</system-out>
+    </testcase>
+    <testcase classname="base" name="quickOpen.byName" time="30.461">
+      <system-out>activeEditor="/home/coder/project/fleet-quickopen.txt" (want fleet-quickopen.txt)</system-out>
+    </testcase>
+    <testcase classname="base" name="palette.open" time="16.387">
+      <system-out>executeCommand(showCommands) returned ok</system-out>
+    </testcase>
+    <testcase classname="base" name="git.initStageCommit" time="20.297">
+      <system-out>git log shows 1 commit ("fleet: initial commit"), tree clean</system-out>
+    </testcase>
+    <testcase classname="base" name="file.openWelcomeClose" time="7.503">
+      <system-out>openTabs 2 → 1</system-out>
+    </testcase>
+    <testcase classname="base" name="agent.workingState" time="2.058">
+      <system-out>Hub session "r1-base-f7" reached "working" after UserPromptSubmit (states: working)</system-out>
+    </testcase>
+    <testcase classname="base" name="search.findInFiles" time="14.064">
+      <system-out>executeCommand(findInFiles) returned ok (no view in snapshot to assert)</system-out>
+    </testcase>
+    <testcase classname="base" name="agent.stopIdle" time="2.087">
+      <system-out>Hub session "r1-base-f8": working→idle on a bare Stop</system-out>
+    </testcase>
+    <testcase classname="base" name="search.replaceAll" time="9.681">
+      <system-out>replaced all FINDME→REPLACED (2 occurrences)</system-out>
+    </testcase>
+    <testcase classname="base" name="git.diffDecorations" time="20.106">
+      <system-out>1 tracked change detected (M tracked.txt)</system-out>
+    </testcase>
+    <testcase classname="base" name="file.openMissing" time="6.684">
+      <system-out>ok:false with error "request failed: CodeExpectedError: cannot open vscode-remote://127.0.0.1:64171/home/coder/project/ghost.txt. Detail: Unable to read file 'vscode-remote://127.0.0.1:64171/home/coder/project/ghost.txt' (Error: Unable to resolve nonexistent file 'vscode-remote://127.0.0.1:64171/home/coder/project/ghost.txt')" (defined refusal)</system-out>
+    </testcase>
+    <testcase classname="base" name="agent.stopDone" time="2.082">
+      <system-out>Hub session "r1-base-f9": working→done on a Stop with reason:"completed"</system-out>
+    </testcase>
+    <testcase classname="base" name="agent.waitingCoalesced" time="7.869">
+      <system-out>Hub session "r1-base-f11": one waiting coalesced across two PreToolUse (runs 0→1, ≤ +1)</system-out>
+    </testcase>
+    <testcase classname="base" name="agent.waitingCancelled" time="7.973">
+      <system-out>Hub session "r1-base-f10" never showed "waiting"; settled idle (the pre-debounce Stop cancelled the arm)</system-out>
+    </testcase>
+    <testcase classname="base" name="view.explorer" time="11.259">
+      <system-out>workbench.view.explorer resolved ok (no view in snapshot to assert); repeat also ok</system-out>
+    </testcase>
+    <testcase classname="base" name="agent.multiTurnOneRun" time="2.008">
+      <system-out>Hub session "r1-base-f13": two turns cycled working↔idle on ONE run (runs 0→1, ≤ +1)</system-out>
+    </testcase>
+    <testcase classname="base" name="agent.subagentStopLiveness" time="9.697">
+      <system-out>Hub session "r1-base-f14": SubagentStop kept the run working; a real Stop then settled idle</system-out>
+    </testcase>
+    <testcase classname="base" name="agent.sessionEndDead" time="2.081">
+      <system-out>Hub session "r1-base-f12": working→dead on SessionEnd</system-out>
+    </testcase>
+    <testcase classname="base" name="scm.openView" time="18.537">
+      <system-out>workbench.view.scm resolved ok (no view in snapshot to assert); repeat also ok</system-out>
+    </testcase>
+    <testcase classname="base" name="life.bannerAndRunning" time="1.614">
+      <system-out>fleet-eval-r1-base Running=true; banner ok (hub=ws://host.docker.internal:51777 / bridge=ws://host.docker.internal:51778)</system-out>
+    </testcase>
+    <testcase classname="base" name="life.reporterSessionRegistered" time="1.943">
+      <system-out>Hub session "r1-base" registered; reporter pid=8</system-out>
+    </testcase>
+    <testcase classname="base" name="net.derivedDialUrls" time="2.098">
+      <system-out>FLEET_HUB_URL=ws://host.docker.internal:51777, FLEET_BRIDGE_URL=ws://host.docker.internal:51778</system-out>
+    </testcase>
+    <testcase classname="base" name="net.hostDockerInternalReachable" time="2.023">
+      <system-out>host.docker.internal resolves (192.168.5.2) and :51777 is reachable (nc rc=0)</system-out>
+    </testcase>
+    <testcase classname="base" name="net.hubBoundAllInterfaces" time="2.029">
+      <system-out>Hub :51777 reachable from BOTH host loopback and the container (0.0.0.0 bind confirmed)</system-out>
+    </testcase>
+    <testcase classname="base" name="agent.waitingApprovalUrgency" time="7.985">
+      <system-out>Hub session "r1-base-f15" row shows [waiting] AND [approval] ("[waiting] r1-base-f15  (1 run)  [approval]")</system-out>
+    </testcase>
+    <testcase classname="base" name="agent.concurrentSessions" time="2.041">
+      <system-out>Hub session "r1-base-f16": two concurrent sessions → +2 runs (0→2); anchorless frame minted no phantom; settled idle</system-out>
+    </testcase>
+    <testcase classname="base" name="net.bridgeQueryRoundTrip" time="6.095">
+      <system-out>query round-tripped a Snapshot (terminalCount=1)</system-out>
+    </testcase>
+    <testcase classname="base" name="agent.emptyQuiescent" time="6.025">
+      <system-out>Hub session "r1-base-f17" is quiescent [idle] with no spurious working/waiting</system-out>
+    </testcase>
+    <testcase classname="base" name="net.reporterSocketLocalOnly" time="1.686">
+      <system-out>/tmp/fleet-reporter.sock is a unix socket mode 600; no in-container hook TCP listener (ss/netstat absent — TCP check best-effort)</system-out>
+    </testcase>
+    <testcase classname="base" name="hub.runUpsertRecomputesRollup" time="1.661">
+      <system-out>env Hub session "r1-base": done→working after one injected run.upsert (UserPromptSubmit)</system-out>
+    </testcase>
+    <testcase classname="base" name="editor.openMissingNoop" time="14.161">
+      <system-out>reply ok:false; activeEditor unchanged; file still absent</system-out>
+    </testcase>
+    <testcase classname="base" name="editor.closeAllEmpties" time="18.872">
+      <system-out>openTabs 3 → 0 (want 0); activeEditor=null (want null)</system-out>
+    </testcase>
+    <testcase classname="base" name="editor.splitDown" time="18.811">
+      <system-out>visibleEditors 1 → 2 (want +1)</system-out>
+    </testcase>
+    <testcase classname="base" name="hub.doneDistinctFromIdle" time="33.314">
+      <failure message="done/idle not both observed as distinct tokens (done=&quot;done&quot;, idle=&quot;done&quot;; doneSeen=[&quot;done&quot;], idleSeen=[&quot;done&quot;])">done/idle not both observed as distinct tokens (done="done", idle="done"; doneSeen=["done"], idleSeen=["done"])</failure>
+      <system-out>done/idle not both observed as distinct tokens (done="done", idle="done"; doneSeen=["done"], idleSeen=["done"])</system-out>
+    </testcase>
+    <testcase classname="base" name="hub.waitingWinsRollup" time="4.622">
+      <system-out>env Hub session "r1-base" rolled up to "[waiting]" with a concurrent working run present (waiting dominates; states: working-&gt;waiting)</system-out>
+    </testcase>
+    <testcase classname="base" name="editor.newUntitled" time="14.541">
+      <system-out>openTabs 1 → 2 (want +1); activeEditor="Untitled-1" untitled=true</system-out>
+    </testcase>
+    <testcase classname="base" name="reporter.socketMode0600" time="2.083">
+      <system-out>/tmp/fleet-reporter.sock is mode 0600 (owner-only) as restrict_socket_perms requires</system-out>
+    </testcase>
+    <testcase classname="base" name="editor.selectAll" time="22.586">
+      <system-out>selection {"line":0,"character":0}→{"line":3,"character":0} (want start 0,0; end.line&gt;=2)</system-out>
+    </testcase>
+    <testcase classname="base" name="editor.nextPrevCycles" time="33.605">
+      <system-out>start active="/home/coder/project/b.txt" (want b.txt); after next moved-away=true; after prev returned=true</system-out>
+    </testcase>
+    <testcase classname="base" name="input.typeUntitled" time="12.331">
+      <system-out>editorText contains "HELLO_UNTITLED"</system-out>
+    </testcase>
+    <testcase classname="base" name="input.typeNoEditor" time="20.333">
+      <system-out>typeText inserted=false (want false); activeEditor still null=true; PROJECT listing unchanged=true</system-out>
+    </testcase>
+    <testcase classname="base" name="editor.openSameNoDup" time="20.014">
+      <system-out>openTabs 2 → 2 (want no change); active=true (want c.txt)</system-out>
+    </testcase>
+    <testcase classname="base" name="reporter.promptWorkingThenStopIdle" time="33.482">
+      <failure message="working/idle not both observed (working=true, idle=false; states seen: [&quot;working&quot;,&quot;done&quot;])">working/idle not both observed (working=true, idle=false; states seen: ["working","done"])</failure>
+      <system-out>working/idle not both observed (working=true, idle=false; states seen: ["working","done"])</system-out>
+    </testcase>
+    <testcase classname="base" name="reporter.twoSessionsTwoRuns" time="1.895">
+      <system-out>Hub session "r1-base": two sessions → 9 runs; resolving A left 9 (≥3) — independent runs</system-out>
+    </testcase>
+    <testcase classname="base" name="search.findInFilesIdempotent" time="6.500">
+      <system-out>second findInFiles left terminalCount/openTabs/activeEditor identical</system-out>
+    </testcase>
+    <testcase classname="base" name="search.replaceInFiles" time="2.452">
+      <system-out>workbench.action.replaceInFiles resolved (replace UI not in snapshot)</system-out>
+    </testcase>
+    <testcase classname="base" name="input.multilineTypeText" time="12.490">
+      <system-out>content matches 3 lines=true; wc -l=2 (&gt;=2)</system-out>
+    </testcase>
+    <testcase classname="base" name="quickOpen.command" time="8.372">
+      <system-out>quickOpen resolved; activeEditor unchanged (no pick yet)</system-out>
+    </testcase>
+    <testcase classname="base" name="input.typeRoutesEditor" time="20.474">
+      <system-out>marker in editor=true (want true); marker in terminal=false (want false)</system-out>
+    </testcase>
+    <testcase classname="base" name="input.cursorMovesInsert" time="24.430">
+      <system-out>text starts "XX"=true, ends "YY"=true ("XXAAA\nBBB\nYY")</system-out>
+    </testcase>
+    <testcase classname="base" name="search.gotoSymbolWorkspace" time="8.763">
+      <system-out>showAllSymbols resolved; activeEditor + openTabs unchanged</system-out>
+    </testcase>
+    <testcase classname="base" name="search.regexReplace" time="4.142">
+      <system-out>regex replace redacted 3 id= lines, preserved name=foo</system-out>
+    </testcase>
+    <testcase classname="base" name="search.caseSensitiveReplace" time="2.767">
+      <system-out>case-sensitive replace touched only lowercase foo</system-out>
+    </testcase>
+    <testcase classname="base" name="input.unicodeTypeText" time="8.040">
+      <system-out>CJK present=true; emoji present=true; on-disk grep 🚀=true</system-out>
+    </testcase>
+    <testcase classname="base" name="search.wholeWordReplace" time="2.786">
+      <system-out>whole-word replace touched only standalone cat</system-out>
+    </testcase>
+    <testcase classname="base" name="input.termSendMultiCmd" time="8.449">
+      <system-out>seq file A=true B=true ("A\nB")</system-out>
+    </testcase>
+    <testcase classname="base" name="input.termSendCreates" time="18.390">
+      <system-out>terminalCount 0 → 1 (want 1); reply.terminal="bash"</system-out>
+    </testcase>
+    <testcase classname="base" name="view.paletteRepeat" time="9.034">
+      <system-out>showCommands x2 resolved; openTabs 2 → 2 (unchanged)</system-out>
+    </testcase>
+    <testcase classname="base" name="view.toggleSidebarRoundtrip" time="10.706">
+      <system-out>toggleSidebarVisibility x2 resolved; visibleEditors stable, openTabs stable</system-out>
+    </testcase>
+    <testcase classname="base" name="input.terminalTextEmpty" time="8.627">
+      <system-out>terminalText source="", no phantom "$ " cmd: true</system-out>
+    </testcase>
+    <testcase classname="base" name="view.showExplorer" time="12.146">
+      <system-out>workbench.view.explorer resolved; visibleEditors unchanged</system-out>
+    </testcase>
+    <testcase classname="base" name="input.termSendNonBlocking" time="16.114">
+      <system-out>termSend reply 1ms (want &lt;2500), query-during=true, SLEPT_DONE seen=true</system-out>
+    </testcase>
+    <testcase classname="base" name="view.showSearch" time="8.181">
+      <system-out>workbench.view.search resolved; visibleEditors unchanged</system-out>
+    </testcase>
+    <testcase classname="base" name="input.typeTextAccumulates" time="20.202">
+      <system-out>three typeText "X" → "XXX" (additive)</system-out>
+    </testcase>
+    <testcase classname="base" name="file.createDeepDir" time="4.549">
+      <system-out>writeFile ok:true, file on disk: true (must be true)</system-out>
+    </testcase>
+    <testcase classname="base" name="view.showScm" time="10.186">
+      <system-out>workbench.view.scm resolved; visibleEditors unchanged</system-out>
+    </testcase>
+    <testcase classname="base" name="view.showExtensions" time="8.170">
+      <system-out>workbench.view.extensions resolved (workspace-independent)</system-out>
+    </testcase>
+    <testcase classname="base" name="file.newUntitled" time="17.646">
+      <system-out>openTabs 1 → 2 (want +1); active="Untitled-1"</system-out>
+    </testcase>
+    <testcase classname="base" name="view.toggleOutput" time="22.093">
+      <system-out>output.toggleOutput resolved; terminalCount 1 → 1 (unchanged)</system-out>
+    </testcase>
+    <testcase classname="base" name="file.closeWhenEmpty" time="28.055">
+      <system-out>close on empty editor set was a benign no-op (openTabs stayed 0, ok)</system-out>
+    </testcase>
+    <testcase classname="base" name="editor.splitWhenEmpty" time="26.264">
+      <system-out>split on empty layout was benign (ok; visibleEditors 0→0, no regression)</system-out>
+    </testcase>
+    <testcase classname="base" name="view.quickOpenCommand" time="20.226">
+      <system-out>quickOpen resolved; activeEditor unchanged (no pick yet)</system-out>
+    </testcase>
+    <testcase classname="base" name="view.unknownCommandFails" time="2.248">
+      <system-out>unknown command id failed cleanly (ok:false) in 300ms: request failed: Error: command 'workbench.action.doesNotExist.fleet' not found</system-out>
+    </testcase>
+    <testcase classname="base" name="settings.readMinimapDefault" time="1.920">
+      <system-out>editor.minimap.enabled read back as boolean true</system-out>
+    </testcase>
+    <testcase classname="base" name="editor.typeFocusRouting" time="18.020">
+      <system-out>marker routed ONLY into fleet-b.txt (the focused editor)</system-out>
+    </testcase>
+    <testcase classname="base" name="settings.readUnknownKey" time="6.018">
+      <system-out>unknown key read back as undefined with ok:true</system-out>
+    </testcase>
+    <testcase classname="base" name="settings.readEmptyKeyFails" time="2.005">
+      <system-out>empty key failed cleanly: request failed: Error: setting requires key</system-out>
+    </testcase>
+    <testcase classname="base" name="file.renameUnopened" time="14.245">
+      <system-out>oldGone=true newThere=true activeEditor="/home/coder/project/fleet-orphan-renamed.txt" (want fleet-orphan-renamed.txt)</system-out>
+    </testcase>
+    <testcase classname="base" name="settings.minimapRoundtrip" time="8.295">
+      <system-out>editor.minimap.enabled true → (toggle x2) → true (round-trip ok)</system-out>
+    </testcase>
+    <testcase classname="base" name="file.moveIntoSubdir" time="8.214">
+      <system-out>newThere=true oldGone=true activeEditor="/home/coder/project/sub/fleet-move.txt" (want suffix sub/fleet-move.txt)</system-out>
+    </testcase>
+    <testcase classname="base" name="settings.toggleAutoSave" time="6.664">
+      <system-out>files.autoSave "afterDelay" → "off"</system-out>
+    </testcase>
+    <testcase classname="base" name="file.deleteWhileOpen" time="3.724">
+      <system-out>file deleted on disk; second openFile returned a defined reply within 3s</system-out>
+    </testcase>
+    <testcase classname="base" name="settings.autoSaveRoundtrip" time="7.091">
+      <system-out>files.autoSave "afterDelay" → (toggle x2) → "afterDelay" (round-trip ok)</system-out>
+    </testcase>
+    <testcase classname="base" name="file.saveAllClean" time="6.680">
+      <system-out>saveAll on a clean workbench was a no-op (no mtime changes)</system-out>
+    </testcase>
+    <testcase classname="base" name="ext.listReturns" time="1.883">
+      <system-out>extensions query returned 93 well-shaped {id,active} entries</system-out>
+    </testcase>
+    <testcase classname="base" name="file.openTwiceNoDup" time="12.587">
+      <system-out>1 tab(s) reference fleet-dup.txt (want 1); active=true</system-out>
+    </testcase>
+    <testcase classname="base" name="ext.fleetBridgePresent" time="2.035">
+      <system-out>fleet-bridge present in installed list (id=fleet-team.fleet-bridge)</system-out>
+    </testcase>
+    <testcase classname="base" name="ext.fleetBridgeActive" time="1.846">
+      <system-out>fleet-bridge (id=fleet-team.fleet-bridge) active=true</system-out>
+    </testcase>
+    <testcase classname="base" name="ext.helloCaps" time="1.658">
+      <system-out>all 16 frozen CAPS advertised by the bridge</system-out>
+    </testcase>
+    <testcase classname="base" name="ext.openExtensionsView" time="5.888">
+      <system-out>workbench.view.extensions resolved</system-out>
+    </testcase>
+    <testcase classname="base" name="file.unicodeName" time="10.004">
+      <system-out>activeBasename ok=true ("/home/coder/project/fleet space ünïcode.txt"); fileContent ok=true; disk ok=true</system-out>
+    </testcase>
+    <testcase classname="base" name="ext.shapeStableMinimal" time="8.046">
+      <system-out>minimal extensions list well-formed (93 entries, fleet-bridge present)</system-out>
+    </testcase>
+    <testcase classname="base" name="git.reinit" time="2.114">
+      <system-out>reinit was idempotent (exit 0, still a work tree, identity preserved)</system-out>
+    </testcase>
+    <testcase classname="base" name="file.mountParity" time="10.009">
+      <system-out>bridge-written bytes are byte-identical in the container shell (same mount)</system-out>
+    </testcase>
+    <testcase classname="base" name="ext.bridgeLogActivation" time="4.398">
+      <system-out>bridge log records activation (activate: + ws/hello) at /tmp/fleet-mux/bridge-r1-base.log</system-out>
+    </testcase>
+    <testcase classname="base" name="ext.bridgeLogCommand" time="2.635">
+      <system-out>bridge log records 'workbench.action.showCommands' recv + ok</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.new" time="7.974">
+      <system-out>terminals 1 → 2 (["bash","bash"])</system-out>
+    </testcase>
+    <testcase classname="base" name="scm.openViewNoRepo" time="13.708">
+      <system-out>SCM view opened in a non-repo workspace (scmChanges=undefined)</system-out>
+    </testcase>
+    <testcase classname="base" name="git.diffHunk" time="6.724">
+      <system-out>git diff shows exactly b→B-CHANGED; a and c untouched</system-out>
+    </testcase>
+    <testcase classname="base" name="git.untrackedChange" time="6.232">
+      <system-out>untracked-new.txt surfaced as an untracked change ("?? untracked-new.txt")</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.runEcho" time="14.403">
+      <system-out>terminalText contains "FLEET_OK" after echo (terminal "bash")</system-out>
+    </testcase>
+    <testcase classname="base" name="view.toggleSidebar" time="7.085">
+      <system-out>toggleSidebarVisibility resolved (visibility not yet in Snapshot)</system-out>
+    </testcase>
+    <testcase classname="base" name="view.togglePanel" time="8.644">
+      <system-out>togglePanel resolved (terminalCount 3 → 3, unchanged by hide)</system-out>
+    </testcase>
+    <testcase classname="base" name="git.mergeConflict" time="6.543">
+      <system-out>merge conflicted (UU + markers), then resolved to a clean tree (no markers, losing side gone)</system-out>
+    </testcase>
+    <testcase classname="base" name="problems.open" time="8.234">
+      <system-out>Problems view opened (diagnostics: 0)</system-out>
+    </testcase>
+    <testcase classname="base" name="git.outsideRepo" time="7.723">
+      <system-out>file at /tmp/outside.txt did not appear in the repo's git status (tree stayed clean)</system-out>
+    </testcase>
+    <testcase classname="base" name="git.mergeClean" time="10.094">
+      <system-out>clean merge: feat.txt present, tree clean, no conflict markers</system-out>
+    </testcase>
+    <testcase classname="base" name="settings.toggleMinimap" time="6.824">
+      <system-out>editor.minimap.enabled true → false</system-out>
+    </testcase>
+    <testcase classname="base" name="visual.workbenchTabSmoke" time="4.504">
+      <system-out>workbench visible with 3 tab(s); screenshot 1280x720, blackish=0.0003, buckets=105</system-out>
+    </testcase>
+    <testcase classname="base" name="life.inspectUrlReachable" time="2.048">
+      <system-out>inspect HostPort=49360 == env.port=49360; http://127.0.0.1:49360/ → 302</system-out>
+    </testcase>
+    <testcase classname="base" name="net.publishedPortReachable" time="1.870">
+      <system-out>http://127.0.0.1:49364/ → 302; docker port → "0.0.0.0:49364\n[::]:49364"</system-out>
+    </testcase>
+    <testcase classname="base" name="git.commitClearsChanges" time="15.311">
+      <system-out>committed; tree clean, commits 1→2</system-out>
+    </testcase>
+    <testcase classname="base" name="flow.cancelBeforeDebounce" time="10.589">
+      <system-out>Hub session "r1-base-f58" never reached "waiting" after a PreToolUse cancelled by a prompt Stop (states: idle)</system-out>
+    </testcase>
+    <testcase classname="base" name="search.replaceAllNoMatch" time="6.835">
+      <system-out>no-match replace left file byte-identical</system-out>
+    </testcase>
+    <testcase classname="base" name="flow.secondRunMergesSession" time="10.357">
+      <system-out>Hub session "r1-base-f59" merged a second run: runs 1→2 in ONE row</system-out>
+    </testcase>
+    <testcase classname="base" name="search.editorFind" time="12.877">
+      <system-out>actions.find resolved; activeEditor stayed on find-here.txt</system-out>
+    </testcase>
+    <testcase classname="base" name="search.addNextOccurrence" time="8.954">
+      <system-out>addSelectionToNextFindMatch resolved (multi-cursor count not in snapshot)</system-out>
+    </testcase>
+    <testcase classname="base" name="search.gotoSymbolEditor" time="17.049">
+      <system-out>gotoSymbol resolved; activeEditor stayed on syms.txt</system-out>
+    </testcase>
+    <testcase classname="base" name="search.editorFindReplace" time="22.598">
+      <system-out>startFindReplaceAction resolved; activeEditor stayed on replace-here.txt</system-out>
+    </testcase>
+    <testcase classname="base" name="diag.quickFixNoActions" time="16.651">
+      <system-out>quickFix resolved with no actions; env still responsive</system-out>
+    </testcase>
+    <testcase classname="base" name="diag.jsonError" time="8.630">
+      <system-out>bad.json has 1 built-in JSON diagnostic(s) (sev present)</system-out>
+    </testcase>
+    <testcase classname="base" name="diag.formatNoFormatter" time="10.564">
+      <system-out>formatDocument resolved; content unchanged (no formatter)</system-out>
+    </testcase>
+    <testcase classname="base" name="diag.jsonClears" time="12.541">
+      <system-out>JSON diagnostic cleared after fixing the trailing comma</system-out>
+    </testcase>
+    <testcase classname="base" name="diag.countMatchesItems" time="8.580">
+      <system-out>snapshot.diagnostics (1) === detailed items (1)</system-out>
+    </testcase>
+    <testcase classname="base" name="diag.problemsEmpty" time="22.040">
+      <system-out>Problems view opened on an empty workspace; diagnostics stayed 0</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.splitFromEmpty" time="18.325">
+      <system-out>fresh 0 → split resolved ok=true; count=0 (graceful no-op, no throw/hang)</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.newExactlyOne" time="24.351">
+      <system-out>fresh 0 → count=1, terminals.length=1 (want 1/1)</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.newAccumulates" time="27.672">
+      <system-out>fresh 0 → count=3, terminals.length=3 after 3×New (want 3/3)</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.killEmpty" time="16.005">
+      <system-out>count 0→0 after kill; bridge responsive=true</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.splitTwice" time="18.379">
+      <system-out>count=3 after New+Split+Split (want 3)</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.killOneOfThree" time="24.644">
+      <system-out>count 3→2 after one kill (want 3→2)</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.killAll" time="22.201">
+      <system-out>count 3→0 after killAll (want 3→0)</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.textEmptyClean" time="4.060">
+      <system-out>terminalText ok=true source="" textLen=0</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.exitCode" time="11.797">
+      <system-out>file contains rc=1</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.runToFile" time="16.416">
+      <system-out>file contains fleet-run-OK</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.chainedCommand" time="16.176">
+      <system-out>file has /tmp and done</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.focusActiveEcho" time="15.992">
+      <system-out>marker landed in active terminal "bash"</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.clearKeepsCount" time="19.990">
+      <system-out>count 1→1 after clear (want 1→1)</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.snapshotNames" time="25.680">
+      <system-out>terminalCount=3 terminals.length=3 names=["bash","bash","bash"]</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.togglePanel" time="21.985">
+      <system-out>toggles ok=true; count 1→1 (want 1→1)</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.buildNoTasks" time="16.027">
+      <system-out>responsive=true; terminalCount 0→0 (want unchanged)</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.badProfileBounded" time="12.038">
+      <system-out>responsive=true; terminalCount=0 (want 0 or 1)</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.defaultProfileBash" time="19.730">
+      <system-out>default shell is bash ("/bin/bash-5.2.37(1)-release")</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.killThenRecreate" time="31.858">
+      <system-out>count 1→0(kill)→1(recreate) (want 1→0→1)</system-out>
+    </testcase>
+    <testcase classname="base" name="view.panelKeepsTerminalIdentity" time="20.407">
+      <system-out>terminalCount 1 → 1 (want 1→1); terminal identity preserved</system-out>
+    </testcase>
+    <testcase classname="base" name="view.toggleTerminalHidesOne" time="20.439">
+      <system-out>terminalCount 1 → 1 (want 1→1; toggle only hides, does not dispose)</system-out>
+    </testcase>
+    <testcase classname="base" name="view.toggleTerminalFromZero" time="20.460">
+      <system-out>terminalCount 0 → 1 (want 0→1; toggle-from-zero creates one)</system-out>
+    </testcase>
+    <testcase classname="base" name="view.newUntitledFile" time="14.113">
+      <system-out>openTabs 1 → 2 (delta 1, want +1)</system-out>
+    </testcase>
+    <testcase classname="base" name="view.gotoLineWithEditor" time="19.735">
+      <system-out>gotoLine resolved with an editor open; activeEditor unchanged</system-out>
+    </testcase>
+    <testcase classname="base" name="view.gotoLineNoEditor" time="21.846">
+      <system-out>gotoLine with no active editor resolved (no-op, did not throw)</system-out>
+    </testcase>
+    <testcase classname="base" name="view.closeAfterUntitled" time="22.847">
+      <system-out>openTabs 2 → 1 (delta -1, want -1)</system-out>
+    </testcase>
+    <testcase classname="base" name="view.toggleZen" time="16.188">
+      <system-out>toggleZenMode resolved; visibleEditors stable, activeEditor stable</system-out>
+    </testcase>
+    <testcase classname="base" name="view.closeEditorNoEditor" time="24.235">
+      <system-out>closeEditor on empty editor area resolved ok; openTabs 0 → 0 (unchanged)</system-out>
+    </testcase>
+    <testcase classname="base" name="view.resetLayout" time="22.196">
+      <system-out>resetViewLocations resolved from a mutated layout; visibleEditors unchanged</system-out>
+    </testcase>
+    <testcase classname="base" name="view.zenRoundtrip" time="27.888">
+      <system-out>toggleZenMode x2 resolved; visibleEditors stable, openTabs stable</system-out>
+    </testcase>
+    <testcase classname="base" name="settings.writeSettingsJson" time="6.694">
+      <system-out>editor.fontSize read back as 17 after writing .vscode/settings.json</system-out>
+    </testcase>
+    <testcase classname="base" name="settings.malformedSettingsJson" time="4.332">
+      <system-out>config read survived a malformed settings.json (editor.fontSize=12)</system-out>
+    </testcase>
+    <testcase classname="base" name="settings.wordWrapNotConfigBacked" time="12.655">
+      <system-out>editor.wordWrap config correctly UNCHANGED ("off") — toggle is a per-editor override</system-out>
+    </testcase>
+    <testcase classname="base" name="settings.toggleWordWrapNoEditor" time="12.560">
+      <system-out>toggleWordWrap with no active editor resolved (no-op, did not throw)</system-out>
+    </testcase>
+    <testcase classname="base" name="settings.readBeforeEditor" time="8.521">
+      <system-out>setting read with zero editors open returned boolean true</system-out>
+    </testcase>
+    <testcase classname="base" name="settings.workspaceOverride" time="6.826">
+      <system-out>editor.tabSize effective value is the workspace override 2 (not the default 4)</system-out>
+    </testcase>
+    <testcase classname="base" name="settings.toggleAndWriteAgree" time="10.147">
+      <system-out>editor.minimap.enabled file=false → toggle → true (flipped to !false as expected)</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.split" time="15.034">
+      <system-out>terminals 1 → 2 after split (same group; ["bash","bash"])</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.cwd" time="33.388">
+      <system-out>terminal cwd is /home/coder/project</system-out>
+    </testcase>
+    <testcase classname="base" name="terminal.kill" time="39.787">
+      <system-out>terminals 1 → 0 after kill</system-out>
+    </testcase>
+  </testsuite>
+  <testsuite name="small-repo" tests="9" failures="0" skipped="0" time="190.402">
+    <testcase classname="small-repo" name="palette.open" time="36.634">
+      <system-out>executeCommand(showCommands) returned ok</system-out>
+    </testcase>
+    <testcase classname="small-repo" name="file.openWelcomeClose" time="8.823">
+      <system-out>openTabs 1 → 0</system-out>
+    </testcase>
+    <testcase classname="small-repo" name="search.findInFiles" time="8.385">
+      <system-out>executeCommand(findInFiles) returned ok (no view in snapshot to assert)</system-out>
+    </testcase>
+    <testcase classname="small-repo" name="terminal.new" time="29.041">
+      <system-out>terminals 0 → 1 (["bash"])</system-out>
+    </testcase>
+    <testcase classname="small-repo" name="view.toggleSidebar" time="18.717">
+      <system-out>toggleSidebarVisibility resolved (visibility not yet in Snapshot)</system-out>
+    </testcase>
+    <testcase classname="small-repo" name="view.togglePanel" time="21.933">
+      <system-out>togglePanel resolved (terminalCount 1 → 1, unchanged by hide)</system-out>
+    </testcase>
+    <testcase classname="small-repo" name="problems.open" time="18.025">
+      <system-out>Problems view opened (diagnostics: 0)</system-out>
+    </testcase>
+    <testcase classname="small-repo" name="settings.toggleMinimap" time="23.534">
+      <system-out>editor.minimap.enabled true → false</system-out>
+    </testcase>
+    <testcase classname="small-repo" name="visual.workbenchTabSmoke" time="25.310">
+      <system-out>workbench visible with 1 tab(s); screenshot 1280x720, blackish=0.0003, buckets=101</system-out>
+    </testcase>
+  </testsuite>
+  <testsuite name="large-repo" tests="9" failures="0" skipped="0" time="164.499">
+    <testcase classname="large-repo" name="palette.open" time="17.380">
+      <system-out>executeCommand(showCommands) returned ok</system-out>
+    </testcase>
+    <testcase classname="large-repo" name="file.openWelcomeClose" time="15.495">
+      <system-out>openTabs 1 → 0</system-out>
+    </testcase>
+    <testcase classname="large-repo" name="search.findInFiles" time="25.382">
+      <system-out>executeCommand(findInFiles) returned ok (no view in snapshot to assert)</system-out>
+    </testcase>
+    <testcase classname="large-repo" name="terminal.new" time="19.459">
+      <system-out>terminals 0 → 1 (["bash"])</system-out>
+    </testcase>
+    <testcase classname="large-repo" name="view.toggleSidebar" time="24.007">
+      <system-out>toggleSidebarVisibility resolved (visibility not yet in Snapshot)</system-out>
+    </testcase>
+    <testcase classname="large-repo" name="view.togglePanel" time="20.383">
+      <system-out>togglePanel resolved (terminalCount 1 → 1, unchanged by hide)</system-out>
+    </testcase>
+    <testcase classname="large-repo" name="problems.open" time="14.828">
+      <system-out>Problems view opened (diagnostics: 0)</system-out>
+    </testcase>
+    <testcase classname="large-repo" name="settings.toggleMinimap" time="14.865">
+      <system-out>editor.minimap.enabled true → false</system-out>
+    </testcase>
+    <testcase classname="large-repo" name="visual.workbenchTabSmoke" time="12.700">
+      <system-out>workbench visible with 1 tab(s); screenshot 1280x720, blackish=0.0003, buckets=71</system-out>
+    </testcase>
+  </testsuite>
+  <testsuite name="many-files" tests="9" failures="0" skipped="0" time="166.015">
+    <testcase classname="many-files" name="palette.open" time="13.008">
+      <system-out>executeCommand(showCommands) returned ok</system-out>
+    </testcase>
+    <testcase classname="many-files" name="file.openWelcomeClose" time="30.217">
+      <system-out>openTabs 1 → 0</system-out>
+    </testcase>
+    <testcase classname="many-files" name="search.findInFiles" time="28.004">
+      <system-out>executeCommand(findInFiles) returned ok (no view in snapshot to assert)</system-out>
+    </testcase>
+    <testcase classname="many-files" name="terminal.new" time="31.174">
+      <system-out>terminals 0 → 1 (["bash"])</system-out>
+    </testcase>
+    <testcase classname="many-files" name="view.toggleSidebar" time="14.875">
+      <system-out>toggleSidebarVisibility resolved (visibility not yet in Snapshot)</system-out>
+    </testcase>
+    <testcase classname="many-files" name="view.togglePanel" time="18.542">
+      <system-out>togglePanel resolved (terminalCount 1 → 1, unchanged by hide)</system-out>
+    </testcase>
+    <testcase classname="many-files" name="problems.open" time="5.658">
+      <system-out>Problems view opened (diagnostics: 0)</system-out>
+    </testcase>
+    <testcase classname="many-files" name="settings.toggleMinimap" time="14.368">
+      <system-out>editor.minimap.enabled true → false</system-out>
+    </testcase>
+    <testcase classname="many-files" name="visual.workbenchTabSmoke" time="10.169">
+      <system-out>workbench visible with 1 tab(s); screenshot 1280x720, blackish=0.0003, buckets=67</system-out>
+    </testcase>
+  </testsuite>
+  <testsuite name="multi-root" tests="9" failures="0" skipped="0" time="176.341">
+    <testcase classname="multi-root" name="palette.open" time="17.042">
+      <system-out>executeCommand(showCommands) returned ok</system-out>
+    </testcase>
+    <testcase classname="multi-root" name="file.openWelcomeClose" time="28.568">
+      <system-out>openTabs 1 → 0</system-out>
+    </testcase>
+    <testcase classname="multi-root" name="search.findInFiles" time="24.059">
+      <system-out>executeCommand(findInFiles) returned ok (no view in snapshot to assert)</system-out>
+    </testcase>
+    <testcase classname="multi-root" name="terminal.new" time="29.509">
+      <system-out>terminals 0 → 1 (["bash"])</system-out>
+    </testcase>
+    <testcase classname="multi-root" name="view.toggleSidebar" time="25.333">
+      <system-out>toggleSidebarVisibility resolved (visibility not yet in Snapshot)</system-out>
+    </testcase>
+    <testcase classname="multi-root" name="view.togglePanel" time="18.865">
+      <system-out>togglePanel resolved (terminalCount 1 → 1, unchanged by hide)</system-out>
+    </testcase>
+    <testcase classname="multi-root" name="problems.open" time="12.265">
+      <system-out>Problems view opened (diagnostics: 0)</system-out>
+    </testcase>
+    <testcase classname="multi-root" name="settings.toggleMinimap" time="12.677">
+      <system-out>editor.minimap.enabled true → false</system-out>
+    </testcase>
+    <testcase classname="multi-root" name="visual.workbenchTabSmoke" time="8.023">
+      <system-out>workbench visible with 1 tab(s); screenshot 1280x720, blackish=0.0003, buckets=67</system-out>
+    </testcase>
+  </testsuite>
+  <testsuite name="python" tests="9" failures="0" skipped="0" time="155.533">
+    <testcase classname="python" name="palette.open" time="12.672">
+      <system-out>executeCommand(showCommands) returned ok</system-out>
+    </testcase>
+    <testcase classname="python" name="file.openWelcomeClose" time="10.076">
+      <system-out>openTabs 1 → 0</system-out>
+    </testcase>
+    <testcase classname="python" name="search.findInFiles" time="9.874">
+      <system-out>executeCommand(findInFiles) returned ok (no view in snapshot to assert)</system-out>
+    </testcase>
+    <testcase classname="python" name="terminal.new" time="21.755">
+      <system-out>terminals 0 → 1 (["bash"])</system-out>
+    </testcase>
+    <testcase classname="python" name="view.toggleSidebar" time="14.307">
+      <system-out>toggleSidebarVisibility resolved (visibility not yet in Snapshot)</system-out>
+    </testcase>
+    <testcase classname="python" name="view.togglePanel" time="18.330">
+      <system-out>togglePanel resolved (terminalCount 1 → 1, unchanged by hide)</system-out>
+    </testcase>
+    <testcase classname="python" name="problems.open" time="16.151">
+      <system-out>Problems view opened (diagnostics: 0)</system-out>
+    </testcase>
+    <testcase classname="python" name="settings.toggleMinimap" time="23.997">
+      <system-out>editor.minimap.enabled true → false</system-out>
+    </testcase>
+    <testcase classname="python" name="visual.workbenchTabSmoke" time="28.371">
+      <system-out>workbench visible with 1 tab(s); screenshot 1280x720, blackish=0.0003, buckets=67</system-out>
+    </testcase>
+  </testsuite>
+  <testsuite name="node" tests="9" failures="0" skipped="0" time="158.860">
+    <testcase classname="node" name="palette.open" time="7.640">
+      <system-out>executeCommand(showCommands) returned ok</system-out>
+    </testcase>
+    <testcase classname="node" name="file.openWelcomeClose" time="24.047">
+      <system-out>openTabs 1 → 0</system-out>
+    </testcase>
+    <testcase classname="node" name="search.findInFiles" time="16.351">
+      <system-out>executeCommand(findInFiles) returned ok (no view in snapshot to assert)</system-out>
+    </testcase>
+    <testcase classname="node" name="terminal.new" time="28.293">
+      <system-out>terminals 0 → 1 (["bash"])</system-out>
+    </testcase>
+    <testcase classname="node" name="view.toggleSidebar" time="24.026">
+      <system-out>toggleSidebarVisibility resolved (visibility not yet in Snapshot)</system-out>
+    </testcase>
+    <testcase classname="node" name="view.togglePanel" time="22.359">
+      <system-out>togglePanel resolved (terminalCount 1 → 1, unchanged by hide)</system-out>
+    </testcase>
+    <testcase classname="node" name="problems.open" time="12.001">
+      <system-out>Problems view opened (diagnostics: 0)</system-out>
+    </testcase>
+    <testcase classname="node" name="settings.toggleMinimap" time="15.955">
+      <system-out>editor.minimap.enabled true → false</system-out>
+    </testcase>
+    <testcase classname="node" name="visual.workbenchTabSmoke" time="8.188">
+      <system-out>workbench visible with 1 tab(s); screenshot 1280x720, blackish=0.0003, buckets=67</system-out>
+    </testcase>
+  </testsuite>
+  <testsuite name="no-folder" tests="9" failures="0" skipped="0" time="165.483">
+    <testcase classname="no-folder" name="palette.open" time="11.927">
+      <system-out>executeCommand(showCommands) returned ok</system-out>
+    </testcase>
+    <testcase classname="no-folder" name="file.openWelcomeClose" time="30.400">
+      <system-out>openTabs 1 → 0</system-out>
+    </testcase>
+    <testcase classname="no-folder" name="search.findInFiles" time="22.368">
+      <system-out>executeCommand(findInFiles) returned ok (no view in snapshot to assert)</system-out>
+    </testcase>
+    <testcase classname="no-folder" name="terminal.new" time="28.126">
+      <system-out>terminals 0 → 1 (["bash"])</system-out>
+    </testcase>
+    <testcase classname="no-folder" name="view.toggleSidebar" time="20.387">
+      <system-out>toggleSidebarVisibility resolved (visibility not yet in Snapshot)</system-out>
+    </testcase>
+    <testcase classname="no-folder" name="view.togglePanel" time="20.139">
+      <system-out>togglePanel resolved (terminalCount 1 → 1, unchanged by hide)</system-out>
+    </testcase>
+    <testcase classname="no-folder" name="problems.open" time="10.051">
+      <system-out>Problems view opened (diagnostics: 0)</system-out>
+    </testcase>
+    <testcase classname="no-folder" name="settings.toggleMinimap" time="14.020">
+      <system-out>editor.minimap.enabled true → false</system-out>
+    </testcase>
+    <testcase classname="no-folder" name="visual.workbenchTabSmoke" time="8.065">
+      <system-out>workbench visible with 1 tab(s); screenshot 1280x720, blackish=0.0003, buckets=67</system-out>
+    </testcase>
+  </testsuite>
+  <testsuite name="rust" tests="9" failures="0" skipped="0" time="161.665">
+    <testcase classname="rust" name="palette.open" time="16.065">
+      <system-out>executeCommand(showCommands) returned ok</system-out>
+    </testcase>
+    <testcase classname="rust" name="file.openWelcomeClose" time="26.262">
+      <system-out>openTabs 1 → 0</system-out>
+    </testcase>
+    <testcase classname="rust" name="search.findInFiles" time="22.299">
+      <system-out>executeCommand(findInFiles) returned ok (no view in snapshot to assert)</system-out>
+    </testcase>
+    <testcase classname="rust" name="terminal.new" time="24.164">
+      <system-out>terminals 0 → 1 (["bash"])</system-out>
+    </testcase>
+    <testcase classname="rust" name="view.toggleSidebar" time="20.358">
+      <system-out>toggleSidebarVisibility resolved (visibility not yet in Snapshot)</system-out>
+    </testcase>
+    <testcase classname="rust" name="view.togglePanel" time="20.344">
+      <system-out>togglePanel resolved (terminalCount 1 → 1, unchanged by hide)</system-out>
+    </testcase>
+    <testcase classname="rust" name="problems.open" time="10.021">
+      <system-out>Problems view opened (diagnostics: 0)</system-out>
+    </testcase>
+    <testcase classname="rust" name="settings.toggleMinimap" time="14.035">
+      <system-out>editor.minimap.enabled true → false</system-out>
+    </testcase>
+    <testcase classname="rust" name="visual.workbenchTabSmoke" time="8.117">
+      <system-out>workbench visible with 1 tab(s); screenshot 1280x720, blackish=0.0003, buckets=67</system-out>
+    </testcase>
+  </testsuite>
+  <testsuite name="mem-capped" tests="9" failures="0" skipped="0" time="82.934">
+    <testcase classname="mem-capped" name="palette.open" time="13.916">
+      <system-out>executeCommand(showCommands) returned ok</system-out>
+    </testcase>
+    <testcase classname="mem-capped" name="file.openWelcomeClose" time="10.213">
+      <system-out>openTabs 1 → 0</system-out>
+    </testcase>
+    <testcase classname="mem-capped" name="search.findInFiles" time="8.198">
+      <system-out>executeCommand(findInFiles) returned ok (no view in snapshot to assert)</system-out>
+    </testcase>
+    <testcase classname="mem-capped" name="terminal.new" time="11.950">
+      <system-out>terminals 0 → 1 (["bash"])</system-out>
+    </testcase>
+    <testcase classname="mem-capped" name="view.toggleSidebar" time="10.017">
+      <system-out>toggleSidebarVisibility resolved (visibility not yet in Snapshot)</system-out>
+    </testcase>
+    <testcase classname="mem-capped" name="view.togglePanel" time="8.283">
+      <system-out>togglePanel resolved (terminalCount 1 → 1, unchanged by hide)</system-out>
+    </testcase>
+    <testcase classname="mem-capped" name="problems.open" time="8.018">
+      <system-out>Problems view opened (diagnostics: 0)</system-out>
+    </testcase>
+    <testcase classname="mem-capped" name="settings.toggleMinimap" time="6.248">
+      <system-out>editor.minimap.enabled true → false</system-out>
+    </testcase>
+    <testcase classname="mem-capped" name="visual.workbenchTabSmoke" time="6.091">
+      <system-out>workbench visible with 1 tab(s); screenshot 1280x720, blackish=0.0003, buckets=67</system-out>
+    </testcase>
+  </testsuite>
+  <testsuite name="cpu-capped" tests="9" failures="0" skipped="0" time="82.384">
+    <testcase classname="cpu-capped" name="palette.open" time="11.769">
+      <system-out>executeCommand(showCommands) returned ok</system-out>
+    </testcase>
+    <testcase classname="cpu-capped" name="file.openWelcomeClose" time="14.027">
+      <system-out>openTabs 1 → 0</system-out>
+    </testcase>
+    <testcase classname="cpu-capped" name="search.findInFiles" time="14.162">
+      <system-out>executeCommand(findInFiles) returned ok (no view in snapshot to assert)</system-out>
+    </testcase>
+    <testcase classname="cpu-capped" name="terminal.new" time="16.238">
+      <system-out>terminals 0 → 1 (["bash"])</system-out>
+    </testcase>
+    <testcase classname="cpu-capped" name="view.toggleSidebar" time="8.066">
+      <system-out>toggleSidebarVisibility resolved (visibility not yet in Snapshot)</system-out>
+    </testcase>
+    <testcase classname="cpu-capped" name="view.togglePanel" time="6.379">
+      <system-out>togglePanel resolved (terminalCount 1 → 1, unchanged by hide)</system-out>
+    </testcase>
+    <testcase classname="cpu-capped" name="problems.open" time="4.203">
+      <system-out>Problems view opened (diagnostics: 0)</system-out>
+    </testcase>
+    <testcase classname="cpu-capped" name="settings.toggleMinimap" time="4.392">
+      <system-out>editor.minimap.enabled true → false</system-out>
+    </testcase>
+    <testcase classname="cpu-capped" name="visual.workbenchTabSmoke" time="3.148">
+      <system-out>workbench visible with 1 tab(s); screenshot 1280x720, blackish=0.0003, buckets=67</system-out>
+    </testcase>
+  </testsuite>
+  <testsuite name="no-network" tests="9" failures="0" skipped="0" time="0.000">
+    <testcase classname="no-network" name="palette.open" time="0.000">
+      <system-out>boot-failed-as-expected (expectBoot:fail): bridge r12-no-network never connected</system-out>
+    </testcase>
+    <testcase classname="no-network" name="file.openWelcomeClose" time="0.000">
+      <system-out>boot-failed-as-expected (expectBoot:fail): bridge r12-no-network never connected</system-out>
+    </testcase>
+    <testcase classname="no-network" name="search.findInFiles" time="0.000">
+      <system-out>boot-failed-as-expected (expectBoot:fail): bridge r12-no-network never connected</system-out>
+    </testcase>
+    <testcase classname="no-network" name="terminal.new" time="0.000">
+      <system-out>boot-failed-as-expected (expectBoot:fail): bridge r12-no-network never connected</system-out>
+    </testcase>
+    <testcase classname="no-network" name="view.toggleSidebar" time="0.000">
+      <system-out>boot-failed-as-expected (expectBoot:fail): bridge r12-no-network never connected</system-out>
+    </testcase>
+    <testcase classname="no-network" name="view.togglePanel" time="0.000">
+      <system-out>boot-failed-as-expected (expectBoot:fail): bridge r12-no-network never connected</system-out>
+    </testcase>
+    <testcase classname="no-network" name="problems.open" time="0.000">
+      <system-out>boot-failed-as-expected (expectBoot:fail): bridge r12-no-network never connected</system-out>
+    </testcase>
+    <testcase classname="no-network" name="settings.toggleMinimap" time="0.000">
+      <system-out>boot-failed-as-expected (expectBoot:fail): bridge r12-no-network never connected</system-out>
+    </testcase>
+    <testcase classname="no-network" name="visual.workbenchTabSmoke" time="0.000">
+      <system-out>boot-failed-as-expected (expectBoot:fail): bridge r12-no-network never connected</system-out>
+    </testcase>
+  </testsuite>
+  <testsuite name="crash-boot" tests="9" failures="0" skipped="0" time="0.000">
+    <testcase classname="crash-boot" name="palette.open" time="0.000">
+      <system-out>boot-failed-as-expected (expectBoot:fail): code-server never served 302/200 on :51705</system-out>
+    </testcase>
+    <testcase classname="crash-boot" name="file.openWelcomeClose" time="0.000">
+      <system-out>boot-failed-as-expected (expectBoot:fail): code-server never served 302/200 on :51705</system-out>
+    </testcase>
+    <testcase classname="crash-boot" name="search.findInFiles" time="0.000">
+      <system-out>boot-failed-as-expected (expectBoot:fail): code-server never served 302/200 on :51705</system-out>
+    </testcase>
+    <testcase classname="crash-boot" name="terminal.new" time="0.000">
+      <system-out>boot-failed-as-expected (expectBoot:fail): code-server never served 302/200 on :51705</system-out>
+    </testcase>
+    <testcase classname="crash-boot" name="view.toggleSidebar" time="0.000">
+      <system-out>boot-failed-as-expected (expectBoot:fail): code-server never served 302/200 on :51705</system-out>
+    </testcase>
+    <testcase classname="crash-boot" name="view.togglePanel" time="0.000">
+      <system-out>boot-failed-as-expected (expectBoot:fail): code-server never served 302/200 on :51705</system-out>
+    </testcase>
+    <testcase classname="crash-boot" name="problems.open" time="0.000">
+      <system-out>boot-failed-as-expected (expectBoot:fail): code-server never served 302/200 on :51705</system-out>
+    </testcase>
+    <testcase classname="crash-boot" name="settings.toggleMinimap" time="0.000">
+      <system-out>boot-failed-as-expected (expectBoot:fail): code-server never served 302/200 on :51705</system-out>
+    </testcase>
+    <testcase classname="crash-boot" name="visual.workbenchTabSmoke" time="0.000">
+      <system-out>boot-failed-as-expected (expectBoot:fail): code-server never served 302/200 on :51705</system-out>
     </testcase>
   </testsuite>
 </testsuites>
