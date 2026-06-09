@@ -1,0 +1,62 @@
+{
+  "run": {
+    "startedAt": "2026-06-09T22:20:35.080Z",
+    "image": "fleet-env:latest",
+    "scenarios": 1,
+    "behaviours": 1
+  },
+  "results": [
+    {
+      "scenario": "base",
+      "scenarioTitle": "Base — empty workspace, default image",
+      "behaviour": "visual.workbenchTabSmoke",
+      "title": "Visual: workbench renders with an editor tab and nonblank screenshot",
+      "pass": true,
+      "detail": "workbench visible with 2 tab(s); screenshot 1280x720, blackish=0.0003, buckets=73",
+      "rationale": "\nWHAT: Boots one Fleet environment, writes and opens a real file so VS Code must\nshow an editor tab, then uses Playwright DOM checks plus a decoded screenshot to\nassert that the workbench chrome is present and the captured page is not blank or\nall-black.\n\nWHY THIS IS THE EXPECTED OUTCOME: A healthy VS Code / code-server workbench with\none opened file has a .monaco-workbench root, an editor part, a tab row, an\nactivity bar, and a status bar. Its screenshot contains many colour buckets and\nnot an overwhelming fraction of near-black pixels. Those are stable visual facts\nthat do not depend on exact theme colours or text rendering.\n\nWHY IT MATTERS: Bridge command/query tests can pass while the user-facing page is\nvisually broken. This catches the class of regressions where the editor starts\nand phones home but the browser surface is blank, black, missing tabs, or missing\ncore workbench chrome. It is intentionally a coarse smoke test: exact pixel\nmatching would be brittle across VS Code/theme/browser versions.",
+      "provenance": {
+        "commit": "uncommitted",
+        "date": "—",
+        "file": "containers/fleet-env/eval/behaviours/visualSmoke.mjs"
+      },
+      "evidence": {
+        "screenshot": "artifacts/r1-base-visual.workbenchTabSmoke.full.png",
+        "tabCount": 2,
+        "activityBarCount": 1,
+        "editorCount": 1,
+        "statusBarCount": 1,
+        "stats": {
+          "decoded": true,
+          "width": 1280,
+          "height": 720,
+          "blackishRatio": 0.0003,
+          "lightRatio": 0.9892,
+          "colorBuckets": 73
+        }
+      },
+      "machineDelta": {
+        "procs": "10→10",
+        "memMiB": 8,
+        "fsChanges": 68,
+        "diskMiB": 0,
+        "netBytes": {
+          "rx": 6000,
+          "tx": 10000
+        }
+      },
+      "timingsMs": {
+        "effect": 2740
+      },
+      "screenshots": [
+        "artifacts/r1-base-visual.workbenchTabSmoke.full.png",
+        "artifacts/r1-base-visual.workbenchTabSmoke.result.png"
+      ]
+    }
+  ],
+  "summary": {
+    "pass": 1,
+    "fail": 0,
+    "skipped": 0,
+    "durationMs": 10396
+  }
+}

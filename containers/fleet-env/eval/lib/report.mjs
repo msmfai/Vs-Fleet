@@ -348,12 +348,21 @@ ${empty}
     const cls = statusClass(r);
     const label = statusLabel(r);
     const p = provLabel(r.provenance);
-    const evidence = r.evidence && Object.keys(r.evidence).length
-      ? `<dt>evidence</dt><dd><pre>${escHtml(JSON.stringify(r.evidence, null, 2))}</pre></dd>`
-      : "";
-    const rationale = r.rationale
-      ? `<dt>look for</dt><dd><pre>${escHtml(String(r.rationale).trim())}</pre></dd>`
-      : "";
+    const dl = [];
+    if (r.detail) dl.push(`<dt>happened</dt><dd>${escHtml(r.detail)}</dd>`);
+    if (r.error) dl.push(`<dt>error</dt><dd>${escHtml(String(r.error))}</dd>`);
+    if (r.skipped) dl.push(`<dt>skipped</dt><dd>${escHtml(String(r.skipped))}</dd>`);
+    if (p) {
+      dl.push(`<dt>changed</dt><dd><code>${escHtml(p)}</code>${r.provenance?.file ? ` ${escHtml(r.provenance.file)}` : ""}</dd>`);
+    }
+    if (r.timingsMs) dl.push(`<dt>timing</dt><dd><code>${escHtml(JSON.stringify(r.timingsMs))}</code></dd>`);
+    if (r.machineDelta && Object.keys(r.machineDelta).length) {
+      dl.push(`<dt>machine</dt><dd><code>${escHtml(JSON.stringify(r.machineDelta))}</code></dd>`);
+    }
+    if (r.rationale) dl.push(`<dt>look for</dt><dd><pre>${escHtml(String(r.rationale).trim())}</pre></dd>`);
+    if (r.evidence && Object.keys(r.evidence).length) {
+      dl.push(`<dt>evidence</dt><dd><pre>${escHtml(JSON.stringify(r.evidence, null, 2))}</pre></dd>`);
+    }
     const image = uri
       ? `<img src="${uri}" alt="${escHtml(baseName(path))}">`
       : `<p class="id">missing screenshot: ${escHtml(path)}</p>`;
@@ -366,14 +375,7 @@ ${empty}
     <div class="id">${escHtml(r.behaviour || "")}</div>
     <div class="status ${cls}">${label}</div>
     <dl>
-      ${r.detail ? `<dt>happened</dt><dd>${escHtml(r.detail)}</dd>` : ""}
-      ${r.error ? `<dt>error</dt><dd>${escHtml(String(r.error))}</dd>` : ""}
-      ${r.skipped ? `<dt>skipped</dt><dd>${escHtml(String(r.skipped))}</dd>` : ""}
-      ${p ? `<dt>changed</dt><dd><code>${escHtml(p)}</code>${r.provenance?.file ? ` ${escHtml(r.provenance.file)}` : ""}</dd>` : ""}
-      ${r.timingsMs ? `<dt>timing</dt><dd><code>${escHtml(JSON.stringify(r.timingsMs))}</code></dd>` : ""}
-      ${r.machineDelta && Object.keys(r.machineDelta).length ? `<dt>machine</dt><dd><code>${escHtml(JSON.stringify(r.machineDelta))}</code></dd>` : ""}
-      ${rationale}
-      ${evidence}
+      ${dl.join("\n      ")}
     </dl>
   </aside>
 </section>`;

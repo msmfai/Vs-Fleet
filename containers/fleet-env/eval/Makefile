@@ -9,16 +9,17 @@
 #   make gc                    remove orphan eval containers + dangling images
 #   make clean                 gc + wipe the artifacts dir
 #
-# Reports land in $(OUT): eval.json (§3.5), eval.xml (JUnit), eval.html (row report),
-# index.html (screenshot review). run.mjs auto-emits XML/HTML via FLEET_EVAL_* and
-# the JSON via --json. Exit code is non-zero on any unexpected fail/error.
+# Reports land in $(OUT): eval.json (§3.5), eval.xml (JUnit), eval.html (row report).
+# The screenshot review page is written to ./index.html at the eval root. run.mjs
+# auto-emits XML/HTML via FLEET_EVAL_* and the JSON via --json. Exit code is
+# non-zero on any unexpected fail/error.
 
 SHELL      := /bin/bash
 NODE       ?= node
 PARALLEL   ?= 4
 RETRIES    ?= 0
 ROUNDS     ?= 3
-OUT        ?= /tmp/fleet-eval
+OUT        ?= artifacts
 IMAGE      ?= fleet-env:latest
 
 # Optional selectors → CLI flags only when set.
@@ -44,7 +45,7 @@ endif
 JSON  := $(OUT)/eval.json
 JUNIT := $(OUT)/eval.xml
 HTML  := $(OUT)/eval.html
-REVIEW := $(OUT)/index.html
+REVIEW := $(CURDIR)/index.html
 
 # Exported so run.mjs's Reporter.finish() emits the XML/HTML without extra flags.
 export FLEET_EVAL_OUT   := $(OUT)

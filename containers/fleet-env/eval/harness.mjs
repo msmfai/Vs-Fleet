@@ -6,17 +6,20 @@
 //
 // Per env: docker run the fleet-env image, open its editor with Playwright (brings
 // the bridge's ext-host online), then for each behaviour: observe → act → observe →
-// assert + diff. Artifacts (screenshots, report) land in /tmp/fleet-eval/.
+// assert + diff. Artifacts (screenshots, report) land in ./artifacts by default.
 
 import { execSync, exec } from "node:child_process";
 import { mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { chromium } from "playwright";
 
 const IMAGE = "fleet-env:latest";
 const BRIDGE_PORT = 51778;
 const BASE_PORT = 8200;
-const OUT = "/tmp/fleet-eval";
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const OUT = process.env.FLEET_EVAL_OUT || resolve(__dirname, "artifacts");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
 
