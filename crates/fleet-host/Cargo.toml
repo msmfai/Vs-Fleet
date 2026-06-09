@@ -22,8 +22,7 @@ fleet-protocol = { path = "../fleet-protocol" }
 fleet-host-core = { path = "../fleet-host-core" }
 # `unstable` enables the multi-webview API (a window hosting both Fleet's rail UI
 # and the embedded code-server editor surface) — the core of the multiplexer.
-# `webview-data-url` lets the loading overlay render an inline `data:` spinner.
-tauri = { version = "2", features = ["unstable", "webview-data-url"] }
+tauri = { version = "2", features = ["unstable"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net", "sync"] }

@@ -1,11 +1,12 @@
 //! The multiplexer window — Fleet's core value proposition.
 //!
 //! ONE window hosting the Discord-style **rail** (Fleet's own UI: the list of
-//! VS Code *server* workspaces + their agent state) plus one embedded **editor
-//! surface per server** (the code-server rendered in a webview). Selecting a rail
-//! entry shows that server's surface filling the main pane; the others are kept
-//! alive but hidden, so switching is instant and preserves editor/terminal state
-//! (the cmux model: window → workspace → surface).
+//! VS Code *server* workspaces + their agent state) plus ONE embedded **editor
+//! surface** (a single webview) that navigates between servers on switch.
+//! code-server keeps each workspace's session server-side, so navigating back
+//! reattaches its terminals + running agent (the cmux model: window → workspace →
+//! surface). A single full-size webview is stable; multiple occluded/1×1 webviews
+//! churn the connection or garble the GPU terminal.
 //!
 //! Only the rail webview gets Fleet's IPC; each editor surface is a plain
 //! external origin (the code-server) with no Fleet API access.
@@ -37,70 +38,20 @@ pub struct Server {
 }
 
 /// Multiplexer state: which server is selected + what URL the editor currently
-/// shows + whether the loading overlay is up. The server LIST is the supervisor
-/// (spawned) + the push-driven [`crate::bridge::BridgeRegistry`].
+/// shows. The server LIST is the supervisor (spawned) + the push-driven
+/// [`crate::bridge::BridgeRegistry`].
 #[derive(Default)]
 pub struct MuxState {
     pub selected: Mutex<Option<String>>,
     /// The URL currently loaded in the editor surface (so we only re-navigate on
     /// an actual change).
     loaded: Mutex<Option<String>>,
-    /// Whether the loading overlay currently covers the editor.
-    loading: Mutex<bool>,
 }
 
 impl MuxState {
     pub fn new() -> Self {
         Self::default()
     }
-}
-
-/// The loading-overlay webview label (a spinner that covers the editor while a
-/// server's workbench loads, instead of a white screen).
-pub const LOADING: &str = "loading";
-
-/// The static spinner page shown in the loading overlay.
-fn loading_url() -> String {
-    let html = "<!doctype html><html><body style='margin:0;background:rgb(13,15,20);\
-color:rgb(138,145,160);font:14px -apple-system,sans-serif;display:flex;\
-align-items:center;justify-content:center;height:100vh'><div style='text-align:center'>\
-<div style='width:30px;height:30px;border:3px solid rgb(35,42,58);\
-border-top-color:rgb(59,130,246);border-radius:50%;margin:0 auto 16px;\
-animation:s 0.8s linear infinite'></div>Loading…\
-<style>@keyframes s{to{transform:rotate(360deg)}}</style></div></body></html>";
-    format!("data:text/html,{}", pct(html))
-}
-
-/// Show the loading overlay over the editor.
-pub fn show_loading(app: &AppHandle) {
-    if let Some(state) = app.try_state::<MuxState>() {
-        if let Ok(mut l) = state.loading.lock() {
-            *l = true;
-        }
-    }
-    retile(app);
-}
-
-/// Hide the loading overlay (reveal the loaded editor).
-pub fn hide_loading(app: &AppHandle) {
-    if let Some(state) = app.try_state::<MuxState>() {
-        if let Ok(mut l) = state.loading.lock() {
-            *l = false;
-        }
-    }
-    retile(app);
-}
-
-/// Minimal percent-encoding so the loading HTML is a valid `data:` URL.
-fn pct(s: &str) -> String {
-    s.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                (b as char).to_string()
-            }
-            _ => format!("%{b:02X}"),
-        })
-        .collect()
 }
 
 /// The single editor surface webview label.
@@ -153,40 +104,13 @@ pub fn build_window(app: &mut App) -> tauri::Result<()> {
         LogicalSize::new(RAIL_W, height),
     )?;
 
-    // ONE editor surface (blank until a server is selected). Its page-load events
-    // raise/lower the loading overlay so you see a spinner — not white — while a
-    // server's workbench builds.
+    // ONE editor surface (blank until a server is selected). code-server shows its
+    // own loading screen while the workbench builds, so no Fleet-side overlay.
     let blank = "about:blank".parse().expect("about:blank is a valid url");
-    let load_app = app.handle().clone();
     window.add_child(
-        WebviewBuilder::new(EDITOR, tauri::WebviewUrl::External(blank)).on_page_load(
-            move |_wv, payload| {
-                use tauri::webview::PageLoadEvent;
-                match payload.event() {
-                    PageLoadEvent::Started => show_loading(&load_app),
-                    PageLoadEvent::Finished => {
-                        // The HTML is loaded; give the VS Code workbench a beat to
-                        // render before revealing it (else a flash of white).
-                        let a = load_app.clone();
-                        std::thread::spawn(move || {
-                            std::thread::sleep(std::time::Duration::from_millis(1200));
-                            let b = a.clone();
-                            let _ = a.run_on_main_thread(move || hide_loading(&b));
-                        });
-                    }
-                }
-            },
-        ),
+        WebviewBuilder::new(EDITOR, tauri::WebviewUrl::External(blank)),
         LogicalPosition::new(RAIL_W, 0.0),
         LogicalSize::new(width - RAIL_W, height),
-    )?;
-
-    // Loading overlay (a spinner), mounted at 1×1 (hidden) on top of the editor.
-    let spinner = loading_url().parse().expect("loading data url is valid");
-    window.add_child(
-        WebviewBuilder::new(LOADING, tauri::WebviewUrl::External(spinner)),
-        LogicalPosition::new(RAIL_W, 0.0),
-        LogicalSize::new(1.0, 1.0),
     )?;
     tracing::info!("multiplexer window built (awaiting registrations)");
 
@@ -249,10 +173,10 @@ pub fn close_server(app: AppHandle, sup: State<'_, crate::spawn::ServerSuperviso
 }
 
 /// Switch the editor surface to server `id` (shared by the rail and the menu):
-/// navigate the single editor webview to that server's URL, or a loading page if
-/// it hasn't phoned home yet. Only navigates when the target URL actually changes
-/// (so re-selecting a loaded server doesn't reload it, but a pending→ready
-/// transition does).
+/// navigate the single editor webview to that server's URL. Only navigates when
+/// the target URL actually changes (so re-selecting a loaded server doesn't reload
+/// it, but a pending→ready transition does). code-server shows its own loading
+/// screen while the workbench builds.
 pub fn select(app: &AppHandle, id: String) {
     let Some(state) = app.try_state::<MuxState>() else {
         return;
@@ -531,19 +455,5 @@ fn retile(app: &AppHandle) {
     if let Some(wv) = app.get_webview(EDITOR) {
         let _ = wv.set_position(LogicalPosition::new(RAIL_W, 0.0));
         let _ = wv.set_size(pane);
-    }
-
-    // The loading overlay covers the editor pane while loading, else shrinks away.
-    let loading = app
-        .try_state::<MuxState>()
-        .and_then(|s| s.loading.lock().ok().map(|g| *g))
-        .unwrap_or(false);
-    if let Some(wv) = app.get_webview(LOADING) {
-        let _ = wv.set_position(LogicalPosition::new(RAIL_W, 0.0));
-        let _ = wv.set_size(if loading {
-            pane
-        } else {
-            LogicalSize::new(1.0, 1.0)
-        });
     }
 }
