@@ -60,7 +60,7 @@ plus `list` / `soak` / `gc` / `clean`).
 You can also drive the orchestrator directly (the Makefile is a thin wrapper):
 
 ```bash
-node run.mjs --parallel 12 --json /tmp/fleet-eval/eval.json
+node run.mjs --parallel 12 --json artifacts/eval.json
 node run.mjs --list
 node run.mjs --scenarios base --behaviours terminal.new --keep
 ```
@@ -77,16 +77,17 @@ serves `302/200`), lower `PARALLEL`.
 
 ## Reports / artifacts
 
-All land in `$(OUT)` (default `/tmp/fleet-eval`, override with `OUT=` or
-`FLEET_EVAL_OUT`):
+Run artifacts land in `$(OUT)` (default `./artifacts`, override with `OUT=` or
+`FLEET_EVAL_OUT`). The screenshot review page is written to `./index.html` at the
+eval root so the latest visual result is part of the normal repo working tree:
 
 | File        | What |
 |-------------|------|
-| `eval.json` | the §3.5 result schema (machine-readable; the source of truth) |
-| `eval.xml`  | **JUnit XML** — one `<testsuite>` per scenario, one `<testcase>` per row; CI (GitLab/GitHub/Jenkins) ingests this for pass/fail/skip + per-test timing |
-| `eval.html` | **self-contained HTML** — screenshots embedded as base64 data-URIs, so it opens anywhere (including a CI artifact viewer) with no external assets; failures auto-expanded |
+| `artifacts/eval.json` | the §3.5 result schema (machine-readable; the source of truth) |
+| `artifacts/eval.xml`  | **JUnit XML** — one `<testsuite>` per scenario, one `<testcase>` per row; CI (GitLab/GitHub/Jenkins) ingests this for pass/fail/skip + per-test timing |
+| `artifacts/eval.html` | **self-contained HTML** — screenshots embedded as base64 data-URIs, so it opens anywhere (including a CI artifact viewer) with no external assets; failures auto-expanded |
 | `index.html` | **screenshot review page** — screenshot-first, keyboard-scrollable gallery with the row detail, rationale, provenance, machineΔ, timings, and evidence beside each image |
-| `*.png`     | per-behaviour before/after screenshots (also embedded into the HTML) |
+| `artifacts/*.png`     | per-behaviour before/after screenshots (also embedded into the HTML) |
 
 The console stream shows live `PASS / FAIL / SKIP / ERROR` per cell with the
 machineΔ and timings. **Exit code is non-zero on any unexpected failure or error**
@@ -99,10 +100,10 @@ which `Reporter.finish()` honours to emit the XML/HTML without any extra flags. 
 emit them from a bare `node run.mjs` invocation, set those env vars yourself:
 
 ```bash
-FLEET_EVAL_JUNIT=/tmp/fleet-eval/eval.xml \
-FLEET_EVAL_HTML=/tmp/fleet-eval/eval.html \
-FLEET_EVAL_REVIEW=/tmp/fleet-eval/index.html \
-  node run.mjs --parallel 6 --json /tmp/fleet-eval/eval.json
+FLEET_EVAL_JUNIT=artifacts/eval.xml \
+FLEET_EVAL_HTML=artifacts/eval.html \
+FLEET_EVAL_REVIEW=index.html \
+  node run.mjs --parallel 6 --json artifacts/eval.json
 ```
 
 ### CI

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="fleet-eval" tests="1" failures="0" skipped="0" time="10.397">
+  <testsuite name="base" tests="1" failures="0" skipped="0" time="2.740">
+    <testcase classname="base" name="visual.workbenchTabSmoke" time="2.740">
+      <system-out>workbench visible with 2 tab(s); screenshot 1280x720, blackish=0.0003, buckets=73</system-out>
+    </testcase>
+  </testsuite>
+</testsuites>

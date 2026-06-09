@@ -9,11 +9,14 @@
 
 import { execSync, execFileSync } from "node:child_process";
 import { mkdirSync, existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { machineState } from "./machine.mjs";
 
 const DEFAULT_IMAGE = "fleet-env:latest";
-export const OUT = process.env.FLEET_EVAL_OUT || "/tmp/fleet-eval";
+const EVAL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+export const OUT = process.env.FLEET_EVAL_OUT || resolve(EVAL_ROOT, "artifacts");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sh = (cmd) => {
   try { return execSync(cmd, { encoding: "utf8" }).trim(); } catch { return ""; }
