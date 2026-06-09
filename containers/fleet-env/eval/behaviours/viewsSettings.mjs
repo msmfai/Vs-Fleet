@@ -91,34 +91,26 @@ export const behaviours = [
   },
 
   {
-    id: "settings.toggleWordWrap",
-    title: "Settings: Toggle Word Wrap reflects in the setting",
+    id: "settings.toggleMinimap",
+    title: "Settings: Toggle Minimap flips editor.minimap.enabled",
     tags: ["settings", "smoke"],
-    // Needs the `setting` query (Track E) to VERIFY the toggle; SKIP cleanly until
-    // the bridge advertises it. The command itself (toggleWordWrap) only needs the
-    // baseline, but the assertion is the whole point — so gate on `setting`.
+    // Needs the `setting` query (Track E) to VERIFY the toggle; SKIP until the
+    // bridge advertises it. NOTE: we toggle the MINIMAP (not word-wrap) on purpose —
+    // `toggleWordWrap` sets a transient per-editor override that `config.get` never
+    // reflects, so it isn't verifiable; `toggleMinimap` updates the actual
+    // `editor.minimap.enabled` setting, which the `setting` query reads back.
     needs: ["setting"],
     async run(env) {
-      // Read the effective editor.wordWrap before and after toggling. The toggle
-      // command flips between "off" and "on" (VS Code's editor.action.toggleWordWrap
-      // sets a per-editor override; the `setting` query reflects the effective value).
-      const beforeRaw = await env.request({ type: "setting", key: "editor.wordWrap" });
-      const before = settingValue(beforeRaw);
-
-      await env.act("editor.action.toggleWordWrap");
+      const before = settingValue(await env.request({ type: "setting", key: "editor.minimap.enabled" }));
+      await env.act("editor.action.toggleMinimap");
       await sleep(600);
+      const after = settingValue(await env.request({ type: "setting", key: "editor.minimap.enabled" }));
+      await env.observe("settings.toggleMinimap");
 
-      const afterRaw = await env.request({ type: "setting", key: "editor.wordWrap" });
-      const after = settingValue(afterRaw);
-      await env.observe("settings.toggleWordWrap");
-
-      // Pass when the effective value actually changed. If the bridge returns
-      // undefined (no editor open / key not resolvable) we still pass on a defined
-      // change but flag the ambiguity in detail.
       const changed = before !== after && after !== undefined;
       return {
         pass: changed,
-        detail: `editor.wordWrap ${JSON.stringify(before)} → ${JSON.stringify(after)}` +
+        detail: `editor.minimap.enabled ${JSON.stringify(before)} → ${JSON.stringify(after)}` +
           (changed ? "" : " (no observable change)"),
         evidence: { before, after },
       };

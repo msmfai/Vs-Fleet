@@ -40,7 +40,7 @@ USER coder
 # Disable workspace trust — a Fleet environment is automated, nobody clicks
 # "Trust", and an untrusted workspace silently disables the bridge extension.
 RUN mkdir -p /home/coder/.local/share/code-server/User \
- && printf '{\n  "security.workspace.trust.enabled": false\n}\n' > /home/coder/.local/share/code-server/User/settings.json \
+ && printf '{\n  "security.workspace.trust.enabled": false,\n  "terminal.integrated.confirmOnKill": "never",\n  "terminal.integrated.confirmOnExit": "never"\n}\n' > /home/coder/.local/share/code-server/User/settings.json \
  && code-server --install-extension /tmp/bridge/*.vsix \
  && printf '\n# Fleet: wrap claude with lifecycle hooks (command bypasses this fn → no recursion)\nclaude() { command claude --settings /etc/fleet/hooks.json "$@"; }\n' >> /home/coder/.bashrc
 
