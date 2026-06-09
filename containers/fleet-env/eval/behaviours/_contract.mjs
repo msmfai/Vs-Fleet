@@ -82,6 +82,13 @@
  * @property {("fresh"|"shared")=} isolation      default "shared"
  * @property {string[]=} scenarios                applicable scenario ids; default all "base*"
  * @property {Capability[]=} needs                bridge caps required; SKIP if absent
+ * @property {string}   rationale                 REQUIRED. A full written rationale (multi-line ok):
+ *                                                WHAT this verifies, WHY that outcome was the expected/
+ *                                                correct one, and WHY it matters (what regression it
+ *                                                guards — these container tests break most on refactors
+ *                                                and are painful to interrogate, so the "why" must live
+ *                                                here). The harness auto-stamps WHEN it last changed
+ *                                                (git commit+date of this file) — don't hand-write that.
  * @property {(env: Env) => Promise<BehaviourResult>} run
  */
 

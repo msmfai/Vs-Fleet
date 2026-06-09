@@ -20,7 +20,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { loadRegistry } from "./registry.mjs";
+import { loadRegistry, gitInfo } from "./registry.mjs";
 import { BridgeHub } from "./lib/bridgeHub.mjs";
 import { Env, OUT } from "./lib/env.mjs";
 import { machineState, machineDelta } from "./lib/machine.mjs";
@@ -54,7 +54,7 @@ async function startHub() {
 
 // ─── CLI parsing ────────────────────────────────────────────────────────────
 function parseArgs(argv) {
-  const a = { parallel: 1, keep: false, list: false, json: null,
+  const a = { parallel: 1, keep: false, list: false, why: false, json: null,
     scenarios: null, behaviours: null, tags: null };
   for (let i = 0; i < argv.length; i++) {
     const f = argv[i];
@@ -62,6 +62,7 @@ function parseArgs(argv) {
     const csv = (s) => (s ? s.split(",").map((x) => x.trim()).filter(Boolean) : []);
     switch (f) {
       case "--list": a.list = true; break;
+      case "--why": a.list = true; a.why = true; break;
       case "--keep": a.keep = true; break;
       case "--parallel": a.parallel = Math.max(1, parseInt(next() || "1", 10)); break;
       case "--json": a.json = next(); break;
@@ -116,7 +117,15 @@ function missingCaps(env, needs) {
 
 // ─── Run one behaviour against an env, building the §3.5 result row ──────────
 async function runBehaviour(env, scenario, behaviour) {
-  const row = { scenario: scenario.id, behaviour: behaviour.id, pass: false, detail: "" };
+  const row = {
+    scenario: scenario.id,
+    behaviour: behaviour.id,
+    pass: false,
+    detail: "",
+    // Provenance for one-glance interrogation of a break: what/why + when it last changed.
+    rationale: behaviour.rationale || null,
+    provenance: gitInfo(behaviour.__file),
+  };
 
   // Capability gate → SKIP cleanly (never a hard fail).
   const missing = missingCaps(env, behaviour.needs);
@@ -229,19 +238,29 @@ async function pool(items, size, worker) {
 }
 
 // ─── --list ──────────────────────────────────────────────────────────────────
-function printList(scenarios, behaviours) {
+// `--list` shows each test's git provenance ([commit·date]) + its rationale, so the
+// "what/why/when" is one glance away. `--why` prints the full rationale prose.
+function printList(scenarios, behaviours, full) {
+  const prov = (it) => { const g = gitInfo(it.__file); return `[${g.commit}·${g.date}]`; };
+  const rationale = (it) => {
+    if (!it.rationale) return "    (no rationale — ADD ONE: what it tests, why expected, why it matters)";
+    const r = String(it.rationale).trim();
+    return full ? r.split("\n").map((l) => "    " + l).join("\n") : "    " + r.split("\n")[0];
+  };
   console.log(`\nScenarios (${scenarios.length}):`);
   for (const s of scenarios) {
     const img = s.image ? ` [${s.image}]` : "";
     const boot = s.expectBoot && s.expectBoot !== "ok" ? ` expectBoot:${s.expectBoot}` : "";
-    console.log(`  ${s.id.padEnd(16)} ${s.title}${img}${boot}`);
+    console.log(`  ${prov(s)} ${s.id.padEnd(14)} ${s.title}${img}${boot}`);
+    console.log(rationale(s));
   }
   console.log(`\nBehaviours (${behaviours.length}):`);
   for (const b of behaviours) {
     const tags = (b.tags || []).join(",");
     const needs = b.needs?.length ? ` needs:[${b.needs.join(",")}]` : "";
     const iso = b.isolation === "fresh" ? " fresh" : "";
-    console.log(`  ${b.id.padEnd(20)} ${b.title}  (${tags})${needs}${iso}`);
+    console.log(`  ${prov(b)} ${b.id.padEnd(20)} ${b.title}  (${tags})${needs}${iso}`);
+    console.log(rationale(b));
   }
   console.log();
 }
@@ -254,7 +273,7 @@ async function main() {
   const scenarios = selectScenarios(allS, args);
   const behaviours = selectBehaviours(allB, args);
 
-  if (args.list) { printList(scenarios, behaviours); return 0; }
+  if (args.list) { printList(scenarios, behaviours, args.why); return 0; }
 
   if (!scenarios.length) { console.error("[eval] no scenarios selected"); return 1; }
   if (!behaviours.length) { console.error("[eval] no behaviours selected"); return 1; }
