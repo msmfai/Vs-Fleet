@@ -240,10 +240,9 @@ impl ServerSupervisor {
             .stderr(Stdio::null())
             .status()?;
         if !status.success() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("`docker run` failed for {name} (image {image})"),
-            ));
+            return Err(std::io::Error::other(format!(
+                "`docker run` failed for {name} (image {image})"
+            )));
         }
 
         // Inspect the container for the host-reachable URL (its published :8080 port).
