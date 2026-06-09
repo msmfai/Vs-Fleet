@@ -2,3 +2,7 @@
 /target
 /gen
 /Fleet.app
+
+# Local icon iteration assets; the app only consumes the generated PNGs above.
+/icons/source/
+/icons/prompts/
