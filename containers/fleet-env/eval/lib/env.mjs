@@ -8,7 +8,7 @@
 // and to expose the full §3.2 surface (request/exec/screenshot/supports).
 
 import { execSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, existsSync } from "node:fs";
 import { chromium } from "playwright";
 import { machineState } from "./machine.mjs";
 
@@ -49,6 +49,22 @@ export class Env {
       `-e FLEET_SERVER_ID=${this.id}`,
       "-e FLEET_HOST_ADDR=host.docker.internal",
     ];
+    // Authenticate the container's claude (for the agent.* behaviours). Two paths:
+    //  1) ANTHROPIC_API_KEY passthrough — portable, the recommended path. Set it in
+    //     the host env and the harness forwards it.
+    //  2) Mount host ~/.claude read-only — ONLY if it actually holds a creds FILE.
+    //     macOS Keychain auth has no file to mount, and mounting a credless dir
+    //     read-only just breaks claude's config writes — so we gate on the file.
+    //     Opt out with FLEET_MOUNT_CLAUDE_AUTH=0.
+    if (process.env.ANTHROPIC_API_KEY) parts.push("-e ANTHROPIC_API_KEY");
+    const claudeDir = process.env.HOME ? `${process.env.HOME}/.claude` : null;
+    if (
+      process.env.FLEET_MOUNT_CLAUDE_AUTH !== "0" &&
+      claudeDir &&
+      existsSync(`${claudeDir}/.credentials.json`)
+    ) {
+      parts.push(`-v ${claudeDir}:/home/coder/.claude:ro`);
+    }
     if (d.env) for (const [k, v] of Object.entries(d.env)) parts.push(`-e ${k}=${JSON.stringify(v)}`);
     if (d.memory) parts.push(`--memory ${d.memory}`);
     if (d.cpus) parts.push(`--cpus ${d.cpus}`);
