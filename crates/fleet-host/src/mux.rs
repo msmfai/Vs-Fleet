@@ -57,14 +57,11 @@ impl MuxState {
 /// The single editor surface webview label.
 pub const EDITOR: &str = "editor";
 
-/// Look up a server's URL by id — a Fleet-spawned server (supervisor) or an
-/// externally phoned-home one (registry).
-fn server_url(app: &AppHandle, id: &str) -> Option<String> {
-    if let Some(sup) = app.try_state::<crate::spawn::ServerSupervisor>() {
-        if let Some(s) = sup.servers().into_iter().find(|s| s.id == id) {
-            return Some(s.url);
-        }
-    }
+/// Look up a server's URL by id, but only after the server's bridge has phoned
+/// home. Fleet-spawned servers are recorded by the supervisor immediately so
+/// they can be closed while starting; the editor surface should not navigate to
+/// them until the bridge registration proves VS Code's extension host is alive.
+fn ready_server_url(app: &AppHandle, id: &str) -> Option<String> {
     app.try_state::<crate::bridge::BridgeRegistry>()
         .and_then(|reg| {
             reg.servers()
@@ -187,7 +184,7 @@ pub fn select(app: &AppHandle, id: String) {
     // Navigate the editor to the server's URL (only if it changed, so re-selecting
     // the same server doesn't reload it). The loading overlay is raised/lowered by
     // the editor's own page-load events (see `build_window`).
-    if let Some(target) = server_url(app, &id) {
+    if let Some(target) = ready_server_url(app, &id) {
         if let Ok(mut loaded) = state.loaded.lock() {
             if loaded.as_deref() != Some(target.as_str()) {
                 if let (Some(wv), Ok(parsed)) = (app.get_webview(EDITOR), target.parse()) {

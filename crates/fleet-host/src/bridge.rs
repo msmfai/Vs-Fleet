@@ -8,17 +8,22 @@
 //! the active server). A server vanishes from the rail when its bridge drops.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, Mutex,
+};
 
 use futures_util::{SinkExt, StreamExt};
 use tauri::{AppHandle, Emitter};
 use tokio::net::TcpListener;
+use tokio::time::{sleep, Duration};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::mux::Server;
 
 /// Event emitted to the rail whenever the registered-server set changes.
 pub const SERVERS_CHANGED: &str = "servers-changed";
+const BRIDGE_DROP_GRACE: Duration = Duration::from_secs(8);
 
 /// A live bridge connection's outbound sender (JSON command frames).
 type Tx = tokio::sync::mpsc::UnboundedSender<String>;
@@ -28,6 +33,7 @@ struct Conn {
     tx: Tx,
     url: String,
     label: String,
+    generation: u64,
 }
 
 /// Registry of connected (registered) servers, keyed by server id. This is the
@@ -35,6 +41,7 @@ struct Conn {
 #[derive(Clone, Default)]
 pub struct BridgeRegistry {
     inner: Arc<Mutex<HashMap<String, Conn>>>,
+    next_generation: Arc<AtomicU64>,
 }
 
 impl BridgeRegistry {
@@ -77,18 +84,36 @@ impl BridgeRegistry {
         }
     }
 
-    fn register(&self, id: String, conn: Conn) {
+    fn register(&self, id: String, tx: Tx, url: String, label: String) -> u64 {
+        let generation = self.next_generation.fetch_add(1, Ordering::SeqCst);
         if let Ok(mut map) = self.inner.lock() {
-            map.insert(id.clone(), conn);
+            map.insert(
+                id.clone(),
+                Conn {
+                    tx,
+                    url,
+                    label,
+                    generation,
+                },
+            );
         }
-        tracing::info!(server_id = %id, "server registered (phone-home)");
+        tracing::info!(server_id = %id, generation, "server registered (phone-home)");
+        generation
     }
 
-    fn unregister(&self, id: &str) {
+    fn unregister(&self, id: &str, generation: u64) -> bool {
         if let Ok(mut map) = self.inner.lock() {
-            map.remove(id);
+            if map
+                .get(id)
+                .is_some_and(|conn| conn.generation == generation)
+            {
+                map.remove(id);
+                tracing::info!(server_id = %id, generation, "server deregistered (bridge dropped)");
+                return true;
+            }
         }
-        tracing::info!(server_id = %id, "server deregistered (bridge dropped)");
+        tracing::debug!(server_id = %id, generation, "stale bridge drop ignored");
+        false
     }
 }
 
@@ -145,7 +170,7 @@ async fn handle_conn(app: AppHandle, stream: tokio::net::TcpStream, registry: Br
         }
     };
 
-    registry.register(server_id.clone(), Conn { tx, url, label });
+    let generation = registry.register(server_id.clone(), tx, url, label);
     let _ = app.emit(SERVERS_CHANGED, registry.servers());
 
     loop {
@@ -161,6 +186,10 @@ async fn handle_conn(app: AppHandle, stream: tokio::net::TcpStream, registry: Br
             },
         }
     }
-    registry.unregister(&server_id);
-    let _ = app.emit(SERVERS_CHANGED, registry.servers());
+    tokio::spawn(async move {
+        sleep(BRIDGE_DROP_GRACE).await;
+        if registry.unregister(&server_id, generation) {
+            let _ = app.emit(SERVERS_CHANGED, registry.servers());
+        }
+    });
 }
