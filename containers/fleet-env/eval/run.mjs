@@ -15,7 +15,11 @@
 // machineΔ + screenshots + timings are attached by the runner (not the behaviour).
 // Cleanup is GUARANTEED via finally + a process-exit trap.
 
-import { createServer } from "node:net";
+import { createServer, createConnection } from "node:net";
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import { loadRegistry } from "./registry.mjs";
 import { BridgeHub } from "./lib/bridgeHub.mjs";
 import { Env, OUT } from "./lib/env.mjs";
@@ -23,6 +27,30 @@ import { machineState, machineDelta } from "./lib/machine.mjs";
 import { Reporter } from "./lib/report.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ─── Hub lifecycle ────────────────────────────────────────────────────────────
+// The agent.* behaviours need a Hub on 0.0.0.0:51777 (their env's reporter phones
+// home there). Reuse one if already up, else spawn target/debug/fleet-hub for the
+// run. If the binary is missing, agent behaviours runtime-SKIP cleanly.
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+function tcpOpen(port, host = "127.0.0.1", ms = 500) {
+  return new Promise((res) => {
+    const s = createConnection({ port, host });
+    const done = (v) => { try { s.destroy(); } catch {} res(v); };
+    s.once("connect", () => done(true));
+    s.once("error", () => done(false));
+    setTimeout(() => done(false), ms);
+  });
+}
+async function startHub() {
+  if (await tcpOpen(51777)) return { child: null, reused: true };
+  const bin = resolve(REPO_ROOT, "target/debug/fleet-hub");
+  if (!existsSync(bin)) { console.warn("[eval] fleet-hub not built — agent.* behaviours will SKIP"); return { child: null }; }
+  const child = spawn(bin, [], { env: { ...process.env, FLEET_WS_ADDR: "0.0.0.0", RUST_LOG: "warn" }, stdio: "ignore" });
+  for (let i = 0; i < 20; i++) { if (await tcpOpen(51777)) { console.log("[eval] Hub up on :51777"); return { child }; } await sleep(500); }
+  console.warn("[eval] Hub did not come up on :51777");
+  return { child };
+}
 
 // ─── CLI parsing ────────────────────────────────────────────────────────────
 function parseArgs(argv) {
@@ -232,14 +260,16 @@ async function main() {
   if (!behaviours.length) { console.error("[eval] no behaviours selected"); return 1; }
 
   const hub = new BridgeHub();
+  const fleetHub = await startHub();
   const reporter = new Reporter({
     image: scenarios[0]?.image || "fleet-env:latest",
     scenarios: scenarios.length,
     behaviours: behaviours.length,
   });
 
+  const stopFleetHub = () => { try { fleetHub.child?.kill(); } catch {} };
   // Guaranteed cleanup trap: if the process is asked to die mid-run, still close hub.
-  const onSignal = () => { try { hub.close(); } catch {} process.exit(130); };
+  const onSignal = () => { try { hub.close(); } catch {} stopFleetHub(); process.exit(130); };
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
 
@@ -251,6 +281,7 @@ async function main() {
       runScenario(hub, scenario, behaviours, reporter, args, `r${i + 1}`));
   } finally {
     hub.close();
+    stopFleetHub();
   }
 
   if (args.json) reporter.writeJSON(args.json);
