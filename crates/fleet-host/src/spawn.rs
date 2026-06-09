@@ -2,9 +2,11 @@
 //! spawned). A spawned server is launched with the phone-home env, so it dials
 //! Fleet's bridge and appears in the rail on its own — Fleet never pulls it.
 //!
-//! Prototype: launches `code serve-web` against a shared, bridge-equipped
-//! server-data-dir (so startup is warm and the `fleet-bridge` extension loads).
-//! The product would launch a code-server image with the bridge baked in.
+//! Launches **code-server** (license-clean, Open-VSX — the product editor) with a
+//! SHARED `--extensions-dir` (the `fleet-bridge` installed once) and a PER-SERVER
+//! `--user-data-dir` (so concurrent servers don't collide). Configurable via env:
+//!   - `FLEET_EDITOR_BIN`        — the code-server binary (default `code-server`)
+//!   - `FLEET_EDITOR_EXTENSIONS_DIR` — shared extensions dir (with fleet-bridge)
 
 use std::collections::HashMap;
 use std::process::{Child, Command, Stdio};
@@ -51,21 +53,27 @@ impl ServerSupervisor {
             folder.join(format!("{id}.md")),
             format!("# {id}\n\nSpawned by Fleet at port {port}.\n"),
         );
-        // Shared, warm, bridge-equipped data dir (fast start + the bridge loads).
-        let data_dir = std::env::var("FLEET_SPAWN_DATA_DIR")
-            .unwrap_or_else(|_| base.join("sd-shared").to_string_lossy().into_owned());
-        let editor = std::env::var("FLEET_EDITOR_BIN").unwrap_or_else(|_| "code".into());
+        // Shared extensions dir (fleet-bridge installed once); PER-SERVER user-data
+        // dir so concurrent code-servers don't collide.
+        let exts_dir = std::env::var("FLEET_EDITOR_EXTENSIONS_DIR")
+            .unwrap_or_else(|_| base.join("cs-exts").to_string_lossy().into_owned());
+        let user_data = base.join(format!("cs-userdata-{id}"));
+        let editor = std::env::var("FLEET_EDITOR_BIN").unwrap_or_else(|_| "code-server".into());
         let url = format!("http://127.0.0.1:{port}/?folder={}", folder.display());
 
         let child = Command::new(&editor)
             .args([
-                "serve-web",
-                "--port",
-                &port.to_string(),
-                "--without-connection-token",
-                "--accept-server-license-terms",
-                "--server-data-dir",
-                &data_dir,
+                "--bind-addr",
+                &format!("127.0.0.1:{port}"),
+                "--auth",
+                "none",
+                "--disable-telemetry",
+                "--disable-update-check",
+                "--extensions-dir",
+                &exts_dir,
+                "--user-data-dir",
+                &user_data.to_string_lossy(),
+                &folder.to_string_lossy(),
             ])
             .env(
                 "FLEET_BRIDGE_URL",
