@@ -119,13 +119,23 @@ pub async fn run(config: HubConfig) -> anyhow::Result<()> {
     let _lock = InstanceLock::acquire(&config.lock_path)?;
     tracing::info!(lock = %config.lock_path.display(), "single-instance lock acquired");
 
-    // D3/S7: durable state. Opening replays the existing event log, restoring
-    // every session/run before the first connection is served.
-    if let Some(parent) = config.db_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let state = HubState::with_db(&config.db_path)?;
-    tracing::info!(db = %config.db_path.display(), "durable state restored");
+    // The inbox is a LIVE MIRROR of whatever is currently phoning home — live
+    // reporters re-register on restart. So by DEFAULT the Hub keeps state only in
+    // memory: a restart is a clean slate, repopulated by live pings. This avoids
+    // resurrecting dead "ghost" sessions and stale same-id reclaim across restarts.
+    // Set `FLEET_PERSIST` to opt into the durable on-disk event log (D3/S7), which
+    // replays to restore every session/run before serving.
+    let state = if std::env::var_os("FLEET_PERSIST").is_some() {
+        if let Some(parent) = config.db_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let state = HubState::with_db(&config.db_path)?;
+        tracing::info!(db = %config.db_path.display(), "durable state restored (FLEET_PERSIST)");
+        state
+    } else {
+        tracing::info!("ephemeral state — live mirror, no restore across restart");
+        HubState::new()
+    };
 
     // S7/D17: periodic GC — reap `dead` runs past the grace, sweep expired
     // sessions. Spawned as a background task; the Hub itself never auto-exits (D2).
