@@ -17,6 +17,22 @@
 //!
 //! Env knobs: `FLEET_EDITOR_BIN`, `FLEET_EDITOR_EXTENSIONS_DIR`,
 //! `FLEET_REPORTER_BIN`, `FLEET_CLAUDE_BIN`.
+//!
+//! ## Spawn modes
+//! `FLEET_SPAWN_MODE` selects how a server is launched:
+//!   - `local` (default) — the local-process path above (code-server + reporter +
+//!     claude shim on the host). Unchanged.
+//!   - `container` — `docker run` the `fleet-env` image (code-server + reporter +
+//!     bridge baked in). The container phones home to Fleet's bridge on its own
+//!     (`FLEET_HOST_ADDR` → the host gateway, `FLEET_BRIDGE_PORT` → Fleet's bridge),
+//!     so it appears in the rail like any other env. We publish a free host port to
+//!     the container's `:8080`, inspect the container for the reachable URL, and on
+//!     close `docker rm -f` it. This mirrors the eval harness's `docker run` contract
+//!     (see `containers/fleet-env/eval/harness.mjs`).
+//!
+//! Container-mode knobs: `FLEET_SPAWN_IMAGE` (default `fleet-env:latest`),
+//! `FLEET_DOCKER_BIN` (default `docker`), `FLEET_HOST_ADDR` (default
+//! `host.docker.internal` — how the container dials back to Fleet).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -29,6 +45,9 @@ use std::sync::Mutex;
 /// servers Fleet created — it knows these directly, since it made them).
 pub struct ServerSupervisor {
     children: Mutex<HashMap<String, Vec<Child>>>,
+    /// `server id -> docker container name` for container-mode servers (so `close`
+    /// knows to `docker rm` rather than kill child processes).
+    containers: Mutex<HashMap<String, String>>,
     servers: Mutex<Vec<crate::mux::Server>>,
     counter: AtomicU64,
     bridge_port: u16,
@@ -39,6 +58,7 @@ impl ServerSupervisor {
     pub fn new(bridge_port: u16, hub_url: String) -> Self {
         Self {
             children: Mutex::new(HashMap::new()),
+            containers: Mutex::new(HashMap::new()),
             servers: Mutex::new(Vec::new()),
             counter: AtomicU64::new(1),
             bridge_port,
@@ -51,9 +71,19 @@ impl ServerSupervisor {
         self.servers.lock().unwrap().clone()
     }
 
+    /// Spawn a new server. Routes to the container path when `FLEET_SPAWN_MODE=container`,
+    /// else the default local-process path. Both return a [`Server`] that Fleet adds
+    /// to the rail immediately; the spawned env phones home to the bridge on its own.
+    pub fn spawn(&self) -> std::io::Result<crate::mux::Server> {
+        match spawn_mode() {
+            SpawnMode::Container => self.spawn_container(),
+            SpawnMode::Local => self.spawn_local(),
+        }
+    }
+
     /// Spawn a new code-server (+ its reporter + claude shim) and record it.
     /// Returns its [`Server`]; Fleet adds it to the rail immediately.
-    pub fn spawn(&self) -> std::io::Result<crate::mux::Server> {
+    fn spawn_local(&self) -> std::io::Result<crate::mux::Server> {
         let n = self.counter.fetch_add(1, Ordering::SeqCst);
         let id = format!("server-{n}");
         let port = free_port()?;
@@ -155,10 +185,102 @@ impl ServerSupervisor {
             .spawn()
     }
 
-    /// Close (kill) a Fleet-spawned server — its code-server AND reporter — and
-    /// drop it from the rail.
+    /// Spawn a new server as a **container** (`docker run` the `fleet-env` image) and
+    /// record it. The image bakes in code-server + reporter + bridge; it dials back to
+    /// Fleet's bridge using `FLEET_HOST_ADDR` + `FLEET_BRIDGE_PORT`, so it appears in
+    /// the rail on its own. We publish a free host port to the container's `:8080` and
+    /// inspect the container for the reachable URL.
+    ///
+    /// NOTE: for the container to reach Fleet's bridge, Fleet must bind it on all
+    /// interfaces — launch with `FLEET_BRIDGE_ADDR=0.0.0.0` (see `bridge.rs`).
+    fn spawn_container(&self) -> std::io::Result<crate::mux::Server> {
+        let n = self.counter.fetch_add(1, Ordering::SeqCst);
+        let id = format!("server-{n}");
+        let name = format!("fleet-{id}");
+        let port = free_port()?;
+
+        let docker = docker_bin();
+        let image =
+            std::env::var("FLEET_SPAWN_IMAGE").unwrap_or_else(|_| "fleet-env:latest".into());
+        // How the container dials back to Fleet (host gateway). `host.docker.internal`
+        // resolves to the host on Docker Desktop / colima.
+        let host_addr =
+            std::env::var("FLEET_HOST_ADDR").unwrap_or_else(|_| "host.docker.internal".into());
+
+        // Best-effort: remove any stale container of the same name first.
+        let _ = Command::new(&docker)
+            .args(["rm", "-f", &name])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+
+        // `docker run -d` the image. Mirrors the eval harness contract: the env phones
+        // home (bridge dials `ws://<host_addr>:<bridge_port>`) and registers itself.
+        let status = Command::new(&docker)
+            .args([
+                "run",
+                "-d",
+                "--name",
+                &name,
+                "-e",
+                &format!("FLEET_SERVER_ID={id}"),
+                "-e",
+                &format!("FLEET_SERVER_LABEL={id}"),
+                "-e",
+                &format!("FLEET_HOST_ADDR={host_addr}"),
+                "-e",
+                &format!("FLEET_BRIDGE_PORT={}", self.bridge_port),
+                "-e",
+                &format!("FLEET_HUB_URL={}", self.hub_url),
+                "-p",
+                &format!("{port}:8080"),
+                &image,
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()?;
+        if !status.success() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("`docker run` failed for {name} (image {image})"),
+            ));
+        }
+
+        // Inspect the container for the host-reachable URL (its published :8080 port).
+        // Prefer what docker reports; fall back to the port we asked for.
+        let url =
+            inspect_url(&docker, &name).unwrap_or_else(|| format!("http://127.0.0.1:{port}/"));
+
+        tracing::info!(%id, %name, port, url, "spawned fleet-env container");
+        let server = crate::mux::Server {
+            id: id.clone(),
+            label: id.clone(),
+            url,
+        };
+        self.containers.lock().unwrap().insert(id.clone(), name);
+        self.servers.lock().unwrap().push(server.clone());
+        Ok(server)
+    }
+
+    /// Close (kill) a Fleet-spawned server — its code-server AND reporter (local
+    /// mode), or its container (`docker rm -f`, container mode) — and drop it from
+    /// the rail.
     pub fn close(&self, id: &str) -> bool {
         self.servers.lock().unwrap().retain(|s| s.id != id);
+
+        // Container-mode server: remove the container.
+        if let Some(name) = self.containers.lock().unwrap().remove(id) {
+            let docker = docker_bin();
+            let _ = Command::new(&docker)
+                .args(["rm", "-f", &name])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            tracing::info!(%id, %name, "removed spawned container");
+            return true;
+        }
+
+        // Local-mode server: kill its child processes.
         if let Some(children) = self.children.lock().unwrap().remove(id) {
             for mut child in children {
                 let _ = child.kill();
@@ -170,6 +292,48 @@ impl ServerSupervisor {
             false
         }
     }
+}
+
+/// Which launch path `spawn()` takes. `FLEET_SPAWN_MODE=container` opts into Docker;
+/// anything else (incl. unset) keeps the default local-process path.
+enum SpawnMode {
+    Local,
+    Container,
+}
+
+fn spawn_mode() -> SpawnMode {
+    match std::env::var("FLEET_SPAWN_MODE").as_deref() {
+        Ok("container") => SpawnMode::Container,
+        _ => SpawnMode::Local,
+    }
+}
+
+/// The `docker` CLI to drive (`FLEET_DOCKER_BIN`, default `docker`).
+fn docker_bin() -> String {
+    std::env::var("FLEET_DOCKER_BIN").unwrap_or_else(|_| "docker".into())
+}
+
+/// Inspect a running container for the host-reachable editor URL: the host port that
+/// docker bound to the container's `8080/tcp`. Returns `None` if inspection fails.
+fn inspect_url(docker: &str, name: &str) -> Option<String> {
+    let out = Command::new(docker)
+        .args([
+            "inspect",
+            "-f",
+            // HostPort of the first binding published for the container's :8080.
+            "{{(index (index .NetworkSettings.Ports \"8080/tcp\") 0).HostPort}}",
+            name,
+        ])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let host_port = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if host_port.is_empty() {
+        return None;
+    }
+    Some(format!("http://127.0.0.1:{host_port}/"))
 }
 
 /// Install a `claude` shim in `shim_dir` that wraps the real `claude` with a

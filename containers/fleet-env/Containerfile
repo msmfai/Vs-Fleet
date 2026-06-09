@@ -35,13 +35,13 @@ RUN chmod +x /usr/local/bin/fleet-entrypoint.sh /usr/local/bin/fleet-reporter
 
 # The fleet-bridge extension (the server's command-forwarding + self-registration
 # channel to Fleet) + the `claude` wrapper that adds our lifecycle hooks.
-COPY packages/fleet-bridge/fleet-bridge-0.1.2.vsix /tmp/fleet-bridge.vsix
+COPY packages/fleet-bridge/*.vsix /tmp/bridge/
 USER coder
 # Disable workspace trust — a Fleet environment is automated, nobody clicks
 # "Trust", and an untrusted workspace silently disables the bridge extension.
 RUN mkdir -p /home/coder/.local/share/code-server/User \
  && printf '{\n  "security.workspace.trust.enabled": false\n}\n' > /home/coder/.local/share/code-server/User/settings.json \
- && code-server --install-extension /tmp/fleet-bridge.vsix \
+ && code-server --install-extension /tmp/bridge/*.vsix \
  && printf '\n# Fleet: wrap claude with lifecycle hooks (command bypasses this fn → no recursion)\nclaude() { command claude --settings /etc/fleet/hooks.json "$@"; }\n' >> /home/coder/.bashrc
 
 ENV FLEET_HUB_PORT=51777 FLEET_BRIDGE_PORT=51778 FLEET_REPORTER_SOCKET=/tmp/fleet-reporter.sock

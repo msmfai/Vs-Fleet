@@ -1,0 +1,39 @@
+# Fleet environment image — RUST variant (Track G, §7 `+rust` scenario).
+#
+# FROM the base fleet-env image so it inherits everything already proven:
+# code-server (Open-VSX) + Claude Code + fleet-bridge + fleet-reporter + the claude
+# hook-wrapper + workspace-trust disabled. We add the Rust toolchain and a matching
+# Open-VSX language extension so the diagnostics/format behaviours (§6) have a
+# language server (rust-analyzer) to drive.
+#
+# Build (do NOT run here — integration/build-variants.sh does it):
+#   docker build -t fleet-env-rust:latest \
+#     -f containers/fleet-env/Containerfile.rust containers/fleet-env
+#
+# Scenarios target this via `scenario.image: "fleet-env-rust:latest"`.
+
+FROM fleet-env:latest
+
+# Toolchain: rustup-installed stable toolchain (rustc/cargo/rustfmt) under the coder
+# home, plus rust-src/rust-analyzer components the language server wants. Installed
+# as `coder` so the toolchain lives in ~/.rustup and ~/.cargo for that user.
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl gcc \
+ && rm -rf /var/lib/apt/lists/*
+
+USER coder
+ENV RUSTUP_HOME=/home/coder/.rustup \
+    CARGO_HOME=/home/coder/.cargo \
+    PATH=/home/coder/.cargo/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | sh -s -- -y --profile minimal --default-toolchain stable \
+        --component rustfmt --component rust-src \
+ && rustc --version && cargo --version
+
+# The Open-VSX rust-analyzer extension is the language server for diagnostics.
+# Workspace trust is already disabled by the base image so it activates headless.
+RUN code-server --install-extension rust-lang.rust-analyzer
+
+ENV FLEET_LANG=rust
+ENTRYPOINT ["/usr/local/bin/fleet-entrypoint.sh"]

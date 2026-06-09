@@ -1,0 +1,32 @@
+# Fleet environment image — PYTHON variant (Track G, §7 `+python` scenario).
+#
+# FROM the base fleet-env image so it inherits everything that's already proven:
+# code-server (Open-VSX) + Claude Code + fleet-bridge + fleet-reporter + the claude
+# hook-wrapper + workspace-trust disabled. We only add the Python toolchain and a
+# matching Open-VSX language extension so diagnostics/format behaviours (§6) have a
+# language server to drive.
+#
+# Build (do NOT run here — integration/build-variants.sh does it):
+#   docker build -t fleet-env-python:latest \
+#     -f containers/fleet-env/Containerfile.python containers/fleet-env
+#
+# Scenarios target this via `scenario.image: "fleet-env-python:latest"`.
+
+FROM fleet-env:latest
+
+# Toolchain: a real CPython + pip + venv + pyflakes so `diag.pyflakes` (§6) and any
+# format behaviour have something to lint against. Root for apt, then back to coder.
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 python3-pip python3-venv \
+ && rm -rf /var/lib/apt/lists/* \
+ && (pip3 install --no-cache-dir --break-system-packages pyflakes \
+     || pip3 install --no-cache-dir pyflakes)
+
+USER coder
+# The Open-VSX Python language extension (IntelliSense / diagnostics). Workspace
+# trust is already disabled by the base image so the extension activates headless.
+RUN code-server --install-extension ms-python.python
+
+ENV FLEET_LANG=python
+ENTRYPOINT ["/usr/local/bin/fleet-entrypoint.sh"]

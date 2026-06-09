@@ -2,7 +2,7 @@
   "name": "fleet-bridge",
   "displayName": "Fleet Bridge",
   "description": "Command bridge: lets the Fleet multiplexer drive this VS Code via vscode.commands.executeCommand.",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "publisher": "fleet-team",
   "license": "UNLICENSED",
   "engines": { "vscode": "^1.80.0" },

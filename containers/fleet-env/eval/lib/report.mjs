@@ -1,0 +1,291 @@
+// Reporter — console + JSON (§3.5 frozen schema) + JUnit XML + self-contained HTML
+// (screenshots embedded as base64 data-URIs). Track A shipped the console+JSON stub;
+// Track F (this file) ADDS the XML/HTML emitters. The JSON shape is unchanged so all
+// emitters consume the same Report object.
+//
+//   { run: {startedAt,image,scenarios:N,behaviours:M},
+//     results: [ {scenario,behaviour,pass,detail,evidence,machineDelta,
+//                 timingsMs,screenshots,skipped?,error?} ],
+//     summary: {pass,fail,skipped,durationMs} }
+
+import { writeFileSync, readFileSync } from "node:fs";
+import { extname } from "node:path";
+
+export class Reporter {
+  /** @param {{image?:string, scenarios?:number, behaviours?:number}} runMeta */
+  constructor(runMeta = {}) {
+    this.run = {
+      startedAt: new Date().toISOString(),
+      image: runMeta.image || "fleet-env:latest",
+      scenarios: runMeta.scenarios ?? 0,
+      behaviours: runMeta.behaviours ?? 0,
+    };
+    this.results = [];
+    this._t0 = Date.now();
+  }
+
+  // Record one (scenario × behaviour) cell. `result` carries the §3.5 row fields.
+  add(result) {
+    this.results.push(result);
+    this._line(result);
+  }
+
+  _line(r) {
+    let mark;
+    if (r.skipped) mark = "⏭️  SKIP";
+    else if (r.error) mark = "💥 ERROR";
+    else mark = r.pass ? "✅ PASS" : "❌ FAIL";
+    console.log(`[eval] ${mark}  ${r.scenario} × ${r.behaviour}`);
+    if (r.detail) console.log(`[eval]      ${r.detail}`);
+    if (r.skipped) console.log(`[eval]      skipped: ${r.skipped}`);
+    if (r.error) console.log(`[eval]      error: ${r.error}`);
+    if (r.machineDelta && Object.keys(r.machineDelta).length) {
+      console.log(`[eval]      machineΔ ${JSON.stringify(r.machineDelta)}`);
+    }
+    if (r.timingsMs && Object.keys(r.timingsMs).length) {
+      console.log(`[eval]      timingsMs ${JSON.stringify(r.timingsMs)}`);
+    }
+  }
+
+  summary() {
+    const pass = this.results.filter((r) => !r.skipped && !r.error && r.pass).length;
+    const skipped = this.results.filter((r) => r.skipped).length;
+    const fail = this.results.length - pass - skipped; // includes errors
+    return { pass, fail, skipped, durationMs: Date.now() - this._t0 };
+  }
+
+  toJSON() {
+    return { run: this.run, results: this.results, summary: this.summary() };
+  }
+
+  writeJSON(path) {
+    writeFileSync(path, JSON.stringify(this.toJSON(), null, 2));
+    console.log(`[eval] wrote JSON report → ${path}`);
+  }
+
+  // ─── JUnit XML (consumed by CI: GitLab/GitHub/Jenkins) ──────────────────────
+  // One <testsuite> per scenario; one <testcase> per result row. Classnames are
+  // the scenario id; testcase names are the behaviour id. fail → <failure>,
+  // error → <error>, skip → <skipped>. Durations come from timingsMs.effect.
+  toJUnitXML() {
+    const bySuite = new Map();
+    for (const r of this.results) {
+      const k = r.scenario || "(unknown)";
+      if (!bySuite.has(k)) bySuite.set(k, []);
+      bySuite.get(k).push(r);
+    }
+    const esc = xmlEscapeAttr;
+    const lines = ['<?xml version="1.0" encoding="UTF-8"?>'];
+    const s = this.summary();
+    lines.push(`<testsuites name="fleet-eval" tests="${this.results.length}" ` +
+      `failures="${s.fail}" skipped="${s.skipped}" time="${(s.durationMs / 1000).toFixed(3)}">`);
+    for (const [suite, rows] of bySuite) {
+      const fails = rows.filter((r) => !r.skipped && (r.error || !r.pass)).length;
+      const skips = rows.filter((r) => r.skipped).length;
+      const time = rows.reduce((acc, r) => acc + (r.timingsMs?.effect || 0), 0) / 1000;
+      lines.push(`  <testsuite name="${esc(suite)}" tests="${rows.length}" ` +
+        `failures="${fails}" skipped="${skips}" time="${time.toFixed(3)}">`);
+      for (const r of rows) {
+        const t = ((r.timingsMs?.effect || 0) / 1000).toFixed(3);
+        lines.push(`    <testcase classname="${esc(suite)}" ` +
+          `name="${esc(r.behaviour || "(unnamed)")}" time="${t}">`);
+        if (r.skipped) {
+          lines.push(`      <skipped message="${esc(String(r.skipped))}"/>`);
+        } else if (r.error) {
+          lines.push(`      <error message="${esc(String(r.error))}">${xmlEscapeText(String(r.error))}</error>`);
+        } else if (!r.pass) {
+          lines.push(`      <failure message="${esc(r.detail || "behaviour assertion failed")}">` +
+            `${xmlEscapeText(r.detail || "")}</failure>`);
+        }
+        if (r.detail) lines.push(`      <system-out>${xmlEscapeText(r.detail)}</system-out>`);
+        lines.push(`    </testcase>`);
+      }
+      lines.push(`  </testsuite>`);
+    }
+    lines.push(`</testsuites>`);
+    return lines.join("\n") + "\n";
+  }
+
+  writeJUnit(path) {
+    writeFileSync(path, this.toJUnitXML());
+    console.log(`[eval] wrote JUnit XML → ${path}`);
+  }
+
+  // ─── Self-contained HTML (screenshots embedded as base64 data-URIs) ─────────
+  // No external assets: the file opens anywhere, including CI artifact viewers.
+  toHTML() {
+    const s = this.summary();
+    const rows = this.results.map((r, i) => this._htmlRow(r, i)).join("\n");
+    const passPct = this.results.length
+      ? Math.round((s.pass / this.results.length) * 100) : 0;
+    return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fleet eval — ${escHtml(this.run.startedAt)}</title>
+<style>
+  :root { color-scheme: dark light; }
+  body { font: 14px/1.5 -apple-system, system-ui, sans-serif; margin: 0; background: #14161a; color: #e6e6e6; }
+  header { padding: 20px 24px; background: #1c1f26; border-bottom: 1px solid #2a2e38; }
+  h1 { margin: 0 0 6px; font-size: 18px; }
+  .meta { color: #9aa0aa; font-size: 13px; }
+  .bar { height: 8px; border-radius: 4px; background: #c0392b; overflow: hidden; margin-top: 12px; }
+  .bar > span { display: block; height: 100%; background: #27ae60; width: ${passPct}%; }
+  .counts { display: flex; gap: 16px; margin-top: 12px; flex-wrap: wrap; }
+  .pill { padding: 4px 10px; border-radius: 12px; font-weight: 600; font-size: 12px; }
+  .pill.pass { background: #16341f; color: #57d98a; }
+  .pill.fail { background: #3a1414; color: #ff6b6b; }
+  .pill.skip { background: #2a2a14; color: #d9c357; }
+  main { padding: 16px 24px 48px; }
+  details { border: 1px solid #2a2e38; border-radius: 8px; margin: 8px 0; background: #1a1d24; overflow: hidden; }
+  summary { padding: 10px 14px; cursor: pointer; display: flex; gap: 10px; align-items: center; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  .status { width: 14px; height: 14px; border-radius: 50%; flex: 0 0 auto; }
+  .status.pass { background: #27ae60; } .status.fail { background: #c0392b; }
+  .status.skip { background: #d9c357; } .status.error { background: #e67e22; }
+  .name { font-weight: 600; }
+  .scn { color: #9aa0aa; font-weight: 400; }
+  .detail { margin-left: auto; color: #9aa0aa; font-size: 12px; max-width: 50%; text-align: right;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .body { padding: 0 14px 14px; border-top: 1px solid #2a2e38; }
+  .kv { display: grid; grid-template-columns: 120px 1fr; gap: 4px 12px; margin: 12px 0; font-size: 13px; }
+  .kv dt { color: #9aa0aa; } .kv dd { margin: 0; }
+  pre { background: #0f1116; padding: 10px; border-radius: 6px; overflow: auto; font-size: 12px; }
+  .shots { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+  .shots figure { margin: 0; } .shots img { max-width: 380px; border: 1px solid #2a2e38; border-radius: 6px; display: block; }
+  .shots figcaption { color: #9aa0aa; font-size: 11px; margin-top: 4px; }
+  .err { color: #ff6b6b; }
+  code { background: #0f1116; padding: 1px 5px; border-radius: 4px; }
+</style></head>
+<body>
+<header>
+  <h1>Fleet behaviour eval</h1>
+  <div class="meta">image <code>${escHtml(this.run.image)}</code> · started ${escHtml(this.run.startedAt)} ·
+    ${this.run.scenarios} scenarios × ${this.run.behaviours} behaviours · ${(s.durationMs / 1000).toFixed(1)}s</div>
+  <div class="bar"><span></span></div>
+  <div class="counts">
+    <span class="pill pass">${s.pass} pass</span>
+    <span class="pill fail">${s.fail} fail</span>
+    <span class="pill skip">${s.skipped} skip</span>
+  </div>
+</header>
+<main>
+${rows}
+</main>
+</body></html>
+`;
+  }
+
+  _htmlRow(r, i) {
+    let cls, label;
+    if (r.skipped) { cls = "skip"; label = "SKIP"; }
+    else if (r.error) { cls = "error"; label = "ERROR"; }
+    else if (r.pass) { cls = "pass"; label = "PASS"; }
+    else { cls = "fail"; label = "FAIL"; }
+    const open = (cls === "fail" || cls === "error") ? " open" : "";
+
+    const kv = [];
+    if (r.detail) kv.push(`<dt>detail</dt><dd>${escHtml(r.detail)}</dd>`);
+    if (r.skipped) kv.push(`<dt>skipped</dt><dd>${escHtml(String(r.skipped))}</dd>`);
+    if (r.error) kv.push(`<dt>error</dt><dd class="err">${escHtml(String(r.error))}</dd>`);
+    if (r.machineDelta && Object.keys(r.machineDelta).length) {
+      kv.push(`<dt>machineΔ</dt><dd><code>${escHtml(JSON.stringify(r.machineDelta))}</code></dd>`);
+    }
+    if (r.timingsMs && Object.keys(r.timingsMs).length) {
+      kv.push(`<dt>timingsMs</dt><dd><code>${escHtml(JSON.stringify(r.timingsMs))}</code></dd>`);
+    }
+
+    let evidence = "";
+    if (r.evidence && Object.keys(r.evidence).length) {
+      evidence = `<div class="kv"><dt>evidence</dt><dd><pre>${escHtml(
+        JSON.stringify(r.evidence, null, 2))}</pre></dd></div>`;
+    }
+
+    let shots = "";
+    const paths = Array.isArray(r.screenshots) ? r.screenshots : [];
+    if (paths.length) {
+      const figs = paths.map((p) => {
+        const uri = imgDataURI(p);
+        const cap = escHtml(baseName(p));
+        return uri
+          ? `<figure><img src="${uri}" alt="${cap}" loading="lazy"><figcaption>${cap}</figcaption></figure>`
+          : `<figure><figcaption class="err">missing: ${cap}</figcaption></figure>`;
+      }).join("");
+      shots = `<div class="shots">${figs}</div>`;
+    }
+
+    return `<details${open}>
+  <summary>
+    <span class="status ${cls}"></span>
+    <span class="name">${escHtml(r.behaviour || "(unnamed)")}</span>
+    <span class="scn">${escHtml(r.scenario || "")}</span>
+    <span class="detail" title="${escHtml(r.detail || "")}">${label}${r.detail ? " — " + escHtml(r.detail) : ""}</span>
+  </summary>
+  <div class="body">
+    <div class="kv">${kv.join("")}</div>
+    ${evidence}
+    ${shots}
+  </div>
+</details>`;
+  }
+
+  writeHTML(path) {
+    writeFileSync(path, this.toHTML());
+    console.log(`[eval] wrote HTML report → ${path}`);
+  }
+
+  // Write all configured artifacts at once. Paths default off; pass what you want.
+  writeAll({ json, junit, html } = {}) {
+    if (json) this.writeJSON(json);
+    if (junit) this.writeJUnit(junit);
+    if (html) this.writeHTML(html);
+  }
+
+  // Console epilogue + exit-code signal. Unexpected = fail or error (not skip).
+  // Also auto-emits JUnit/HTML when FLEET_EVAL_JUNIT / FLEET_EVAL_HTML are set, so
+  // the Makefile/CI gets all artifacts WITHOUT run.mjs having to know about them
+  // (run.mjs already calls finish(); --json stays the explicit JSON path).
+  finish() {
+    const s = this.summary();
+    if (process.env.FLEET_EVAL_JSON) this.writeJSON(process.env.FLEET_EVAL_JSON);
+    if (process.env.FLEET_EVAL_JUNIT) this.writeJUnit(process.env.FLEET_EVAL_JUNIT);
+    if (process.env.FLEET_EVAL_HTML) this.writeHTML(process.env.FLEET_EVAL_HTML);
+    console.log(`\n[eval] RESULT: ${s.pass} pass, ${s.fail} fail, ${s.skipped} skipped` +
+      ` (${s.durationMs}ms)`);
+    return s.fail === 0; // true ⇒ exit 0
+  }
+}
+
+// ─── helpers ──────────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+// XML attribute values: escape &,<,>,",' — and strip control chars XML 1.0 forbids.
+function xmlEscapeAttr(s) {
+  return String(s)
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+function xmlEscapeText(s) {
+  return String(s)
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function baseName(p) { return String(p).split("/").pop(); }
+
+// Read a PNG/JPEG off disk and return a base64 data: URI; null if unreadable.
+function imgDataURI(p) {
+  try {
+    const buf = readFileSync(p);
+    const ext = extname(p).toLowerCase();
+    const mime = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg"
+      : ext === ".webp" ? "image/webp" : "image/png";
+    return `data:${mime};base64,${buf.toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
