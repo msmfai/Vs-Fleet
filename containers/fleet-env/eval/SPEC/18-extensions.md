@@ -29,7 +29,7 @@ must be installed, activated, and capability-honest.
 - expected: a non-empty array of `{id, active}` entries
 - assert: reply `ok:true`; `r.items` is an array with length ≥ 1; every entry has a string `id` and boolean `active`
 - why: smoke for the `extensions` query path — proves `vscode.extensions.all` is reachable through the bridge and well-shaped. The prerequisite for every fleet-bridge-presence assertion below; an empty/throwing result here means the ext-host or query handler regressed.
-- status: TODO
+- status: implemented (behaviour `ext.listReturns`)
 
 ### L1.EXT.010 — fleet-bridge is present in the installed list
 - layer: L1
@@ -41,7 +41,7 @@ must be installed, activated, and capability-honest.
 - expected: an entry whose `id` matches the fleet-bridge publisher.name
 - assert: `r.items.some(e => /fleet[-.]?bridge/i.test(e.id))` (exact id = the .vsix's `<publisher>.fleet-bridge`)
 - why: self-referential presence check — if the bridge isn't even listed, the image's .vsix install step broke. Distinct from EXT.011 (listed-but-inactive is the silent-trust-failure mode). This is the cheapest proof the harness's own driver shipped into the image.
-- status: TODO
+- status: implemented (behaviour `ext.fleetBridgePresent`)
 
 ### L1.EXT.011 — fleet-bridge is ACTIVE (the silent-trust-failure guard)
 - layer: L1
@@ -53,7 +53,7 @@ must be installed, activated, and capability-honest.
 - expected: the fleet-bridge entry has `active === true`
 - assert: the matched fleet-bridge entry's `active === true`
 - why: THE GOTCHA as a test — installed-but-inactive is the EXACT silent failure mode from PLAN §8 (no log, extension present, never activates). If this goes red while EXT.010 is green, the trust/extensionKind/manifest wiring regressed. This is also implicitly true any time ANY behaviour passes (they all go through the bridge), but an explicit assertion makes the diagnosis unambiguous.
-- status: TODO
+- status: implemented (behaviour `ext.fleetBridgeActive`)
 
 ### L1.EXT.012 — fleet-bridge active is a precondition the harness already relies on
 - layer: L1
@@ -77,7 +77,7 @@ must be installed, activated, and capability-honest.
 - expected: caps superset includes the frozen CAPS list — `command, query, openFile, typeText, termSend, writeFile, saveAll, closeEditor, fileContent, terminalText, diagnostics, openEditors, setting, extensions, editorText, selection`
 - assert: every token in the §3.3 contract list is present in `hello.caps`; `env.supports(cap)` returns true for each
 - why: the capability handshake is what gates `needs[]` skips — if caps drift (e.g. a Track-E refactor drops a token), behaviours silently SKIP instead of running, hiding regressions. This pins the advertised set against the CAPS const so a missing cap is a loud failure, not a silent skip.
-- status: TODO
+- status: implemented (behaviour `ext.helloCaps`)
 
 ### L1.EXT.021 — A behaviour needing an unadvertised cap SKIPS cleanly (not fails)
 - layer: L1
@@ -125,7 +125,7 @@ must be installed, activated, and capability-honest.
 - expected: command resolves ok (Extensions side-bar view focused)
 - assert: env.act ok (cross-ref 16-views VIEW.043 for the no-folder edge)
 - why: covers the View-menu Extensions id — the human-facing surface for the same list the `extensions` query reads programmatically. Pairs the UI command with the query so both paths to "what's installed" are covered.
-- status: TODO
+- status: implemented (behaviour `ext.openExtensionsView`)
 
 ### L1.EXT.050 — Activation-event extension activates on its trigger (e.g. language ext on file open)
 - layer: L1
@@ -161,7 +161,7 @@ must be installed, activated, and capability-honest.
 - expected: array returns; contains built-in extensions (always `active` varies) plus the fleet-bridge entry; never throws on a minimal set
 - assert: reply `ok:true`; `r.items` array length ≥ 1; the fleet-bridge id present
 - why: EDGE (minimal env) — guards the query against a sparse extension set (no language servers installed); proves the list is well-formed even when the only Fleet-relevant entry is the bridge itself. Complements EXT.001 (which may run under repo scenarios with more extensions).
-- status: TODO
+- status: implemented (behaviour `ext.shapeStableMinimal`)
 
 ### L1.EXT.070 — fleet-bridge log file records activation (out-of-band evidence)
 - layer: L1
@@ -173,7 +173,7 @@ must be installed, activated, and capability-honest.
 - expected: the log contains an `activate: url=... serverId=...` line and a `ws open → hello` line (extension.ts `log()` writes these)
 - assert: `env.exec` of the log file contains `"activate:"` and `"ws open → hello"`
 - why: cross-checks the in-VS-Code activation state (EXT.011) against the extension's OWN on-disk activation log — an independent witness. If the `extensions` query says active but this log is empty (or vice-versa), the discrepancy localizes the bug (query plumbing vs real activation). The log path is deterministic from `FLEET_SERVER_ID`.
-- status: TODO
+- status: implemented (behaviour `ext.bridgeLogActivation`)
 
 ### L1.EXT.071 — Bridge log records a forwarded command (command path evidence)
 - layer: L1
@@ -185,4 +185,4 @@ must be installed, activated, and capability-honest.
 - expected: the log shows `command recv: workbench.action.showCommands` followed by `command ok: workbench.action.showCommands` (extension.ts logs both recv and result)
 - assert: `env.exec` of the log contains both the `command recv:` and `command ok:` lines for that id
 - why: EDGE (out-of-band command tracing) — proves the command handler's logging witnesses both receipt AND successful execution, the on-disk counterpart to the `ok:true` reply. Useful for debugging a behaviour that times out: if `recv` is present but `ok` is not, the command hung inside VS Code, not in transport.
-- status: TODO
+- status: implemented (behaviour `ext.bridgeLogCommand`)

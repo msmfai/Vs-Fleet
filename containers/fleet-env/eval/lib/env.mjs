@@ -7,7 +7,7 @@
 // Ported from harness.mjs's Env, generalized to honor a Scenario's image/docker opts
 // and to expose the full §3.2 surface (request/exec/screenshot/supports).
 
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import { mkdirSync, existsSync } from "node:fs";
 import { chromium } from "playwright";
 import { machineState } from "./machine.mjs";
@@ -173,7 +173,17 @@ export class Env {
   }
 
   // §3.2: docker exec in the container; returns trimmed stdout ("" on failure).
-  exec(shCmd) { return sh(`docker exec ${this.name} sh -lc ${JSON.stringify(shCmd)}`); }
+  // shCmd is passed as a DIRECT argv element (not through an outer host `sh -c`), so
+  // the container's `sh -lc` is what expands its $vars / $(...). A string-built
+  // `docker exec … sh -lc "<shCmd>"` would let the HOST shell expand them first
+  // (to empty), silently corrupting any command that uses shell variables.
+  exec(shCmd) {
+    try {
+      return execFileSync("docker", ["exec", this.name, "sh", "-lc", shCmd], { encoding: "utf8" }).trim();
+    } catch {
+      return "";
+    }
+  }
 
   // §3.2: returns the screenshot path. No-op-safe when there is no page (no-net).
   async screenshot(tag) {

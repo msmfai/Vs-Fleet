@@ -64,7 +64,7 @@ carry only gate (2) (no claude, no auth needed).
 - assert: `pollHub(env.id, st==="working", {ms:15000})` ok; `stateOf(boot.line)==="idle"` before; deterministic (no real claude → no auth gate)
 - edges: a second `UserPromptSubmit` for the SAME `session_id` while already `working` is idempotent (stays `working`, no new run minted — `run_counter` only increments on a *new* `session_id`)
 - why: pins the S15 mapping `UserPromptSubmit|PreToolUse → working` at the socket→Hub→CLI boundary (Rust unit tests cover the pure machine; this covers the wire). Refactors that drop the working edge silently hide active agents.
-- status: TODO
+- status: implemented (behaviour `agent.workingState`)
 
 ### L1.AGENT.003 — `Stop` settles the run to `idle` (turn finished, awaiting prompt)
 - layer: L1
@@ -77,7 +77,7 @@ carry only gate (2) (no claude, no auth needed).
 - assert: `pollHub(env.id, st==="idle", {ms:15000})` ok after first seeing `working`; final `[idle]`
 - edges: `Stop` with `stop_hook_active:true` (a Stop fired from within a Stop hook's own continuation) must NOT settle — state stays `working` (conservative, not a real task end)
 - why: `Stop` is THE completion signal; misclassifying it leaves runs stuck `working` forever (false "agent busy") or over-claims `done`. Guards the idle-vs-continuation distinction at the wire.
-- status: TODO
+- status: implemented (behaviour `agent.stopIdle`)
 
 ### L1.AGENT.004 — `Stop` with a completion marker settles to `done` (not idle)
 - layer: L1
@@ -90,7 +90,7 @@ carry only gate (2) (no claude, no auth needed).
 - assert: `pollHub(env.id, st==="done", {ms:15000})` ok; `[done]` on the row
 - edges: a Stop with neither a completion marker NOR `stop_hook_active` → conservatively `idle` (covered by L1.AGENT.003); never over-claim `done`
 - why: distinguishes a *finished task* (`done`, dismissible) from *turn-paused-awaiting-prompt* (`idle`); the rollup/urgency UI treats them differently. Pins D9 at the socket boundary.
-- status: TODO
+- status: implemented (behaviour `agent.stopDone`)
 
 ### L1.AGENT.005 — Inferred `waiting` on a PreToolUse-without-Stop (S16 debounce)
 - layer: L1
@@ -116,7 +116,7 @@ carry only gate (2) (no claude, no auth needed).
 - expected: the Hub session NEVER shows `waiting` — the follow-up cancels the armed inference; it settles to `idle`
 - assert: `pollHub(env.id, st==="waiting", {ms:4000})` returns NOT ok (no waiting seen); a subsequent `pollHub(env.id, st==="idle", {ms:8000})` ok
 - why: the debounce must not fire when the tool was approved/ran quickly; a false `waiting` would ping the user for nothing. Guards "any later activity cancels" at the wire (the inverse of L1.AGENT.005).
-- status: TODO
+- status: implemented (behaviour `agent.waitingCancelled`)
 
 ### L1.AGENT.007 — Repeat PreToolUse re-arms the debounce, single waiting raised
 - layer: L1
@@ -128,7 +128,7 @@ carry only gate (2) (no claude, no auth needed).
 - expected: still exactly one `waiting` on the session (the second PreToolUse re-arms, does not stack a second waiting run); session stays `[waiting]`
 - assert: after both frames `pollHub(env.id, st==="waiting", {ms:6000})` ok; `(N runs)` count does NOT increase beyond 1 for this session (regex on the row); resolve with a `Stop`
 - why: real agents fire multiple PreToolUse on one blocked turn; the inference must coalesce, not multiply the ping. Guards against waiting-run duplication under repeated tool dispatch.
-- status: TODO
+- status: implemented (behaviour `agent.waitingCoalesced`)
 
 ### L1.AGENT.008 — JSONL transcript `Resolved` vetoes the inferred waiting
 - layer: L1
@@ -167,7 +167,7 @@ carry only gate (2) (no claude, no auth needed).
 - assert: `pollHub(env.id, st==="dead", {ms:15000})` ok; `[dead]` on the row (and per render sorting, dead sorts last)
 - edges: `SessionEnd` for an UNKNOWN `session_id` (never started) → no-op, no row mutation (assert the row's state is unchanged)
 - why: `-p` is one-shot — it fires SessionEnd on exit, so `agent.claudeRuns` accepts `dead` as a legitimate terminal state. Pins the `SessionEnd → dead` mapping; without it a finished one-shot run would look stuck.
-- status: implemented (behaviour `agent.claudeRuns` accepts `dead` as a terminal state)
+- status: implemented (behaviour `agent.sessionEndDead`; also `agent.claudeRuns` accepts `dead` as a terminal state)
 
 ### L1.AGENT.011 — Multi-turn: same session_id keeps ONE run, cycles working↔idle
 - layer: L1
@@ -180,7 +180,7 @@ carry only gate (2) (no claude, no auth needed).
 - assert: at end `pollHub(env.id, st==="idle")` ok; `(1 run)` via regex on the row; `pollHub` `seen` array shows the working↔idle cycle
 - edges: a DIFFERENT `session_id` on the second turn (a `--resume` that re-anchors) → covered separately in L1.AGENT.012
 - why: durable identity (D4) — the Claude `session_id` is the run's `native_id`; multi-turn must not spawn phantom runs. Guards run-count stability across an interactive multi-turn conversation.
-- status: TODO
+- status: implemented (behaviour `agent.multiTurnOneRun`)
 
 ### L1.AGENT.012 — `--continue`/`--resume` keeps the same session_id / native_id
 - layer: L1
@@ -218,7 +218,7 @@ carry only gate (2) (no claude, no auth needed).
 - expected: the main run stays `working` (a subagent's turn finishing does not end the parent turn); only a real `Stop` settles it
 - assert: after SubagentStop `pollHub(env.id, st==="working", {ms:4000})` still ok (not idle); a following `Stop` then settles `idle`
 - why: a SubagentStop must not be mistaken for the main turn's Stop, or every Task/subagent call would falsely show the parent as finished. Guards the SubagentStop-is-not-completion rule.
-- status: TODO
+- status: implemented (behaviour `agent.subagentStopLiveness`)
 
 ### L1.AGENT.015 — Session correlation: row title == FLEET_SERVER_ID == env.id
 - layer: L1
@@ -270,7 +270,7 @@ carry only gate (2) (no claude, no auth needed).
 - assert: `stateOf(line)==="waiting"` AND `line.includes("[approval]")`; resolve with a Stop after
 - edges: a `question`-urgency waiting (if a future adapter emits it) sorts AFTER approval — assert label is `[approval]` here, not `[question]`
 - why: the urgency label is what drives the rail badge/ping priority (approval > question). A waiting with no/ wrong urgency would mis-prioritise the user's attention. Guards the urgency stamping through rollup → CLI render.
-- status: TODO
+- status: implemented (behaviour `agent.waitingApprovalUrgency`)
 
 ### L1.AGENT.019 — Confidence honesty: inferred waiting is never High-confidence
 - layer: L1
@@ -296,7 +296,7 @@ carry only gate (2) (no claude, no auth needed).
 - assert: after the sequence the row shows `(2 runs)`; the rollup state reflects the most-urgent across them (per rollup precedence); each run's working→idle is independent (no cross-bleed of state)
 - edges: a frame with NO `session_id` (`MissingSessionId` parse error) is rejected — assert no phantom run is minted (identity honesty: no durable anchor → no run)
 - why: one reporter shell can host several Claude sessions (S15 `ClaudeReporter` multiplexes per session_id); state must not leak between them, and a missing anchor must be rejected. Guards multi-session correctness + identity honesty at the socket.
-- status: TODO
+- status: implemented (behaviour `agent.concurrentSessions`)
 
 ### L1.AGENT.021 — Preexisting long-running agent: session is non-empty before any behaviour
 - layer: L1
@@ -334,4 +334,4 @@ carry only gate (2) (no claude, no auth needed).
 - expected: the env's session sits at `[idle]` with `(0 runs)` (or no run sub-rows) — registered but quiescent; no spurious `working`/`waiting`
 - assert: `stateOf(line)==="idle"`; the row shows no active run / `(0 runs)`; `pollHub(env.id, st==="working"||st==="waiting", {ms:3000})` NOT ok
 - why: the empty/idle baseline must be clean — a reporter that fabricates activity on boot would false-ping the user. Guards the quiescent baseline that every active-state assertion is measured against.
-- status: TODO
+- status: implemented (behaviour `agent.emptyQuiescent`)

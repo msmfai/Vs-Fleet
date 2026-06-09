@@ -48,7 +48,7 @@ Workspace root inside the container: `/home/coder/project` (§8). Bridge actions
 - assert: if `ok:true` then `env.exec("test -f /home/coder/project/nope/deep/a.txt && echo yes")=="yes"`; if `ok:false` then `error` is non-empty AND `env.exec("test -e /home/coder/project/nope")=="no"`
 - edges: missing parent dir
 - why: guards against writeFile silently reporting success while writing nothing (the worst regression — every downstream file test would false-pass).
-- status: TODO
+- status: implemented (behaviour `file.createDeepDir`)
 
 ### L1.FILES.004 — Open a file that does not exist (edge: missing precondition)
 - layer: L1
@@ -61,7 +61,7 @@ Workspace root inside the container: `/home/coder/project` (§8). Bridge actions
 - assert: bridge reply received within 3s (no hang); if `ok:true` snapshot.activeEditor basename == `ghost.txt`; if `ok:false` `error` non-empty
 - edges: open missing file
 - why: a missing-file open must be a defined outcome, not a hang or a silent focus of the wrong tab.
-- status: TODO
+- status: implemented (behaviour `file.openMissing`)
 
 ### L1.FILES.005 — New untitled text file via command → an untitled editor becomes active
 - layer: L1
@@ -74,7 +74,7 @@ Workspace root inside the container: `/home/coder/project` (§8). Bridge actions
 - assert: snapshot.openTabs.length delta == +1 AND snapshot.activeEditor matches /Untitled|untitled/ (or is a non-disk scheme)
 - edges: repeat — firing it twice yields two distinct untitled editors (openTabs +2, not deduped)
 - why: untitled docs are the create-from-scratch path with no backing file; guards that the command registers a new in-memory editor and the snapshot tracks editors with no fs path.
-- status: TODO
+- status: implemented (behaviour `file.newUntitled`)
 
 ### L1.FILES.006 — Save an untitled file as a named file (Save As) → file appears on disk
 - layer: L1
@@ -113,7 +113,7 @@ Workspace root inside the container: `/home/coder/project` (§8). Bridge actions
 - assert: snapshot.openTabs.length == 0 before AND after; bridge reply `ok:true`
 - edges: empty state
 - why: closing nothing must be a benign no-op, not a thrown command error that would fail the act() transport.
-- status: TODO
+- status: implemented (behaviour `file.closeWhenEmpty`)
 
 ### L1.FILES.009 — Split editor right → a second editor becomes visible
 - layer: L1
@@ -139,7 +139,7 @@ Workspace root inside the container: `/home/coder/project` (§8). Bridge actions
 - assert: bridge reply `ok:true`; snapshot.visibleEditors.length after >= before
 - edges: empty state
 - why: split-with-nothing must not throw or corrupt the layout signal.
-- status: TODO
+- status: implemented (behaviour `editor.splitWhenEmpty`)
 
 ### L1.FILES.011 — Type into an editor + saveAll → on-disk bytes reflect the edit
 - layer: L1
@@ -165,7 +165,7 @@ Workspace root inside the container: `/home/coder/project` (§8). Bridge actions
 - assert: `env.exec("cat fleet-b.txt").includes("ROUTED_HERE")` is true AND `env.exec("cat fleet-a.txt").includes("ROUTED_HERE")` is false
 - edges: focus routing / wrong-editor regression
 - why: a regression where typeText targets the first/wrong editor (instead of the active one) would silently corrupt the wrong file; this catches mis-routed keystrokes.
-- status: TODO
+- status: implemented (behaviour `editor.typeFocusRouting`)
 
 ### L1.FILES.013 — Rename a file on disk + reopen → tab references the new name
 - layer: L1
@@ -191,7 +191,7 @@ Workspace root inside the container: `/home/coder/project` (§8). Bridge actions
 - assert: `env.exec("test -e fleet-orphan.txt")=="no"` AND `env.exec("test -f fleet-orphan-renamed.txt")=="yes"` AND snapshot.activeEditor basename == `fleet-orphan-renamed.txt`
 - edges: rename a file with no editor model
 - why: rename must work regardless of editor state; guards that openFile resolves a freshly-renamed path with no stale model interference.
-- status: TODO
+- status: implemented (behaviour `file.renameUnopened`)
 
 ### L1.FILES.015 — Delete a file on disk while open → editor becomes stale; reopen fails cleanly
 - layer: L1
@@ -204,7 +204,7 @@ Workspace root inside the container: `/home/coder/project` (§8). Bridge actions
 - assert: `env.exec("test -e fleet-del.txt")=="no"`; the second openFile returns a bridge reply within 3s (no hang)
 - edges: delete-while-open / re-open deleted
 - why: out-of-band delete is a common real event; the harness must not hang and the editor must surface a defined state.
-- status: TODO
+- status: implemented (behaviour `file.deleteWhileOpen`)
 
 ### L1.FILES.016 — Move a file into a subdirectory → new path opens, old path gone
 - layer: L1
@@ -217,7 +217,7 @@ Workspace root inside the container: `/home/coder/project` (§8). Bridge actions
 - assert: `env.exec("test -f sub/fleet-move.txt")=="yes"` AND `env.exec("test -e fleet-move.txt")=="no"` AND snapshot.activeEditor path ends with `sub/fleet-move.txt`
 - edges: move into a nested dir (path now contains a directory segment, not just basename)
 - why: move = rename across dirs; guards that openFile resolves a multi-segment relative path and the snapshot reports the full path (not just basename collision with the old one).
-- status: TODO
+- status: implemented (behaviour `file.moveIntoSubdir`)
 
 ### L1.FILES.017 — Reveal the Explorer view → Explorer view container is active
 - layer: L1
@@ -230,7 +230,7 @@ Workspace root inside the container: `/home/coder/project` (§8). Bridge actions
 - assert: bridge reply `ok:true`; if snapshot exposes activeView/focusedView → it matches /explorer/i; else fall back to ok-returned (same posture as `search.findInFiles`)
 - edges: repeat — calling it when already focused stays focused (idempotent, ok:true)
 - why: Explorer is the file-tree entry point; guards command registration + viewlet activation. Dual posture because the snapshot may not expose the active view.
-- status: TODO
+- status: implemented (behaviour `view.explorer`)
 
 ### L1.FILES.018 — Quick-open a known file by name → it becomes the active editor
 - layer: L1
@@ -282,7 +282,7 @@ Workspace root inside the container: `/home/coder/project` (§8). Bridge actions
 - assert: bridge reply `ok:true`; `env.exec` diff of an `ls --full-time` snapshot before/after shows no mtime change on workspace files
 - edges: empty state (no dirty docs)
 - why: saveAll must be safe to call when clean; a regression that touches/rewrites unchanged files would corrupt mtimes and trip incremental tooling.
-- status: TODO
+- status: implemented (behaviour `file.saveAllClean`)
 
 ### L1.FILES.022 — Open the same file twice → it is not duplicated (edge: repeat open)
 - layer: L1
@@ -295,7 +295,7 @@ Workspace root inside the container: `/home/coder/project` (§8). Bridge actions
 - assert: count of openTabs entries referencing `fleet-dup.txt` == 1 (not 2); activeEditor basename == `fleet-dup.txt`
 - edges: repeat
 - why: VS Code reuses an open document; a regression that opens a duplicate tab per call would leak editors and break tab-count assertions elsewhere.
-- status: TODO
+- status: implemented (behaviour `file.openTwiceNoDup`)
 
 ### L1.FILES.023 — Create + open a file with spaces and unicode in its name (edge: path escaping)
 - layer: L1
@@ -308,7 +308,7 @@ Workspace root inside the container: `/home/coder/project` (§8). Bridge actions
 - assert: snapshot.activeEditor basename matches the unicode/space name AND `field(fileContent,"text").includes("WEIRDNAME_OK")` AND `env.exec` (with proper quoting) confirms the file exists
 - edges: spaces + non-ASCII in path (escaping/quoting hazard across the bridge and exec)
 - why: guards path-escaping bugs in the bridge wire and in `env.exec` quoting that only surface on non-trivial names.
-- status: TODO
+- status: implemented (behaviour `file.unicodeName`)
 
 ### L1.FILES.024 — Files written via bridge are visible to the container shell (same mount)
 - layer: L1
@@ -321,6 +321,6 @@ Workspace root inside the container: `/home/coder/project` (§8). Bridge actions
 - assert: `env.exec("cat /home/coder/project/fleet-mount.txt") == "MOUNT_OK"` exactly
 - edges: divergent-mount regression (editor fs != git/shell fs)
 - why: every git + exec assertion in 13-scm-git.md depends on the editor's fs and the shell operating on ONE mount; this isolates a mount/path divergence as its own tripwire.
-- status: TODO
+- status: implemented (behaviour `file.mountParity`)
 </content>
 </invoke>

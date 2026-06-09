@@ -174,7 +174,7 @@ fileContent, editorText`.
 - expected: command resolves ok (empty code-action menu / no lightbulb) — not an error
 - assert: `env.act("editor.action.quickFix")` no throw; follow-up snapshot returns (env responsive)
 - why: EDGE (no applicable action) — quick-fix with nothing to fix must no-op cleanly; runs on base since the assertion is "dispatch + no wedge", needing no language server.
-- status: TODO
+- status: implemented (behaviour `diag.quickFixNoActions`)
 
 ### L1.DIAG.013 — Diagnostics query is empty before the language server finishes activating
 - layer: L1
@@ -198,7 +198,7 @@ fileContent, editorText`.
 - expected: `items` contains ≥1 entry for basename `bad.json` with `sev ∈ {error, warning}`
 - assert: diagnostics items filtered to basename bad.json non-empty
 - why: VS Code ships JSON diagnostics built-in (no extra LS), so this is the ONE diagnostics behaviour that runs on the base image — a cheap end-to-end proof the diagnostics query + snapshot.diagnostics count work without waiting on a +lang image. Guards the bridge diagnostics surface independently of Track-G.
-- status: TODO
+- status: implemented (behaviour `diag.jsonError`)
 
 ### L1.DIAG.015 — Fixing invalid JSON clears the built-in diagnostic (base image)
 - layer: L1
@@ -210,7 +210,7 @@ fileContent, editorText`.
 - expected: diagnostics for bad.json drop to 0
 - assert: diagnostics items filtered to basename bad.json empty after the fix
 - why: base-image marker-lifecycle proof (pairs with DIAG.006 for +python) — diagnostics clear on fix without any external LS; guards the built-in JSON validator's update path.
-- status: TODO
+- status: implemented (behaviour `diag.jsonClears`)
 
 ### L1.DIAG.016 — snapshot.diagnostics count matches the diagnostics query item count
 - layer: L1
@@ -222,7 +222,7 @@ fileContent, editorText`.
 - expected: `snapshot.diagnostics === items.length` (the count field and the detailed query agree)
 - assert: numeric equality between snapshot.diagnostics and `items.length`
 - why: guards the two diagnostics surfaces against drift — the snapshot count is a `reduce` over `getDiagnostics()` and the query iterates the same source; if they disagree, one path regressed. Names both exact code paths.
-- status: TODO
+- status: implemented (behaviour `diag.countMatchesItems`)
 
 ### L1.DIAG.017 — Format Document on a syntactically valid file rewrites whitespace, not content
 - layer: L1
@@ -246,7 +246,7 @@ fileContent, editorText`.
 - expected: command resolves ok; `fileContent` unchanged (no formatter → no edit) — not an error
 - assert: `env.act("editor.action.formatDocument")` no throw; `fileContent({path})` after === before
 - why: EDGE (missing capability) — format with no registered formatter must no-op, not throw or blank the file; guards the no-formatter path on the base image.
-- status: TODO
+- status: implemented (behaviour `diag.formatNoFormatter`)
 
 ### L1.DIAG.019 — Concurrent diagnostics queries during LS activity return consistent reqId-matched replies
 - layer: L1
@@ -282,7 +282,7 @@ fileContent, editorText`.
 - expected: command resolves ok; snapshot.diagnostics stays 0 (opening the empty Problems view creates no markers)
 - assert: `env.act` no throw; snapshot.diagnostics === 0 before and after
 - why: EDGE (empty state) — revealing the Problems view with nothing in it must be a clean no-op that does not fabricate markers; guards the view command on an empty workspace.
-- status: TODO
+- status: implemented (behaviour `diag.problemsEmpty`)
 
 ---
 

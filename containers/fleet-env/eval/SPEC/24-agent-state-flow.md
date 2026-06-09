@@ -83,7 +83,7 @@ unit-locked in `fleet-protocol`. Confidence honesty: inferred waiting is always
 - why: the cancel path must suppress false pings (activity resumed before the human was
   actually blocked); guards the infer adapter's arm-then-cancel through the live socket,
   not just the unit `activity_before_debounce_cancels_the_inference`.
-- status: TODO
+- status: implemented (behaviour `flow.cancelBeforeDebounce`)
 
 ### L2.FLOW.004 — The waiting session's rollup pings; the title badge increments (rail face)
 - layer: L2
@@ -239,8 +239,7 @@ unit-locked in `fleet-protocol`. Confidence honesty: inferred waiting is always
   the second run; the row title is unchanged.
 - why: repeated agent runs in one workspace must accumulate under one tab, not litter
   the rail; guards Hub session merge + the reclaim-no-ghost path end-to-end.
-- status: partial(`agent.claudeRuns` proves one run + reads `(N runs)`; the explicit
-  second-run-merges assertion is not a separate behaviour — TODO to add)
+- status: implemented (behaviour `flow.secondRunMergesSession`)
 
 ### L2.FLOW.013 — A dead env's session goes `dead` (reporter gone past timeout)
 - layer: L2

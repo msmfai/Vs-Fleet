@@ -83,7 +83,7 @@ Urgency ranks: `Approval(3) > Question(2) > IdleDone(1) > None(0)`.
 - why: a run delta both records the run AND re-rolls the session in one apply, so faces
   tracking session-level state stay correct; pins `MergeEngine::upsert_run`'s
   `(run_event, session.updated)` pair + `recompute_rollups`.
-- status: implemented(rust: merge::tests::run_upsert_recomputes_rollup); TODO(E2E)
+- status: implemented (hub.runUpsertRecomputesRollup); also implemented(rust: merge::tests::run_upsert_recomputes_rollup)
 
 ### L2.HUB.004 — run.upsert with an existing run_id replaces in place (no append) and re-rolls
 - layer: L2
@@ -209,8 +209,8 @@ Urgency ranks: `Approval(3) > Question(2) > IdleDone(1) > None(0)`.
 - why: waiting is the single attention-demanding state and MUST dominate the rollup so
   a blocked agent is never masked by a louder-counted but lower-rank state; pins
   `state_rank(Waiting)==5` (top) + `waiting_beats_working`.
-- status: implemented(rust: rollup::tests::waiting_beats_working,
-  state::tests::only_waiting_pings); TODO(E2E)
+- status: implemented (hub.waitingWinsRollup); also implemented(rust: rollup::tests::waiting_beats_working,
+  state::tests::only_waiting_pings)
 
 ### L2.HUB.011 — Error > Working > Done > Idle precedence holds pairwise
 - layer: L2
@@ -243,8 +243,8 @@ Urgency ranks: `Approval(3) > Question(2) > IdleDone(1) > None(0)`.
 - why: D9 locks Done≠Idle — "task complete" must be visually distinguishable from
   "awaiting next prompt"; pins `state::tests::state_wire_tokens` +
   `done_distinct_and_ranks_above_idle`.
-- status: implemented(rust: state::tests::state_wire_tokens,
-  rollup::tests::done_distinct_and_ranks_above_idle); TODO(E2E)
+- status: implemented (hub.doneDistinctFromIdle); also implemented(rust: state::tests::state_wire_tokens,
+  rollup::tests::done_distinct_and_ranks_above_idle)
 
 ### L2.HUB.013 — Dead is the LOWEST rank: a dead run never masks any live run's rollup
 - layer: L2

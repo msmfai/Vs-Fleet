@@ -77,6 +77,7 @@
 /**
  * @typedef {Object} Behaviour
  * @property {string}   id                        e.g. "terminal.new"
+ * @property {string=}  specId                    the SPEC/ entry id this implements, e.g. "L1.TERM.003"
  * @property {string}   title
  * @property {string[]} tags
  * @property {("fresh"|"shared")=} isolation      default "shared"

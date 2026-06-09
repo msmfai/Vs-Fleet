@@ -44,7 +44,7 @@ editorText, selection`.
 - expected: second call also resolves ok; still no editor/terminal state change (snapshot identical to after the first call)
 - assert: two consecutive `env.act` calls both return without throw; snapshot deep-equals between the two afters on {terminalCount, openTabs, activeEditor}
 - why: EDGE (repeat) — re-revealing an already-open viewlet must be a no-op focus, not an error or a duplicate-panel spawn; catches a regression where re-entry toggles/closes the view.
-- status: TODO
+- status: implemented (behaviour `search.findInFilesIdempotent`)
 
 ### L1.SEARCH.003 — Replace-all rewrites every match in a seeded file on disk
 - layer: L1
@@ -68,7 +68,7 @@ editorText, selection`.
 - expected: after content == original exactly (no spurious mutation, no trailing-newline drift)
 - assert: `fileContent({path})` after-text === original string (strict equality)
 - why: EDGE (empty result set) — a replace with no matches must not touch the file; guards against a replace path that rewrites/re-encodes even when nothing matched.
-- status: TODO
+- status: implemented (behaviour `search.replaceAllNoMatch`)
 
 ### L1.SEARCH.005 — Replace in Files command resolves (multi-file replace entry-point)
 - layer: L1
@@ -80,7 +80,7 @@ editorText, selection`.
 - expected: command resolves ok; reveals the Search viewlet in replace mode (UI not snapshot-observable → assert dispatch only)
 - assert: `env.act("workbench.action.replaceInFiles")` returns without throw
 - why: guards the Replace-in-Files command id from the EDIT menu catalog. Honest observable: the command exists and dispatches; the replace UI itself is not in the snapshot, so SEARCH.003 covers the disk-level effect.
-- status: TODO
+- status: implemented (behaviour `search.replaceInFiles`)
 
 ### L1.SEARCH.006 — Editor Find widget opens via actions.find
 - layer: L1
@@ -92,7 +92,7 @@ editorText, selection`.
 - expected: command resolves ok; activeEditor unchanged (find widget overlays the same editor, does not switch tabs)
 - assert: `env.act("actions.find")` no throw; snapshot.activeEditor after == before
 - why: guards the in-editor Find command id (`actions.find`, the EDIT-menu "Find"). The find widget is not snapshot-observable; the honest observable is dispatch + that the active editor is not navigated away.
-- status: TODO
+- status: implemented (behaviour `search.editorFind`)
 
 ### L1.SEARCH.007 — Editor Find on no active editor still resolves (no editor open)
 - layer: L1
@@ -116,7 +116,7 @@ editorText, selection`.
 - expected: command resolves ok; activeEditor unchanged (the find/replace widget overlays the same editor)
 - assert: `env.act("editor.action.startFindReplaceAction")` no throw; snapshot.activeEditor after == before
 - why: guards the EDIT-menu "Replace" command id. Widget state not snapshot-observable; honest observable is dispatch + no tab navigation.
-- status: TODO
+- status: implemented (behaviour `search.editorFindReplace`)
 
 ### L1.SEARCH.009 — In-editor replace effected via editor mutation reflects in editorText + on disk
 - layer: L1
@@ -152,7 +152,7 @@ editorText, selection`.
 - expected: command resolves ok (opens the quick-open input); activeEditor unchanged (no file picked yet)
 - assert: `env.act("workbench.action.quickOpen")` no throw; snapshot.activeEditor after == before
 - why: guards the GO-menu "Go to File…" command id. The quick-open list is not snapshot-observable, so SEARCH.010 covers the pick outcome and this covers the widget command dispatch.
-- status: TODO
+- status: implemented (behaviour `quickOpen.command`)
 
 ### L1.SEARCH.012 — Quick Open of a non-existent name leaves the active editor unchanged
 - layer: L1
@@ -176,7 +176,7 @@ editorText, selection`.
 - expected: command resolves ok (opens the @-symbol quick pick); activeEditor unchanged
 - assert: `env.act("workbench.action.gotoSymbol")` no throw; snapshot.activeEditor after == before
 - why: guards the GO-menu "Go to Symbol in Editor…" id. On a plaintext file with no language server the symbol list is empty but the command still dispatches; the honest observable is dispatch + no navigation. Real symbol population needs a +lang image (see 15-diagnostics).
-- status: TODO
+- status: implemented (behaviour `search.gotoSymbolEditor`)
 
 ### L1.SEARCH.014 — Go to Symbol in Workspace command resolves
 - layer: L1
@@ -188,7 +188,7 @@ editorText, selection`.
 - expected: command resolves ok (opens the #-symbol workspace quick pick); no editor state change
 - assert: `env.act("workbench.action.showAllSymbols")` no throw; snapshot.activeEditor + openTabs unchanged
 - why: guards the GO-menu "Go to Symbol in Workspace…" id. Without a language server the workspace-symbol provider returns nothing; honest observable is dispatch. Populated results require +lang.
-- status: TODO
+- status: implemented (behaviour `search.gotoSymbolWorkspace`)
 
 ### L1.SEARCH.015 — Go to Symbol in Workspace with no folder open resolves cleanly
 - layer: L1
@@ -224,7 +224,7 @@ editorText, selection`.
 - expected: every `id=<digits>` line becomes `id=REDACTED`; the `name=foo` line is untouched; no `id=0|4|9...` digit sequences remain on id lines
 - assert: `fileContent({path})` after-text matches `/id=REDACTED/` on 3 lines, `!/id=\d/`, and still contains "name=foo"
 - why: regex search is the highest-value search mode; the observable is the on-disk effect of the pattern. Guards that a regex replace touches exactly the matching tokens and preserves non-matching lines — the headless analog of toggling the `.*` regex button in the find widget.
-- status: TODO
+- status: implemented (behaviour `search.regexReplace`)
 
 ### L1.SEARCH.018 — Case-sensitive replace only rewrites exact-case matches
 - layer: L1
@@ -236,7 +236,7 @@ editorText, selection`.
 - expected: result is `Foo bar FOO\n` — only the lowercase `foo` changed; `Foo` and `FOO` preserved
 - assert: `fileContent({path})` after-text === `Foo bar FOO\n` (strict)
 - why: EDGE (case-sensitivity toggle) — encodes that the case-sensitive find mode does NOT touch differing-case tokens; guards against a replace that case-folds and over-replaces.
-- status: TODO
+- status: implemented (behaviour `search.caseSensitiveReplace`)
 
 ### L1.SEARCH.019 — Whole-word match does not replace substrings
 - layer: L1
@@ -248,7 +248,7 @@ editorText, selection`.
 - expected: result is `dog category scatter dog\n` — only standalone `cat` replaced; `category`/`scatter` untouched
 - assert: `fileContent({path})` after-text === `dog category scatter dog\n` (strict)
 - why: EDGE (whole-word toggle) — encodes that whole-word find ignores substring occurrences; guards against the find widget's whole-word boundary handling regressing into substring replacement.
-- status: TODO
+- status: implemented (behaviour `search.wholeWordReplace`)
 
 ### L1.SEARCH.020 — Add Next Occurrence (multi-cursor find) command resolves
 - layer: L1
@@ -260,7 +260,7 @@ editorText, selection`.
 - expected: command resolves ok (adds a cursor at the next matching occurrence)
 - assert: `env.act("editor.action.addSelectionToNextFindMatch")` no throw
 - why: guards the SELECTION-menu "Add Next Occurrence" id — the keyboard-driven find-based multi-cursor. Multi-cursor count is not in the snapshot, so the honest observable is dispatch; pairs with a future selection-aware assertion when the snapshot exposes cursor count.
-- status: TODO
+- status: implemented (behaviour `search.addNextOccurrence`)
 
 ### L1.SEARCH.021 — Find in Files across a many-files workspace stays responsive
 - layer: L1

@@ -41,8 +41,7 @@ Exact wire facts these entries assert against:
 - why: the very first link — the image must boot under the harness's exact run argv and
   resolve the host gateway to `host.docker.internal`; a banner mismatch means the
   entrypoint's host/url derivation drifted before anything else can phone home.
-- status: partial (reset() boots the env and is exercised by every base behaviour, but no test
-  asserts the banner text / `State.Running` specifically — add a LIFE behaviour)
+- status: implemented (life.bannerAndRunning)
 
 ### L2.LIFE.002 — code-server serves 302/200 on the published host port
 - layer: L2
@@ -106,8 +105,7 @@ Exact wire facts these entries assert against:
 - machine-state: container `procs` includes the `fleet-reporter` process.
 - why: phone-home is the agent-state spine — without a registered session the rail shows
   nothing for this env. Distinguishes "container booted" from "container is visible to Fleet".
-- status: TODO (agentInput.mjs queries the Hub for run *state*, but no entry asserts the bare
-  session registers on boot with zero runs)
+- status: implemented (life.reporterSessionRegistered)
 
 ### L2.LIFE.006 — the embedded editor URL is 302-reachable from the host (desktop embed contract)
 - layer: L2
@@ -122,8 +120,7 @@ Exact wire facts these entries assert against:
 - why: the desktop multiplexer embeds precisely this inspected URL (mux.rs `select` →
   `wv.navigate`). If docker's port-binding shape or the inspect template drifts, the rail tab
   shows a blank/unreachable editor even though the container is healthy.
-- status: TODO (harness uses the `-p` port directly; no test asserts the `inspect_url` template
-  resolves to the same reachable port)
+- status: implemented (life.inspectUrlReachable)
 
 ### L2.LIFE.007 — `Env.close()` removes the container (no orphan)
 - layer: L2

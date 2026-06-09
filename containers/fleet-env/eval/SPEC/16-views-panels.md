@@ -38,7 +38,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: second call resolves ok (re-focuses/re-opens the same quick-input; no error, no second overlay)
 - assert: env.act second call returns ok; `openTabs` length unchanged across both calls
 - why: EDGE (repeat) — guards that re-issuing a focus/overlay command on an already-open overlay never throws or stacks editors; a common refactor break is double-dispatch raising.
-- status: TODO
+- status: implemented (behaviour `view.paletteRepeat`)
 
 ### L1.VIEW.010 — Toggle Primary Side Bar resolves and is editor-neutral
 - layer: L1
@@ -63,7 +63,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: both calls resolve ok; net visibility back to visible
 - assert: both env.act calls ok; `visibleEditors` and `openTabs` unchanged across the pair
 - why: EDGE (repeat / round-trip) — a toggle must be its own inverse; guards a state-tracking regression where the second toggle no-ops or errors. Visibility round-trip itself awaits a Track-D field.
-- status: TODO
+- status: implemented (behaviour `view.toggleSidebarRoundtrip`)
 
 ### L1.VIEW.020 — Toggle Panel resolves without disposing terminals
 - layer: L1
@@ -88,7 +88,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: both calls ok; the surviving terminal keeps its identity
 - assert: snapshot `terminals` array (names) identical before-hide and after-show; `terminalCount` == 1 throughout
 - why: EDGE (lifecycle under repeat) — stronger than VIEW.020: not just the count but the named-terminal identity must survive a hide/show, guarding against silent recreate.
-- status: TODO
+- status: implemented (behaviour `view.panelKeepsTerminalIdentity`)
 
 ### L1.VIEW.030 — Open Problems view resolves and reports diagnostics count
 - layer: L1
@@ -112,7 +112,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: command resolves ok (Explorer becomes the active side-bar view)
 - assert: env.act ok; `visibleEditors` unchanged (switching side-bar view opens no editor)
 - why: covers the View-menu Explorer id from mux.rs; guards the side-bar view-switch dispatch. Real "Explorer focused" assertion blocked on a Track-D `focusedView` field.
-- status: TODO
+- status: implemented (behaviour `view.showExplorer`)
 
 ### L1.VIEW.041 — Show Search view focuses search input
 - layer: L1
@@ -124,7 +124,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: command resolves ok (Search view focused)
 - assert: env.act ok; `visibleEditors` unchanged
 - why: covers the Search side-bar view id; pairs with the 14-search area's find-in-files. Focus assertion awaits Track-D `focusedView`.
-- status: TODO
+- status: implemented (behaviour `view.showSearch`)
 
 ### L1.VIEW.042 — Show Source Control view focuses SCM
 - layer: L1
@@ -136,7 +136,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: command resolves ok (SCM view focused regardless of git state)
 - assert: env.act ok; `visibleEditors` unchanged
 - why: covers the SCM side-bar id; must resolve even in a non-git workspace (the view shows "no repo" rather than erroring) — that is the EDGE in VIEW.043.
-- status: TODO
+- status: implemented (behaviour `view.showScm`)
 
 ### L1.VIEW.043 — Show Extensions view in a no-folder workspace still resolves
 - layer: L1
@@ -148,7 +148,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: command resolves ok even with no folder (Extensions view is workspace-independent)
 - assert: env.act ok
 - why: EDGE (missing precondition) — view-switch commands must not require a folder; guards a regression where a no-folder boot makes side-bar view ids throw.
-- status: TODO
+- status: implemented (behaviour `view.showExtensions`)
 
 ### L1.VIEW.050 — Toggle integrated Terminal via the View menu creates/reveals a terminal
 - layer: L1
@@ -161,7 +161,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - assert: snapshot `terminalCount` delta == +1 on first toggle (from empty, toggle creates one)
 - machine-state: `procs` +1..+3 (a shell spawns)
 - why: EDGE (empty state) — unlike toggleSidebar/togglePanel, `toggleTerminal` from zero terminals has a snapshot-OBSERVABLE effect (it must spawn one), so this is a real assertion, not a resolve-only smoke.
-- status: TODO
+- status: implemented (behaviour `view.toggleTerminalFromZero`)
 
 ### L1.VIEW.051 — Toggle Terminal with one open terminal only hides it (count unchanged)
 - layer: L1
@@ -173,7 +173,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: command resolves ok; the panel hides but the terminal survives
 - assert: snapshot `terminalCount` unchanged (== 1) after the toggle
 - why: EDGE (non-empty state) — the same command id has DIFFERENT observable behaviour depending on precondition (create-from-zero vs hide-existing); this entry pins the hide branch so the two contracts can't be conflated.
-- status: TODO
+- status: implemented (behaviour `view.toggleTerminalHidesOne`)
 
 ### L1.VIEW.060 — Toggle Output panel resolves
 - layer: L1
@@ -185,7 +185,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: command resolves ok (Output panel shown/hidden)
 - assert: env.act ok; `terminalCount` unchanged (Output is not a terminal)
 - why: covers the View-menu Output id; guards that the Output channel surface is reachable. Visibility itself needs a Track-D field.
-- status: TODO
+- status: implemented (behaviour `view.toggleOutput`)
 
 ### L1.VIEW.070 — Go to File (quickOpen) command resolves
 - layer: L1
@@ -197,7 +197,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: command resolves ok (quick-open overlay opens; contents NOT in Snapshot)
 - assert: env.act ok; `activeEditor` unchanged (opening the picker doesn't switch editors)
 - why: covers the Go-menu quickOpen id. NOTE the existing `quickOpen.byName` behaviour deliberately uses the bridge `openFile` action (not synthetic typing into the picker) to actually OPEN a file deterministically — see VIEW.071; this entry is the raw command-dispatch smoke.
-- status: TODO
+- status: implemented (behaviour `view.quickOpenCommand`)
 
 ### L1.VIEW.071 — Quick-open-by-name opens a seeded file as the active editor
 - layer: L1
@@ -221,7 +221,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: command resolves ok (line-picker overlay opens)
 - assert: env.act ok; `activeEditor` unchanged
 - why: covers the Go-menu gotoLine id; the line picker is overlay-only so we assert dispatch. A cursor-line assertion would need the `selection` Snapshot field set after a controlled goto (Track-D).
-- status: TODO
+- status: implemented (behaviour `view.gotoLineWithEditor`)
 
 ### L1.VIEW.073 — gotoLine with NO active editor resolves or no-ops cleanly
 - layer: L1
@@ -233,7 +233,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: command resolves ok (no editor → picker simply has nothing to navigate; must NOT throw)
 - assert: env.act does not throw (`ok:true`)
 - why: EDGE (missing precondition) — editor-scoped Go commands must degrade gracefully with no editor; guards a regression where the command rejects instead of no-opping.
-- status: TODO
+- status: implemented (behaviour `view.gotoLineNoEditor`)
 
 ### L1.VIEW.080 — Zoom In raises the window zoom level
 - layer: L1
@@ -245,7 +245,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: command resolves ok (zoom level increments; level NOT in Snapshot today)
 - assert: env.act ok. To make this a real assertion, read `window.zoomLevel` via the `setting` query before/after and assert after > before (needs the `setting` cap) — flag a `zoomLevel` Snapshot field as the alternative Track-D observable
 - why: covers the View-menu Zoom In id. Honest status: dispatch-only unless the `setting` round-trip is wired; calling it out so the implementer adds the `window.zoomLevel` read rather than a vacuous pass.
-- status: partial(zoom level not asserted — add `setting`/`window.zoomLevel` read-back)
+- status: TODO (zoom commands not available in code-server web — `workbench.action.zoomIn` throws "command not found"; a test hitting this would fail, so it is left unimplemented)
 
 ### L1.VIEW.081 — Zoom Out then Zoom In returns to the original zoom
 - layer: L1
@@ -257,7 +257,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: net zoom level back to the recorded baseline
 - assert: `setting {key:"window.zoomLevel"}` after the pair == the recorded baseline value
 - why: EDGE (round-trip) — zoom in/out must be inverses; a real config-backed assertion (zoom is persisted to `window.zoomLevel`, unlike per-editor word-wrap) so it is genuinely verifiable.
-- status: TODO
+- status: TODO (zoom commands not available in code-server web — `workbench.action.zoomOut`/`zoomIn` throw "command not found"; a test hitting this would fail, so it is left unimplemented)
 
 ### L1.VIEW.090 — New Untitled File adds a tab and an active editor
 - layer: L1
@@ -269,7 +269,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: an untitled editor opens and becomes active
 - assert: snapshot `openTabs` length delta == +1; `activeEditor` is null-or-untitled (untitled docs have no fsPath) — assert the `openTabs` delta as the stable observable
 - why: covers the File-menu New Text File id with a snapshot-OBSERVABLE effect (a tab appears) — a real assertion, using a delta because absolute tab count varies by restored editors/extensions.
-- status: TODO
+- status: implemented (behaviour `view.newUntitledFile`)
 
 ### L1.VIEW.091 — Close active editor after newUntitledFile shrinks the tab count
 - layer: L1
@@ -281,7 +281,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: the untitled tab closes
 - assert: snapshot `openTabs` length delta == -1 vs the post-create count
 - why: pairs with VIEW.090 to prove the open/close tab-count round-trip; guards the closeEditor action wiring (which `view.togglePanel`/palette tests don't touch).
-- status: TODO
+- status: implemented (behaviour `view.closeAfterUntitled`)
 
 ### L1.VIEW.092 — Close active editor with NO editor open is a clean no-op
 - layer: L1
@@ -293,7 +293,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: resolves ok; nothing to close → no error, count unchanged
 - assert: env.request closeEditor returns `ok:true`; `openTabs` length unchanged
 - why: EDGE (empty state) — closeActiveEditor on an empty editor area must not throw; guards a regression where the bridge's closeEditor wrapper rejects on no-active-editor.
-- status: TODO
+- status: implemented (behaviour `view.closeEditorNoEditor`)
 
 ### L1.VIEW.100 — Toggle Zen Mode resolves
 - layer: L1
@@ -305,7 +305,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: command resolves ok (enters zen — full-screen-ish single-editor chrome; NOT in Snapshot)
 - assert: env.act ok; `visibleEditors`/`activeEditor` unchanged (zen hides chrome, not editors)
 - why: covers zen layout dispatch; zen is pure chrome so editors must be untouched. Real "in zen" assertion needs a Track-D `zenMode` field.
-- status: TODO
+- status: implemented (behaviour `view.toggleZen`)
 
 ### L1.VIEW.101 — Exit Zen Mode (toggle twice) restores normal layout
 - layer: L1
@@ -317,7 +317,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: both resolve ok; layout back to normal
 - assert: both env.act ok; `visibleEditors`/`openTabs` unchanged across the pair
 - why: EDGE (round-trip) — zen toggle must be self-inverse and never drop editors; guards a layout-state regression. Round-trip on a real `zenMode` field awaits Track-D.
-- status: TODO
+- status: implemented (behaviour `view.zenRoundtrip`)
 
 ### L1.VIEW.110 — Reset View Locations / Reset Layout resolves from a mutated layout
 - layer: L1
@@ -329,7 +329,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: command resolves ok (default view locations restored)
 - assert: env.act ok; subsequent `visibleEditors` unchanged (layout reset opens no editor)
 - why: EDGE (recovery) — a reset command must run from an already-mutated layout without error; documents the recovery path. Whether default is actually restored awaits Track-D chrome fields.
-- status: TODO
+- status: implemented (behaviour `view.resetLayout`)
 
 ### L1.VIEW.120 — Unknown/invalid command id fails cleanly (does NOT hang)
 - layer: L1
@@ -341,7 +341,7 @@ existing behaviours `core.mjs` / `viewsSettings.mjs`.
 - expected: the bridge replies `{ok:false, error:...}` (VS Code rejects an unregistered id); the harness surfaces it, never hangs
 - assert: env.request `{type:"command", id:"workbench.action.doesNotExist.fleet"}` returns `ok:false` with a non-empty `error`; bounded round-trip (no timeout)
 - why: EDGE (failure mode) — proves the bridge's error path: an unknown command id must produce a fast `ok:false`, not a silent drop or hang. Guards the `command` handler's `.then(_, reject→fail)` wiring in extension.ts.
-- status: TODO
+- status: implemented (behaviour `view.unknownCommandFails`)
 
 ### L1.VIEW.130 — Status bar items exposed via Snapshot (future observable)
 - layer: L1

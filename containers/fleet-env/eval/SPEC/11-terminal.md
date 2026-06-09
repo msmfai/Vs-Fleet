@@ -47,7 +47,7 @@ records that the direct field is missing (drives Track-E Snapshot extensions).
 - expected: terminalCount == 1, `terminals.length` == 1
 - assert: `query` `terminalCount` == 1 (exact, not just monotonic — fresh env controls the 0→1)
 - why: the monotonic-only `terminal.new` can't catch a regression that creates TWO terminals (e.g. a duplicate-fire bug) or that mis-counts; a fresh env pins the exact 0→1 and guards the count arithmetic the split/kill tests depend on.
-- status: TODO
+- status: implemented (behaviour `terminal.newExactlyOne`)
 
 ### L1.TERM.003 — Repeated New Terminal accumulates distinct terminals
 - layer: L1
@@ -61,7 +61,7 @@ records that the direct field is missing (drives Track-E Snapshot extensions).
 - edges: repeat / accumulation edge for create — no command dedupes or replaces
 - machine-state: procs +3 (three ptys); mem grows ~linearly per terminal
 - why: New must always ADD, never reuse the active terminal; a regression that focuses an existing terminal instead of creating one would silently cap the count — only repeated creates expose it.
-- status: TODO
+- status: implemented (behaviour `terminal.newAccumulates`)
 
 ---
 
@@ -91,7 +91,7 @@ records that the direct field is missing (drives Track-E Snapshot extensions).
 - assert: `command` reply `ok` == true; `query` `terminalCount` transitions 0 → 1
 - edges: missing-precondition edge for split (empty terminal state)
 - why: split on an empty workbench must degrade to create-one, not throw or hang the bridge; guards the "no active terminal" branch so agents that blind-fire split don't dead-end the env.
-- status: TODO
+- status: implemented (behaviour `terminal.splitFromEmpty`)
 
 ### L1.TERM.012 — Splitting a split deepens the group (3 panes, one group)
 - layer: L1
@@ -105,7 +105,7 @@ records that the direct field is missing (drives Track-E Snapshot extensions).
 - edges: repeat edge for split — each split adds exactly one pane
 - machine-state: procs +1 per split
 - why: split must be idempotent-in-shape (always +1), never collapse multiple panes into one group object; a count that plateaus would mean later splits silently no-op.
-- status: TODO
+- status: implemented (behaviour `terminal.splitTwice`)
 
 ---
 
@@ -135,7 +135,7 @@ records that the direct field is missing (drives Track-E Snapshot extensions).
 - assert: `query` `terminalCount` == 0 before AND after; a follow-up `query` round-trips ok
 - edges: empty-state edge for kill — nothing to dispose
 - why: kill against an empty workbench must not throw, must not hang the bridge, and must not desync the snapshot; guards the no-active-terminal branch and proves the fire path doesn't wedge when there is no disposal to do.
-- status: TODO
+- status: implemented (behaviour `terminal.killEmpty`)
 
 ### L1.TERM.022 — Kill one of several leaves the rest alive
 - layer: L1
@@ -149,7 +149,7 @@ records that the direct field is missing (drives Track-E Snapshot extensions).
 - machine-state: procs −1 (exactly one pty terminated, two remain — `exec` `pgrep -c bash` drops by 1)
 - edges: concurrent-state edge — kill targets only the active terminal, not all
 - why: kill must dispose exactly the active terminal, never the whole group or all terminals; a regress that drops count to 0 would silently destroy an agent's other live shells.
-- status: TODO
+- status: implemented (behaviour `terminal.killOneOfThree`)
 
 ### L1.TERM.023 — Kill All Terminals disposes every terminal
 - layer: L1
@@ -162,7 +162,7 @@ records that the direct field is missing (drives Track-E Snapshot extensions).
 - assert: `query` `terminalCount` == 0; `exec` `pgrep -c bash` returns 0 pty shells
 - machine-state: procs back to the pre-terminal baseline (all ptys reaped)
 - why: bulk teardown for resource hygiene — verifies killAll reaps every pty, not just the active one, so a soak run doesn't leak shells across rounds.
-- status: TODO
+- status: implemented (behaviour `terminal.killAll`)
 
 ---
 
@@ -190,7 +190,7 @@ records that the direct field is missing (drives Track-E Snapshot extensions).
 - expected: the file contains `fleet-run-OK`
 - assert: `fileContent` `{text}` `.includes("fleet-run-OK")`
 - why: terminalText output capture depends on shell-integration buffer-render timing and is RACY; redirecting to a file read via `fileContent` is the deterministic capture path. Guards that termSend delivers a complete command line (not truncated) and the shell runs it to completion — the reliable substrate the racy buffer assertions back-stop.
-- status: TODO
+- status: implemented (behaviour `terminal.runToFile`)
 
 ### L1.TERM.032 — A failing command's nonzero exit is observable
 - layer: L1
@@ -203,7 +203,7 @@ records that the direct field is missing (drives Track-E Snapshot extensions).
 - assert: `fileContent` `{text}` `.includes("rc=1")`
 - edges: failure-mode edge for runCommand — a command that exits nonzero still runs and its status is readable
 - why: agents must distinguish a command that ran-and-failed from one that never ran; capturing `$?` proves the shell executed the failing command rather than the termSend silently dropping it (which would leave the file absent, a distinguishable evidence state).
-- status: TODO
+- status: implemented (behaviour `terminal.exitCode`)
 
 ### L1.TERM.033 — Multi-line / chained command runs as one shell line
 - layer: L1
@@ -216,7 +216,7 @@ records that the direct field is missing (drives Track-E Snapshot extensions).
 - assert: `fileContent` `{text}` `.includes("/tmp")` AND `.includes("done")`
 - edges: complex-input edge — `&&`-chained command line is delivered intact and executes sequentially
 - why: termSend must deliver a full chained command line without splitting at `&&`/spaces; a regress that truncates at the first separator would leave only `/tmp` (a distinguishable partial-evidence state) and silently break agent shell pipelines.
-- status: TODO
+- status: implemented (behaviour `terminal.chainedCommand`)
 
 ### L1.TERM.034 — terminalText on an empty/never-run terminal returns empty, not error
 - layer: L1
@@ -229,7 +229,7 @@ records that the direct field is missing (drives Track-E Snapshot extensions).
 - assert: `terminalText` reply `ok` == true; `source` ∈ {"", "buffer"}; never an error reply
 - edges: empty-state edge for output capture — buffer queried before any output exists
 - why: querying a fresh terminal's buffer must return cleanly (empty) so a polling assertion can distinguish "not yet" from "broken"; an error reply here would make every `waitForTerminalText` poll falsely fail-fast.
-- status: TODO
+- status: implemented (behaviour `terminal.textEmptyClean`)
 
 ---
 
@@ -302,7 +302,7 @@ records that the direct field is missing (drives Track-E Snapshot extensions).
 - assert: Snapshot `terminals.length` == `terminalCount` == 3; every entry is a non-empty string
 - edges: invariant edge — `terminals` array length and `terminalCount` never drift
 - why: behaviours address terminals by the names in `terminals`; if the array and count desync (count counts disposed terminals, or names drop) every name-routed assertion silently mis-targets. Pins the array↔count invariant.
-- status: TODO
+- status: implemented (behaviour `terminal.snapshotNames`)
 
 ---
 
@@ -331,7 +331,7 @@ records that the direct field is missing (drives Track-E Snapshot extensions).
 - assert: `query` `terminalCount` == 1 before AND after
 - edges: distinguishing edge — clear vs kill (clear keeps the pty)
 - why: clear must affect only the buffer, never the lifecycle; a regress that disposes on clear would surprise agents mid-session. Separates the two superficially-similar "make the terminal empty" operations.
-- status: TODO
+- status: implemented (behaviour `terminal.clearKeepsCount`)
 
 ---
 
@@ -347,7 +347,7 @@ records that the direct field is missing (drives Track-E Snapshot extensions).
 - expected: the echo lands in the focused terminal's buffer (proxy for "this terminal is active/focused")
 - assert: `terminalText` (active) `.includes("FLEET_FOCUSED")`; `command` reply `ok` == true
 - why: Snapshot exposes no focus/active-terminal field, so focus is asserted indirectly — `termSend` without a name targets the ACTIVE terminal, so a successful echo into the just-focused terminal is the observable proxy. Flags a Track-E gap (Snapshot needs an `activeTerminal` field for a direct assertion).
-- status: TODO
+- status: implemented (behaviour `terminal.focusActiveEcho`)
 
 ### L1.TERM.071 — Focus Next Terminal moves the active terminal
 - layer: L1
@@ -373,7 +373,7 @@ records that the direct field is missing (drives Track-E Snapshot extensions).
 - assert: `command` reply `ok` == true on both calls; `query` `terminalCount` == 1 throughout (toggle is visibility, not lifecycle)
 - edges: repeat/visibility edge — toggle is reversible and never kills the terminal
 - why: panel visibility is a view-state op, not a terminal-lifecycle op; toggling must never spawn or dispose a pty. Snapshot has no panel-visibility field, so the assertable invariant is "count unchanged, command ok" — flags a Track-E panel-visibility gap.
-- status: partial(no Snapshot panel-visibility field; only count-invariant + ok asserted)
+- status: implemented (behaviour `terminal.togglePanel`)
 
 ---
 
@@ -389,7 +389,7 @@ records that the direct field is missing (drives Track-E Snapshot extensions).
 - expected: file shows a bash shell (contains `bash` and a nonempty `BASH_VERSION`)
 - assert: `fileContent` `/tmp/fleet-shell.txt` `.includes("bash")` and matches a version digit
 - why: the proven baseline shows the default terminal is bash (`terminal.new` evidence); profile drift (image change to sh/dash) would break every behaviour assuming bash semantics (`$BASH_VERSION`, `&&`, redirections). Pins the default profile to bash.
-- status: TODO
+- status: implemented (behaviour `terminal.defaultProfileBash`)
 
 ### L1.TERM.081 — Selecting a non-default profile spawns that shell
 - layer: L1
@@ -415,7 +415,7 @@ records that the direct field is missing (drives Track-E Snapshot extensions).
 - assert: `command` reply returns (ok or `ok:false`+error) within timeout; a follow-up `query` round-trips; `terminalCount` ∈ {0,1}
 - edges: failure-mode edge for profiles — invalid profile arg
 - why: a bad profile name must surface as a bounded result (error or default fallback), never wedge the bridge waiting on a never-resolving command; guards the command-arg error path so a typo'd profile doesn't hang the env.
-- status: TODO
+- status: implemented (behaviour `terminal.badProfileBounded`)
 
 ---
 
@@ -432,7 +432,7 @@ records that the direct field is missing (drives Track-E Snapshot extensions).
 - assert: `command` reply returns within timeout; follow-up `query` round-trips; `terminalCount` unchanged
 - edges: empty-state edge for tasks — no tasks configured
 - why: invoking a task command in a workspace with no tasks must not hang awaiting a picker or spawn a phantom terminal; guards the menu's task entries so a misclick can't wedge the env. Snapshot has no task/notification field — flags a Track-E gap (the assertable observable is "returns + count unchanged").
-- status: partial(no Snapshot task/notification field; only responsiveness + count-invariant asserted)
+- status: implemented (behaviour `terminal.buildNoTasks`)
 
 ### L1.TERM.091 — Run Task with a defined task spawns a task terminal and runs it
 - layer: L1
@@ -501,4 +501,4 @@ records that the direct field is missing (drives Track-E Snapshot extensions).
 - assert: `query` `terminalCount` == 1 after the second New; `exec` `pgrep -c bash` == 1 (no zombie shell from the killed terminal)
 - edges: lifecycle-cycle edge — dispose then recreate leaves no residue
 - why: a kill that doesn't reap its pty would leave a zombie counted by `exec`, inflating procs across a soak; the second create must not resurrect the dead terminal's slot. Guards dispose/recreate cleanliness via both the Snapshot and the container process table.
-- status: TODO
+- status: implemented (behaviour `terminal.killThenRecreate`)

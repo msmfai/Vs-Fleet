@@ -45,7 +45,7 @@ Workspace root is `/home/coder/project` (`PROJECT`).
 - assert: `after.editorText` includes `"HELLO_UNTITLED"` (untitled has no file path → `editorText` is the only observable; `selection` cap required for editorText)
 - edges: untitled (no-path) edge of L1.INPUT.001 — proves typeText works before any save target exists
 - why: guards typeText landing in a path-less editor and surfacing via editorText, not just disk-backed files
-- status: TODO
+- status: implemented (input.typeUntitled)
 
 ### L1.INPUT.003 — typeText with NO active editor is a clean no-op
 - layer: L1
@@ -58,7 +58,7 @@ Workspace root is `/home/coder/project` (`PROJECT`).
 - assert: reply not `inserted:true` (or `ok:false`); `after.activeEditor == null`; no new file in `PROJECT` (`exec ls`)
 - edges: empty-state edge of L1.INPUT.001 — input with no target
 - why: typeText must not silently create a phantom buffer or error-hang when there is no active editor
-- status: TODO
+- status: implemented (input.typeNoEditor)
 
 ### L1.INPUT.004 — typeText routes to the editor, NOT a focused terminal
 - layer: L1
@@ -71,7 +71,7 @@ Workspace root is `/home/coder/project` (`PROJECT`).
 - assert: `fileContent {path:PROJECT/route.txt}` `.text` includes `"ROUTE_TO_EDITOR"`; `terminalText` does NOT contain it (it was not typed into the pty)
 - edges: failure-mode edge — guards the editor/terminal routing boundary
 - why: typeText and termSend are distinct primitives; a regression routing typeText to a focused terminal would silently run keystrokes as shell commands
-- status: TODO
+- status: implemented (input.typeRoutesEditor)
 
 ### L1.INPUT.005 — Select-all then typeText replaces the entire document
 - layer: L1
@@ -83,7 +83,7 @@ Workspace root is `/home/coder/project` (`PROJECT`).
 - expected: the selection is overwritten — the document becomes exactly `"REPLACED"`
 - assert: `before.selection.end.line == 1` (selectAll spanned both lines); `fileContent` `.text` == `"REPLACED"` (no `old line` remains); `exec cat` confirms
 - why: typeText replaces an active selection (VS Code insert-over-selection semantics); guards selection framing the insert — distinct from append (L1.INPUT.001)
-- status: TODO
+- status: TODO (bridge typeText inserts at cursor — `b.insert(ed.selection.active, text)` — and does NOT honour/replace an active selection, so select-all + type does not overwrite the document; this assertion cannot pass against the real bridge)
 
 ### L1.INPUT.006 — Cursor-position commands move where typeText inserts
 - layer: L1
@@ -95,7 +95,7 @@ Workspace root is `/home/coder/project` (`PROJECT`).
 - expected: `XX` lands before `AAA`; `YY` lands after `BBB`
 - assert: `fileContent` `.text` starts with `XX` and ends with `YY` (e.g. `"XXAAA\nBBB\nYY"`); `before.selection.start == {0,0}` then EOF after cursorBottom
 - why: proves cursor commands relocate the insertion point read by typeText — the `selection` field is the observable tying cursor moves to typed output
-- status: TODO
+- status: implemented (input.cursorMovesInsert)
 
 ### L1.INPUT.007 — Multi-line typeText inserts newlines into the buffer
 - layer: L1
@@ -108,7 +108,7 @@ Workspace root is `/home/coder/project` (`PROJECT`).
 - assert: `fileContent` `.text` == `"line1\nline2\nline3"`; `exec wc -l` of the file reports the expected line count
 - edges: embedded-newline edge — guards typeText not escaping/stripping `\n`
 - why: typeText must honour newlines as line breaks (not literal `\n`), so agents can write multi-line code in one call
-- status: TODO
+- status: implemented (input.multilineTypeText)
 
 ### L1.INPUT.008 — typeText preserves Unicode / multibyte characters
 - layer: L1
@@ -121,7 +121,7 @@ Workspace root is `/home/coder/project` (`PROJECT`).
 - assert: `fileContent` `.text` includes `"你好"` and `"🚀"`; `exec cat unicode.txt | grep -q '🚀'` succeeds (UTF-8 round-trip)
 - edges: encoding edge — guards typeText/saveAll not mangling multibyte/emoji
 - why: synthetic input must be encoding-safe; a regression to ASCII-only or surrogate-splitting corrupts real source files
-- status: TODO
+- status: implemented (input.unicodeTypeText)
 
 ### L1.INPUT.009 — termSend runs a command and the output round-trips via terminalText
 - layer: L1
@@ -157,7 +157,7 @@ Workspace root is `/home/coder/project` (`PROJECT`).
 - assert: `terminalText {name:terminals[0]}` `.text` includes `"NAMED_ONE"`; `terminalText {name:terminals[1]}` `.text` does NOT
 - edges: routing edge — guards termSend's name→terminal selection (vs always-active)
 - why: agents drive specific terminals (build vs test panes); guards the named-target path of termSend
-- status: TODO
+- status: TODO (integrated terminals are all named "bash" by default, so termSend {name} / terminalText {name} cannot distinguish two same-named terminals — name-routing is untestable headlessly)
 
 ### L1.INPUT.012 — termSend with NO terminal open creates one
 - layer: L1
@@ -170,7 +170,7 @@ Workspace root is `/home/coder/project` (`PROJECT`).
 - assert: `after.terminalCount == 1`; reply `.terminal` is a non-empty name
 - edges: empty-state edge of L1.INPUT.009 — send with nothing to send into
 - why: termSend must self-provision a terminal when none exists, so input never silently drops
-- status: TODO
+- status: implemented (input.termSendCreates)
 
 ### L1.INPUT.013 — termSend honours embedded newlines as multiple commands
 - layer: L1
@@ -183,7 +183,7 @@ Workspace root is `/home/coder/project` (`PROJECT`).
 - assert: poll `fileContent {path:/tmp/seq.txt}` until `.text` contains both `A` and `B` on separate lines
 - edges: multi-command edge of L1.INPUT.009
 - why: guards termSend not collapsing/escaping embedded newlines so multi-step shell sequences run
-- status: TODO
+- status: implemented (input.termSendMultiCmd)
 
 ### L1.INPUT.014 — terminalText of an empty/unused terminal reports an empty source
 - layer: L1
@@ -196,7 +196,7 @@ Workspace root is `/home/coder/project` (`PROJECT`).
 - assert: reply `ok:true`; `.text` does NOT contain a `$ ` command line we never sent; `.source` ∈ `{"","captured","buffer"}`
 - edges: empty-state edge of L1.INPUT.009 — reading before any command ran
 - why: guards terminalText honestly reporting empty/unpopulated buffers (it returns `source` precisely so callers know capture state) rather than inventing content
-- status: TODO
+- status: implemented (input.terminalTextEmpty)
 
 ### L1.INPUT.015 — termSend a long-running command does not block the bridge
 - layer: L1
@@ -209,7 +209,7 @@ Workspace root is `/home/coder/project` (`PROJECT`).
 - assert: the `termSend` reply arrives in <2s (well under the 5s sleep); a `query` issued right after also replies; later `terminalText` includes `"SLEPT_DONE"`
 - edges: concurrency/non-blocking edge — guards termSend being fire-and-write, not await-completion
 - why: agents launch long jobs; termSend must not wedge the observe/act channel waiting for the command to finish
-- status: TODO
+- status: implemented (input.termSendNonBlocking)
 
 ### L1.INPUT.016 — termSend a control sequence (Ctrl-C) interrupts a running command
 - layer: L1
@@ -248,4 +248,4 @@ Workspace root is `/home/coder/project` (`PROJECT`).
 - assert: `fileContent` `.text` == `"XXX"` (not `"X"`); proves each typeText advances the cursor and appends, not replaces
 - edges: repeat edge of L1.INPUT.001 — confirms additive accumulation
 - why: guards typeText being a genuine keystroke insert (cursor-advancing) rather than a set-buffer op; agents rely on incremental typing accumulating
-- status: TODO
+- status: implemented (input.typeTextAccumulates)

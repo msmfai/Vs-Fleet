@@ -170,37 +170,31 @@ async function runBehaviour(env, scenario, behaviour) {
 
 // ─── Run every applicable behaviour for ONE scenario in ONE env ──────────────
 // (plus a fresh env per behaviour that asks for isolation:"fresh").
-async function runScenario(hub, scenario, behaviours, reporter, args, idPrefix) {
+async function runScenario(hub, scenario, behaviours, reporter, args, gate, idPrefix) {
   const applicable = behaviours.filter((b) => behaviourAppliesTo(b, scenario));
   if (!applicable.length) return;
 
   const shared = applicable.filter((b) => (b.isolation || "shared") !== "fresh");
   const fresh = applicable.filter((b) => (b.isolation || "shared") === "fresh");
 
-  // Shared env: boot once, run all shared behaviours.
-  if (shared.length) {
-    const env = new Env(hub, `${idPrefix}-${scenario.id}`, await freePort(), scenario);
+  // One env boot+run+close, holding ONE gate slot for its whole life.
+  const oneEnv = (suffix, list) => gate.run(async () => {
+    const env = new Env(hub, `${idPrefix}-${scenario.id}${suffix}`, await freePort(), scenario);
     try {
-      await bootOrReport(env, scenario, shared, reporter);
-      if (!env.bootError) {
-        for (const b of shared) reporter.add(await runBehaviour(env, scenario, b));
-      }
+      await bootOrReport(env, scenario, list, reporter);
+      if (!env.bootError) for (const b of list) reporter.add(await runBehaviour(env, scenario, b));
     } finally {
       if (!args.keep) await env.close(); else console.log(`[eval] --keep: left ${env.name}`);
     }
-  }
+  });
 
-  // Fresh envs: one per behaviour for isolation.
-  let n = 0;
-  for (const b of fresh) {
-    const env = new Env(hub, `${idPrefix}-${scenario.id}-f${n++}`, await freePort(), scenario);
-    try {
-      await bootOrReport(env, scenario, [b], reporter);
-      if (!env.bootError) reporter.add(await runBehaviour(env, scenario, b));
-    } finally {
-      if (!args.keep) await env.close(); else console.log(`[eval] --keep: left ${env.name}`);
-    }
-  }
+  // Shared behaviours share one env; each fresh behaviour gets its own. Both phases
+  // run concurrently, bounded by the global gate — so a scenario's many fresh
+  // behaviours parallelize instead of booting one-at-a-time.
+  await Promise.all([
+    shared.length ? oneEnv("", shared) : Promise.resolve(),
+    ...fresh.map((b, i) => oneEnv(`-f${i}`, [b])),
+  ]);
 }
 
 // Max wall-clock we'll wait for a scenario's env to boot before declaring the boot
@@ -274,6 +268,22 @@ async function pool(items, size, worker) {
   await Promise.all(runners);
 }
 
+// Global limiter on concurrent live envs (containers), shared across scenarios AND
+// their fresh per-behaviour envs: a single-scenario run parallelizes its many fresh
+// behaviours up to `size`, while a multi-scenario run still can't oversubscribe the host.
+function semaphore(size) {
+  let active = 0;
+  const waiters = [];
+  return {
+    async run(fn) {
+      if (active >= size) await new Promise((r) => waiters.push(r));
+      active++;
+      try { return await fn(); }
+      finally { active--; const w = waiters.shift(); if (w) w(); }
+    },
+  };
+}
+
 // ─── --list ──────────────────────────────────────────────────────────────────
 // `--list` shows each test's git provenance ([commit·date]) + its rationale, so the
 // "what/why/when" is one glance away. `--why` prints the full rationale prose.
@@ -332,9 +342,12 @@ async function main() {
   console.log(`[eval] ${scenarios.length} scenario(s) × ${behaviours.length} behaviour(s),` +
     ` parallel=${args.parallel}. artifacts → ${OUT}/`);
 
+  // One global gate bounds concurrent containers to --parallel across ALL scenarios
+  // and their fresh behaviours; scenarios themselves all start at once.
+  const gate = semaphore(args.parallel);
   try {
-    await pool(scenarios, args.parallel, (scenario, i) =>
-      runScenario(hub, scenario, behaviours, reporter, args, `r${i + 1}`));
+    await Promise.all(scenarios.map((scenario, i) =>
+      runScenario(hub, scenario, behaviours, reporter, args, gate, `r${i + 1}`)));
   } finally {
     hub.close();
     stopFleetHub();
