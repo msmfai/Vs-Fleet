@@ -89,7 +89,7 @@ header {
   font-weight: 800;
   line-height: 1;
 }
-.spawn:focus-visible, .tool-button:focus-visible, .close:focus-visible, .session-action:focus-visible, .srv:focus-visible {
+.spawn:focus-visible, .tool-button:focus-visible, .close:focus-visible, .session-action:focus-visible, .row-actions:focus-visible, .srv:focus-visible {
   outline: 2px solid rgba(59,130,246,0.8);
   outline-offset: -2px;
 }
@@ -181,6 +181,32 @@ header {
 .session-action:disabled {
   cursor: default;
   opacity: 0.46;
+}
+
+.row-actions {
+  width: 18px; height: 17px;
+  border: 1px solid rgba(91,98,112,0.62);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0 0 2px;
+  display: inline-grid;
+  place-items: center;
+  opacity: 0.62;
+}
+.row-actions:hover {
+  color: var(--text);
+  border-color: var(--muted);
+  background: rgba(255,255,255,0.04);
+  opacity: 1;
+}
+.srv:hover .row-actions,
+.srv:focus-within .row-actions {
+  opacity: 1;
 }
 
 .status {

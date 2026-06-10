@@ -478,7 +478,7 @@ function sessionActionButton(action, text, title, active, disabled, toggle = tru
 }
 
 function rowKeyboardShortcuts(model) {
-  const shortcuts = ["Enter", "Space", "ArrowDown", "ArrowUp", "Home", "End"];
+  const shortcuts = ["Enter", "Space", "ContextMenu", "Shift+F10", "ArrowDown", "ArrowUp", "Home", "End"];
   if (sessionActionBusy(model.srv.id)) return shortcuts.join(" ");
   if (model.agent && inbox.connected) shortcuts.push("M", "S");
   if (canRetryServer(model.srv, model.pendingState)) shortcuts.push("R");
@@ -841,6 +841,21 @@ function render() {
     appendStateFlagChips(right, flags);
     if (pinging) appendAttentionBadges(right, a);
     else if (a && a.unread && !a.ping_suppressed) right.appendChild(el("span", "dot"));
+
+    const actions = el("button", "row-actions", "...");
+    actions.type = "button";
+    actions.dataset.action = "menu";
+    actions.title = `Actions for ${title}`;
+    actions.setAttribute("aria-label", actions.title);
+    actions.setAttribute("aria-haspopup", "menu");
+    actions.onclick = (ev) => {
+      ev.stopPropagation();
+      const rect = actions.getBoundingClientRect();
+      openRowMenu(srv.id, rect.right - 4, rect.bottom + 4, actions);
+    };
+    right.appendChild(actions);
+    if (srv.id === activeServerId && activeAction === "menu") focusAfterRender = actions;
+
     if (a) {
       const mutePending = sessionActions.has(actionKey(srv.id, "mute"));
       const soloPending = sessionActions.has(actionKey(srv.id, "solo"));
