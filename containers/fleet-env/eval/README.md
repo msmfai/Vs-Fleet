@@ -32,6 +32,8 @@ recording `{pass, detail, evidence, machineΔ, timings, screenshots}`.
 make eval                  # full matrix, all reports, GC after. exits non-zero on any unexpected fail
 make eval PARALLEL=12      # tune concurrency (bounded worker pool over scenarios)
 make list                  # print every registered scenario + behaviour, then exit
+make review                # serve the screenshot browser for artifacts/eval.json + artifacts/*.png
+make metadata              # backfill PNG metadata from artifacts/eval.json
 make soak ROUNDS=5         # run the matrix N times back-to-back (stability / leak hunt)
 make gc                    # remove orphan fleet-eval-* containers + dangling images
 make clean                 # gc + wipe the artifacts dir
@@ -55,7 +57,7 @@ make eval RETRIES=2
 ```
 
 `npm run` shortcuts are also wired (`npm test` / `npm run eval` → `make eval`,
-plus `list` / `soak` / `gc` / `clean`).
+plus `review` / `metadata` / `list` / `soak` / `gc` / `clean`).
 
 You can also drive the orchestrator directly (the Makefile is a thin wrapper):
 
@@ -78,16 +80,26 @@ serves `302/200`), lower `PARALLEL`.
 ## Reports / artifacts
 
 Run artifacts land in `$(OUT)` (default `./artifacts`, override with `OUT=` or
-`FLEET_EVAL_OUT`). The screenshot review page is written to `./index.html` at the
-eval root so the latest visual result is part of the normal repo working tree:
+`FLEET_EVAL_OUT`). Screenshots are normal PNG files and are tagged with PNG text
+metadata (`fleet.eval.context` JSON plus `fleet.eval.why`) so each image carries
+the test rationale/provenance even outside the JSON report.
 
 | File        | What |
 |-------------|------|
 | `artifacts/eval.json` | the §3.5 result schema (machine-readable; the source of truth) |
 | `artifacts/eval.xml`  | **JUnit XML** — one `<testsuite>` per scenario, one `<testcase>` per row; CI (GitLab/GitHub/Jenkins) ingests this for pass/fail/skip + per-test timing |
 | `artifacts/eval.html` | **HTML report** — links to the captured PNGs in `artifacts/`; failures auto-expanded |
-| `index.html` | **screenshot review page** — screenshot-first, keyboard-scrollable gallery with the row detail, rationale, provenance, machineΔ, timings, and evidence beside each image |
-| `artifacts/*.png`     | per-behaviour before/after screenshots used by both HTML pages |
+| `artifacts/*.png`     | per-behaviour before/after screenshots with embedded test context metadata |
+
+Browse the screenshots with the hosted review UI:
+
+```bash
+make review
+make review HOST=0.0.0.0 REVIEW_PORT=51779
+```
+
+The server streams one PNG at a time, exposes the shot list at `/api/shots`, and
+can also reconstruct context directly from PNG metadata if the JSON is absent.
 
 The console stream shows live `PASS / FAIL / SKIP / ERROR` per cell with the
 machineΔ and timings. **Exit code is non-zero on any unexpected failure or error**
@@ -102,7 +114,6 @@ emit them from a bare `node run.mjs` invocation, set those env vars yourself:
 ```bash
 FLEET_EVAL_JUNIT=artifacts/eval.xml \
 FLEET_EVAL_HTML=artifacts/eval.html \
-FLEET_EVAL_REVIEW=index.html \
   node run.mjs --parallel 6 --json artifacts/eval.json
 ```
 
@@ -110,8 +121,8 @@ FLEET_EVAL_REVIEW=index.html \
 
 `make eval` is the single entrypoint: it produces all three reports, GCs orphan
 containers, and exits non-zero on unexpected failures. Point your CI at `eval.xml`
-for the test report and publish `eval.html` plus `index.html` as browsable
-artifacts. Use
+for the test report and publish `eval.html`, `eval.json`, and `artifacts/*.png`.
+Use `make review HOST=0.0.0.0` on a machine with those artifacts to browse them. Use
 `RETRIES=1`–`2` in CI to absorb the occasional published-port flap (`PLAN.md §8`)
 without going red on a genuinely-passing behaviour.
 
@@ -230,16 +241,20 @@ make eval SCENARIOS=small-repo TAGS=smoke # boot it + run a smoke behaviour
 eval/
   run.mjs            orchestrator + CLI (matrix, worker pool, free ports, cleanup trap)
   registry.mjs       auto-discovery: globs behaviours/*.mjs + scenarios/*.mjs
-  Makefile           make eval / list / soak / gc / clean  (Track F)
+  Makefile           make eval / review / metadata / list / soak / gc / clean  (Track F)
   package.json       npm run shortcuts
   lib/
     bridgeHub.mjs    WS server the in-container bridges dial into (observe/act)
     env.mjs          the Env unit: docker run + Playwright page + bridge + probes
     machine.mjs      machine-state probes (procs/mem/fs/timing) for the before/after Δ
-    report.mjs       Reporter: console + JSON + JUnit XML + linked screenshot HTML  (Track F)
+    pngMetadata.mjs  PNG text chunk read/write helpers
+    report.mjs       Reporter: console + JSON + JUnit XML + PNG metadata + HTML  (Track F)
+    reviewContext.mjs shared screenshot context builder for metadata + review UI
   scripts/
     failed-ids.mjs   extract failed behaviour ids from a report (retry-on-flake)
     merge-report.mjs fold a retry report over the base (flaky → pass)
+    review-server.mjs host the screenshot review UI
+    tag-png-context.mjs backfill screenshot metadata from eval.json
   behaviours/        one file per area; each exports `behaviours = [...]`  (_contract.mjs = the frozen shapes)
   scenarios/         one file per edge case; each exports `scenarios = [...]`
 ```

@@ -1,8 +1,8 @@
 // Reporter — console + JSON (§3.5 frozen schema) + JUnit XML + linked HTML
-// screenshot reports. Track A shipped the console+JSON stub;
+// reports + PNG screenshot metadata. Track A shipped the console+JSON stub;
 // Track F (this file) ADDS the XML/HTML emitters. The JSON shape is unchanged so all
-// emitters consume the same Report object. The review HTML is a screenshot-first
-// artifact for human inspection; eval.html remains the row-oriented CI report.
+// emitters consume the same Report object. PNG metadata feeds the hosted screenshot
+// review UI; eval.html remains the row-oriented CI report.
 //
 //   { run: {startedAt,image,scenarios:N,behaviours:M},
 //     results: [ {scenario,behaviour,pass,detail,evidence,machineDelta,
@@ -11,6 +11,7 @@
 
 import { existsSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { reportBaseDir, writeScreenshotMetadata as tagScreenshotMetadata } from "./reviewContext.mjs";
 
 export class Reporter {
   /** @param {{image?:string, scenarios?:number, behaviours?:number}} runMeta */
@@ -384,6 +385,10 @@ ${empty}
     console.log(`[eval] wrote screenshot review → ${path}`);
   }
 
+  writeScreenshotMetadata({ baseDir = process.cwd() } = {}) {
+    return tagScreenshotMetadata(this.toJSON(), { baseDir });
+  }
+
   // Write all configured artifacts at once. Paths default off; pass what you want.
   writeAll({ json, junit, html, review } = {}) {
     if (json) this.writeJSON(json);
@@ -393,11 +398,13 @@ ${empty}
   }
 
   // Console epilogue + exit-code signal. Unexpected = fail or error (not skip).
-  // Also auto-emits JUnit/HTML when FLEET_EVAL_JUNIT / FLEET_EVAL_HTML are set, so
-  // the Makefile/CI gets all artifacts WITHOUT run.mjs having to know about them
-  // (run.mjs already calls finish(); --json stays the explicit JSON path).
+  // Also tags PNG metadata and auto-emits JUnit/HTML when FLEET_EVAL_JUNIT /
+  // FLEET_EVAL_HTML are set, so the Makefile/CI gets artifacts without run.mjs
+  // having to know about each emitter (--json stays the explicit JSON path).
   finish() {
     const s = this.summary();
+    const baseDir = process.env.FLEET_EVAL_JSON ? reportBaseDir(process.env.FLEET_EVAL_JSON) : process.cwd();
+    this.writeScreenshotMetadata({ baseDir });
     if (process.env.FLEET_EVAL_JSON) this.writeJSON(process.env.FLEET_EVAL_JSON);
     if (process.env.FLEET_EVAL_JUNIT) this.writeJUnit(process.env.FLEET_EVAL_JUNIT);
     if (process.env.FLEET_EVAL_HTML) this.writeHTML(process.env.FLEET_EVAL_HTML);
