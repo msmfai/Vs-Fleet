@@ -38,6 +38,7 @@
 //! `host.docker.internal` — how the container dials back to Fleet).
 
 use std::collections::HashMap;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -98,6 +99,7 @@ impl ServerSupervisor {
         let _ = std::fs::create_dir_all(&base);
         let process_cwd = fleet_spawn_cwd(&base);
         std::fs::create_dir_all(&process_cwd)?;
+        let tool_path = fleet_tool_path();
         let folder = base.join(format!("ws-{id}"));
         // The workspace is either a fresh clone of FLEET_SPAWN_REPO (repo-as-workspace,
         // the north-star ergonomic) or an empty folder with a hint file.
@@ -129,14 +131,14 @@ impl ServerSupervisor {
         let reporter_socket = base.join(format!("reporter-{id}.sock"));
         let _ = std::fs::remove_file(&reporter_socket);
         let mut children: Vec<Child> = Vec::new();
-        match self.spawn_reporter(&id, &reporter_socket, &process_cwd) {
+        match self.spawn_reporter(&id, &reporter_socket, &process_cwd, &tool_path) {
             Ok(child) => children.push(child),
             Err(e) => {
                 tracing::warn!(%id, error = %e, "reporter not started (no agent state)")
             }
         }
         let shim_dir = base.join(format!("shim-{id}"));
-        let shim_path = install_claude_shim(&shim_dir, &reporter_socket)
+        let shim_path = install_claude_shim(&shim_dir, &reporter_socket, &tool_path)
             .map_err(|e| tracing::warn!(%id, error = %e, "claude shim not installed"))
             .ok();
 
@@ -144,17 +146,16 @@ impl ServerSupervisor {
         let user_data = base.join(format!("cs-userdata-{id}"));
         let tmp_dir = base.join("tmp");
         std::fs::create_dir_all(&tmp_dir)?;
-        let editor = editor_bin();
+        let editor = editor_bin(&tool_path);
         write_spawned_server_settings(&user_data)?;
         install_fleet_bridge(&editor, &user_data)?;
         let url = format!("http://127.0.0.1:{port}/?folder={}", folder.display());
         let (cs_out, cs_err) = log_files(&format!("cs-{id}"));
 
         // Prepend the shim dir so the terminal's `claude` is Fleet-wrapped.
-        let path = match (&shim_path, std::env::var("PATH")) {
-            (Some(_), Ok(p)) => format!("{}:{}", shim_dir.display(), p),
-            (_, Ok(p)) => p,
-            _ => shim_dir.display().to_string(),
+        let path = match &shim_path {
+            Some(_) => prepend_path(&shim_dir, &tool_path),
+            None => tool_path.clone(),
         };
 
         // The SAME serve-web flags + Fleet phone-home env the SSH path uses, so a
@@ -196,7 +197,13 @@ impl ServerSupervisor {
     }
 
     /// Launch this server's `fleet-reporter --serve` (session id = server id).
-    fn spawn_reporter(&self, id: &str, socket: &Path, cwd: &Path) -> std::io::Result<Child> {
+    fn spawn_reporter(
+        &self,
+        id: &str,
+        socket: &Path,
+        cwd: &Path,
+        path: &OsStr,
+    ) -> std::io::Result<Child> {
         let bin = reporter_bin();
         let (out, err) = log_files(&format!("reporter-{id}"));
         Command::new(bin)
@@ -209,6 +216,7 @@ impl ServerSupervisor {
                 "--session-id",
                 id,
             ])
+            .env("PATH", path)
             .current_dir(cwd)
             .stdout(out)
             .stderr(err)
@@ -489,17 +497,22 @@ fn spawn_mode() -> SpawnMode {
 }
 
 /// The `docker` CLI to drive (`FLEET_DOCKER_BIN`, default `docker`).
-fn docker_bin() -> String {
-    std::env::var("FLEET_DOCKER_BIN").unwrap_or_else(|_| "docker".into())
+fn docker_bin() -> PathBuf {
+    if let Ok(bin) = std::env::var("FLEET_DOCKER_BIN") {
+        if !bin.trim().is_empty() {
+            return PathBuf::from(bin);
+        }
+    }
+    find_on_path("docker", &fleet_tool_path()).unwrap_or_else(|| PathBuf::from("docker"))
 }
 
-fn editor_bin() -> PathBuf {
+fn editor_bin(path: &OsStr) -> PathBuf {
     if let Ok(bin) = std::env::var("FLEET_EDITOR_BIN") {
         if !bin.trim().is_empty() {
             return PathBuf::from(bin);
         }
     }
-    find_on_path("code")
+    find_on_path("code", path)
         .or_else(|| {
             [
                 "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
@@ -519,7 +532,7 @@ fn reporter_bin() -> PathBuf {
         }
     }
     bundled_bin("fleet-reporter")
-        .or_else(|| find_on_path("fleet-reporter"))
+        .or_else(|| find_on_path("fleet-reporter", &fleet_tool_path()))
         .unwrap_or_else(|| PathBuf::from("fleet-reporter"))
 }
 
@@ -530,16 +543,101 @@ fn bundled_bin(name: &str) -> Option<PathBuf> {
         .filter(|path| path.is_file())
 }
 
-fn find_on_path(name: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
+/// PATH used for Fleet-launched tools.
+///
+/// GUI-launched macOS apps do not inherit an interactive shell's PATH, so build a
+/// conservative tool path that still finds common user-installed CLIs.
+fn fleet_tool_path() -> OsString {
+    fleet_tool_path_from(
+        std::env::var_os("PATH"),
+        std::env::var_os("HOME").map(PathBuf::from),
+        std::env::var("USER").ok(),
+    )
+}
+
+fn fleet_tool_path_from(
+    current: Option<OsString>,
+    home: Option<PathBuf>,
+    user: Option<String>,
+) -> OsString {
+    let mut dirs = current
+        .as_ref()
+        .map(|path| std::env::split_paths(path).collect::<Vec<_>>())
+        .unwrap_or_default();
+
+    if let Some(home) = home.as_ref() {
+        // Home Manager app bins often contain wrapper CLIs such as cmux's `claude`.
+        // Prefer them before raw user bins so a GUI-launched Fleet behaves like the
+        // user's interactive shell when those wrappers are first there.
+        push_home_manager_app_bins(&mut dirs, home);
+        push_existing_dir(&mut dirs, home.join(".local/bin"));
+        push_existing_dir(&mut dirs, home.join("bin"));
+        push_existing_dir(&mut dirs, home.join(".cargo/bin"));
+    }
+
+    if let Some(user) = user.filter(|s| !s.is_empty()) {
+        push_existing_dir(
+            &mut dirs,
+            PathBuf::from(format!("/etc/profiles/per-user/{user}/bin")),
+        );
+    }
+
+    for dir in [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+        "/run/current-system/sw/bin",
+        "/nix/var/nix/profiles/default/bin",
+        "/Applications/Visual Studio Code.app/Contents/Resources/app/bin",
+        "/Applications/Visual Studio Code - Insiders.app/Contents/Resources/app/bin",
+    ] {
+        push_existing_dir(&mut dirs, PathBuf::from(dir));
+    }
+
+    std::env::join_paths(dirs).unwrap_or_else(|_| current.unwrap_or_default())
+}
+
+fn push_home_manager_app_bins(dirs: &mut Vec<PathBuf>, home: &Path) {
+    let app_dir = home.join("Applications").join("Home Manager Apps");
+    let Ok(entries) = std::fs::read_dir(app_dir) else {
+        return;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
+        {
+            push_existing_dir(dirs, path.join("Contents").join("Resources").join("bin"));
+        }
+    }
+}
+
+fn push_existing_dir(dirs: &mut Vec<PathBuf>, dir: PathBuf) {
+    if dir.is_dir() && !dirs.iter().any(|existing| existing == &dir) {
+        dirs.push(dir);
+    }
+}
+
+fn prepend_path(dir: &Path, path: &OsStr) -> OsString {
+    let mut dirs = vec![dir.to_path_buf()];
+    dirs.extend(std::env::split_paths(path));
+    std::env::join_paths(dirs).unwrap_or_else(|_| path.to_os_string())
+}
+
+fn find_on_path(name: &str, path: &OsStr) -> Option<PathBuf> {
+    std::env::split_paths(path)
         .map(|dir| dir.join(name))
         .find(|path| path.is_file())
 }
 
 /// Inspect a running container for the host-reachable editor URL: the host port that
 /// docker bound to the container's `8080/tcp`. Returns `None` if inspection fails.
-fn inspect_url(docker: &str, name: &str) -> Option<String> {
+fn inspect_url(docker: &Path, name: &str) -> Option<String> {
     let out = Command::new(docker)
         .args([
             "inspect",
@@ -706,8 +804,12 @@ fn first_vsix_in(dir: &Path) -> Option<PathBuf> {
 /// Install a `claude` shim in `shim_dir` that wraps the real `claude` with a
 /// `--settings` file whose hooks relay lifecycle payloads to `reporter_socket`.
 /// Returns the shim binary path. Skipped (Err) if the real `claude` isn't found.
-fn install_claude_shim(shim_dir: &Path, reporter_socket: &Path) -> std::io::Result<PathBuf> {
-    let real = find_real_claude(shim_dir).ok_or_else(|| {
+fn install_claude_shim(
+    shim_dir: &Path,
+    reporter_socket: &Path,
+    path: &OsStr,
+) -> std::io::Result<PathBuf> {
+    let real = find_real_claude(shim_dir, path).ok_or_else(|| {
         std::io::Error::new(std::io::ErrorKind::NotFound, "real `claude` not on PATH")
     })?;
     std::fs::create_dir_all(shim_dir)?;
@@ -767,19 +869,18 @@ exec {real} --settings {hooks_file} "$@"
 
 /// Find the real `claude` binary: `FLEET_CLAUDE_BIN`, else the first `claude` on
 /// PATH that isn't our shim dir (so the shim never execs itself).
-fn find_real_claude(shim_dir: &Path) -> Option<PathBuf> {
+fn find_real_claude(shim_dir: &Path, path: &OsStr) -> Option<PathBuf> {
     if let Ok(bin) = std::env::var("FLEET_CLAUDE_BIN") {
         let p = PathBuf::from(bin);
         if p.is_file() {
             return Some(p);
         }
     }
-    let path = std::env::var("PATH").ok()?;
-    for dir in path.split(':') {
-        if dir.is_empty() || Path::new(dir) == shim_dir {
+    for dir in std::env::split_paths(path) {
+        if dir.as_os_str().is_empty() || dir == shim_dir {
             continue;
         }
-        let cand = Path::new(dir).join("claude");
+        let cand = dir.join("claude");
         if cand.is_file() {
             return Some(cand);
         }
@@ -1032,6 +1133,57 @@ mod tests {
     }
 
     #[test]
+    fn fleet_tool_path_adds_gui_launch_tool_dirs() {
+        let home = temp_test_dir("fleet-tool-path-home");
+        let current = temp_test_dir("fleet-tool-path-current");
+        let local_bin = home.join(".local/bin");
+        let home_bin = home.join("bin");
+        let cargo_bin = home.join(".cargo/bin");
+        let hm_bin = home
+            .join("Applications")
+            .join("Home Manager Apps")
+            .join("cmux.app")
+            .join("Contents")
+            .join("Resources")
+            .join("bin");
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&current);
+        for dir in [&current, &local_bin, &home_bin, &cargo_bin, &hm_bin] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+
+        let current_path = std::env::join_paths([&current]).unwrap();
+        let path = fleet_tool_path_from(Some(current_path), Some(home.clone()), None);
+        let dirs = std::env::split_paths(&path).collect::<Vec<_>>();
+
+        assert_eq!(dirs.first(), Some(&current));
+        let hm_pos = dirs.iter().position(|dir| dir == &hm_bin).unwrap();
+        let local_pos = dirs.iter().position(|dir| dir == &local_bin).unwrap();
+        assert!(hm_pos < local_pos);
+        assert!(dirs.contains(&local_bin));
+        assert!(dirs.contains(&home_bin));
+        assert!(dirs.contains(&cargo_bin));
+        assert!(dirs.contains(&hm_bin));
+        assert_eq!(dirs.iter().filter(|dir| *dir == &local_bin).count(), 1);
+
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&current);
+    }
+
+    #[test]
+    fn prepend_path_keeps_shim_first() {
+        let shim = PathBuf::from("/tmp/fleet-shim");
+        let first = PathBuf::from("/usr/bin");
+        let second = PathBuf::from("/bin");
+        let path = std::env::join_paths([&first, &second]).unwrap();
+
+        let out = prepend_path(&shim, &path);
+        let dirs = std::env::split_paths(&out).collect::<Vec<_>>();
+
+        assert_eq!(dirs, vec![shim, first, second]);
+    }
+
+    #[test]
     fn spawned_server_settings_live_under_server_data_user_dir() {
         assert_eq!(
             spawned_server_settings_path(Path::new("/tmp/fleet-server-data")),
@@ -1167,6 +1319,23 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
             args,
             vec!["CMUX", "--settings", hooks_file.to_str().unwrap(), "hello"]
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn find_real_claude_uses_supplied_tool_path() {
+        let dir = temp_test_dir("fleet-claude-tool-path");
+        let shim_dir = dir.join("shim");
+        let real_dir = dir.join("real");
+        let real = real_dir.join("claude");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&shim_dir).unwrap();
+        std::fs::create_dir_all(&real_dir).unwrap();
+        std::fs::write(&real, "").unwrap();
+        let path = std::env::join_paths([&shim_dir, &real_dir]).unwrap();
+
+        assert_eq!(find_real_claude(&shim_dir, &path), Some(real));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
