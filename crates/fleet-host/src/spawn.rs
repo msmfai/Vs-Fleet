@@ -19,7 +19,7 @@
 //!     lights up its tab (working / waiting / idle) with zero user setup.
 //!
 //! Env knobs: `FLEET_EDITOR_BIN`, `FLEET_BRIDGE_VSIX`,
-//! `FLEET_REPORTER_BIN`, `FLEET_CLAUDE_BIN`.
+//! `FLEET_REPORTER_BIN`, `FLEET_CLAUDE_BIN`, `FLEET_MUX_DIR`.
 //!
 //! ## Spawn modes
 //! `FLEET_SPAWN_MODE` selects how a server is launched:
@@ -92,7 +92,7 @@ impl ServerSupervisor {
         let id = format!("server-{n}");
         let port = free_port()?;
 
-        let base = std::env::temp_dir().join("fleet-mux");
+        let base = fleet_mux_base();
         let _ = std::fs::create_dir_all(&base);
         let folder = base.join(format!("ws-{id}"));
         // The workspace is either a fresh clone of FLEET_SPAWN_REPO (repo-as-workspace,
@@ -790,12 +790,33 @@ fn resolve_repo(spec: &str) -> String {
     format!("https://github.com/{r}.git")
 }
 
-/// `(stdout, stderr)` redirected to `<temp>/fleet-mux/<name>.log` so spawned
+/// Base directory for local Fleet-managed VS Code servers.
+///
+/// Defaulting under HOME avoids macOS temp/TCC surprises from `/var/folders` and
+/// gives spawned terminals a normal user-owned root. `FLEET_MUX_DIR` is an escape
+/// hatch for tests and custom layouts.
+fn fleet_mux_base() -> PathBuf {
+    fleet_mux_base_from(
+        std::env::var_os("FLEET_MUX_DIR").map(PathBuf::from),
+        std::env::var_os("HOME").map(PathBuf::from),
+    )
+}
+
+fn fleet_mux_base_from(override_dir: Option<PathBuf>, home: Option<PathBuf>) -> PathBuf {
+    if let Some(dir) = override_dir.filter(|p| !p.as_os_str().is_empty()) {
+        return dir;
+    }
+    home.unwrap_or_else(std::env::temp_dir)
+        .join(".fleet")
+        .join("mux")
+}
+
+/// `(stdout, stderr)` redirected to `<fleet-mux>/<name>.log` so spawned
 /// processes are debuggable (falls back to null if the file can't be created).
 fn log_files(name: &str) -> (Stdio, Stdio) {
-    let path = std::env::temp_dir()
-        .join("fleet-mux")
-        .join(format!("{name}.log"));
+    let dir = fleet_mux_base();
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join(format!("{name}.log"));
     match std::fs::File::create(&path).and_then(|f| Ok((f.try_clone()?, f))) {
         Ok((out, err)) => (Stdio::from(out), Stdio::from(err)),
         Err(_) => (Stdio::null(), Stdio::null()),
@@ -850,6 +871,21 @@ mod tests {
     fn ws_port_parses_with_or_without_trailing_slash() {
         assert_eq!(ws_port("ws://127.0.0.1:51777"), Some(51777));
         assert_eq!(ws_port("ws://127.0.0.1:51777/"), Some(51777));
+    }
+
+    #[test]
+    fn fleet_mux_base_defaults_under_home_and_honors_override() {
+        assert_eq!(
+            fleet_mux_base_from(None, Some(PathBuf::from("/Users/example"))),
+            PathBuf::from("/Users/example/.fleet/mux")
+        );
+        assert_eq!(
+            fleet_mux_base_from(
+                Some(PathBuf::from("/custom/fleet")),
+                Some(PathBuf::from("/Users/example"))
+            ),
+            PathBuf::from("/custom/fleet")
+        );
     }
 
     #[test]
