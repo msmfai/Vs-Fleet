@@ -42,11 +42,12 @@ rendering, and keeping editor tabs connected while switching.
    garbled text in editor integrated terminals is usually the terminal GPU
    renderer.
 
-5. Terminal text rendering issues have a direct upstream mitigation:
-   set `terminal.integrated.gpuAcceleration` to `"off"` for Fleet-spawned server
-   data. VS Code documents GPU-renderer failures, and Claude Code explicitly
-   recommends the same setting for boxes, smears, or wrong glyphs in VS Code,
-   Cursor, and Devin Desktop integrated terminals.
+5. Terminal text rendering issues have a direct upstream mitigation. Fleet now
+   writes `terminal.integrated.gpuAcceleration: "off"` into each spawned server's
+   isolated `--server-data-dir` before `code serve-web` starts. VS Code documents
+   GPU-renderer failures, and Claude Code explicitly recommends the same setting
+   for boxes, smears, or wrong glyphs in VS Code, Cursor, and Devin Desktop
+   integrated terminals.
 
 ## Fleet Facts
 
@@ -197,17 +198,16 @@ The likely fault domains, in priority order:
    exists, with a bridge status of connected/reconnecting/disconnected.
 
 5. Persist server-side settings for spawned servers before `code serve-web`
-   starts:
+   starts. The implemented automatic setting is:
 
    ```json
    {
-     "terminal.integrated.gpuAcceleration": "off",
-     "terminal.integrated.minimumContrastRatio": 1
+     "terminal.integrated.gpuAcceleration": "off"
    }
    ```
 
-   The contrast setting should be tested visually; it fixes color surprises but
-   could reduce accessibility.
+   `terminal.integrated.minimumContrastRatio: 1` should stay visual-test-only for
+   now; it fixes color surprises but could reduce accessibility.
 
 6. Add VM/container verification before and after the webview-pool change:
 
@@ -226,8 +226,8 @@ The likely fault domains, in priority order:
 - Does Tauri/Wry `Webview::hide()` preserve WebKit networking and VS Code
   terminal canvas state on macOS, or should Fleet keep hidden editors visible but
   offscreen?
-- Does `code serve-web` honor a prewritten settings file under Fleet's current
-  `--server-data-dir`, or does it need a separate user-data path/settings path?
+- Does the GPU-off setting eliminate the observed Claude terminal crash/corruption
+  in the host visual probe?
 - Does Fleet need to launch `claude doctor` automatically inside a new server to
   expose missing login/trust/PATH state in the rail?
 - What is the actual memory slope per additional live hidden VS Code workbench on

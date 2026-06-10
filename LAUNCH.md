@@ -92,5 +92,8 @@ removes the env, the shim, and stops the reporter).
 - `fleet-host` is a **standalone crate** (its own workspace, excluded from the
   root workspace) so CI's `cargo build --workspace` on Linux never builds the
   native webview stack. Build/run it from `crates/fleet-host`.
+- Local Fleet-spawned VS Code servers default to `~/.fleet/mux`, including
+  `ws-server-*` workspaces, `cs-userdata-server-*` data dirs, shims, reporter
+  sockets, and logs. Override with `FLEET_MUX_DIR` when a test needs isolation.
 - The reporter socket defaults to `$XDG_RUNTIME_DIR/fleet/` (unix) or the temp
   dir. Override per-process with `FLEET_REPORTER_SOCKET`.
