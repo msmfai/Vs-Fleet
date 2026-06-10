@@ -40,6 +40,8 @@ trap 'rm -rf "$TMP"' EXIT
 
 render_pngs_with_pillow() {
   python3 - "$SRC" "$OUT" <<'PY'
+import io
+import struct
 import sys
 from pathlib import Path
 from PIL import Image
@@ -57,18 +59,42 @@ img = Image.open(src).convert("RGBA")
 def save(size, name):
     resized = img.resize((size, size), resample)
     resized.save(out / name, "PNG")
+    return resized
 
 save(32, "32x32.png")
 save(128, "128x128.png")
-save(512, ".fleet-icon-512-rgba.png")
+
+entries = []
+for code, size in (
+    ("icp4", 16),
+    ("icp5", 32),
+    ("ic11", 32),
+    ("icp6", 64),
+    ("ic12", 64),
+    ("ic07", 128),
+    ("ic08", 256),
+    ("ic13", 256),
+    ("ic09", 512),
+    ("ic14", 512),
+    ("ic10", 1024),
+):
+    buf = io.BytesIO()
+    img.resize((size, size), resample).save(buf, "PNG")
+    entries.append((code.encode("ascii"), buf.getvalue()))
+
+total = 8 + sum(8 + len(data) for _, data in entries)
+with (out / "Fleet.icns").open("wb") as f:
+    f.write(b"icns")
+    f.write(struct.pack(">I", total))
+    for code, data in entries:
+        f.write(code)
+        f.write(struct.pack(">I", 8 + len(data)))
+        f.write(data)
 PY
 }
 
 if command -v python3 >/dev/null && python3 -c 'import PIL' >/dev/null 2>&1; then
-  render_pngs_with_pillow || soft_fail "failed to render RGBA PNGs with Pillow"
-  sips -s format icns "$OUT/.fleet-icon-512-rgba.png" --out "$OUT/Fleet.icns" >/dev/null 2>&1 \
-    || soft_fail "failed to write $OUT/Fleet.icns"
-  rm -f "$OUT/.fleet-icon-512-rgba.png"
+  render_pngs_with_pillow || soft_fail "failed to render RGBA PNGs / Fleet.icns with Pillow"
   note "refreshed derived icons from $SRC"
   exit 0
 fi

@@ -154,7 +154,17 @@ window.__fleetSyncSelection = async () => {
   try { selected = await invoke("selected_server"); render(); } catch (e) { /* ignore */ }
 };
 
-listen("servers-changed", () => refreshServers());
-listen("inbox", (e) => { inbox = e.payload || inbox; render(); });
-refreshServers();
+async function init() {
+  await listen("servers-changed", () => refreshServers());
+  await listen("inbox", (e) => { inbox = e.payload || inbox; render(); });
+  try {
+    inbox = await invoke("get_inbox");
+  } catch (e) {
+    inbox = { tabs: [], waiting_count: 0, connected: false };
+  }
+  await refreshServers();
+  render();
+}
+
+init();
 setInterval(render, 1000); // tick the "waiting Nm" age
