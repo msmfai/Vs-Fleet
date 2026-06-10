@@ -139,6 +139,7 @@ impl ServerSupervisor {
         // --- the editor: VS Code serve-web --------------------------------------
         let user_data = base.join(format!("cs-userdata-{id}"));
         let editor = editor_bin();
+        write_spawned_server_settings(&user_data)?;
         install_fleet_bridge(&editor, &user_data)?;
         let url = format!("http://127.0.0.1:{port}/?folder={}", folder.display());
         let (cs_out, cs_err) = log_files(&format!("cs-{id}"));
@@ -598,6 +599,46 @@ fn fleet_bridge_installed(extensions_dir: &Path) -> bool {
     })
 }
 
+/// Write Fleet-owned VS Code user settings into the per-server data dir before
+/// `serve-web` starts. This is intentionally scoped to Fleet's isolated
+/// `--server-data-dir`, not the user's desktop VS Code settings.
+fn write_spawned_server_settings(server_data: &Path) -> std::io::Result<()> {
+    let settings_path = spawned_server_settings_path(server_data);
+    let mut settings = read_json_object_or_empty(&settings_path);
+    let obj = settings.as_object_mut().expect("settings object");
+    obj.insert(
+        "terminal.integrated.gpuAcceleration".into(),
+        serde_json::Value::String("off".into()),
+    );
+
+    if let Some(parent) = settings_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(settings_path, serde_json::to_vec_pretty(&settings)?)?;
+    Ok(())
+}
+
+fn spawned_server_settings_path(server_data: &Path) -> PathBuf {
+    server_data.join("User").join("settings.json")
+}
+
+fn read_json_object_or_empty(path: &Path) -> serde_json::Value {
+    let Ok(bytes) = std::fs::read(path) else {
+        return serde_json::json!({});
+    };
+    match serde_json::from_slice::<serde_json::Value>(&bytes) {
+        Ok(value) if value.is_object() => value,
+        Ok(_) => {
+            tracing::warn!(path = %path.display(), "VS Code settings file is not an object; replacing it");
+            serde_json::json!({})
+        }
+        Err(e) => {
+            tracing::warn!(path = %path.display(), error = %e, "VS Code settings file is invalid; replacing it");
+            serde_json::json!({})
+        }
+    }
+}
+
 fn find_fleet_bridge_vsix() -> Option<PathBuf> {
     if let Ok(path) = std::env::var("FLEET_BRIDGE_VSIX") {
         let path = PathBuf::from(path);
@@ -889,6 +930,57 @@ mod tests {
     }
 
     #[test]
+    fn spawned_server_settings_live_under_server_data_user_dir() {
+        assert_eq!(
+            spawned_server_settings_path(Path::new("/tmp/fleet-server-data")),
+            PathBuf::from("/tmp/fleet-server-data/User/settings.json")
+        );
+    }
+
+    #[test]
+    fn write_spawned_server_settings_creates_gpu_off_setting() {
+        let dir = temp_test_dir("fleet-spawn-settings-create");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        write_spawned_server_settings(&dir).unwrap();
+
+        let settings = read_json(&spawned_server_settings_path(&dir));
+        assert_eq!(
+            settings["terminal.integrated.gpuAcceleration"],
+            serde_json::Value::String("off".into())
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_spawned_server_settings_preserves_existing_settings_object() {
+        let dir = temp_test_dir("fleet-spawn-settings-merge");
+        let settings_path = spawned_server_settings_path(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(settings_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &settings_path,
+            br#"{
+  "editor.fontSize": 17,
+  "terminal.integrated.gpuAcceleration": "auto"
+}"#,
+        )
+        .unwrap();
+
+        write_spawned_server_settings(&dir).unwrap();
+
+        let settings = read_json(&settings_path);
+        assert_eq!(settings["editor.fontSize"], serde_json::json!(17));
+        assert_eq!(
+            settings["terminal.integrated.gpuAcceleration"],
+            serde_json::Value::String("off".into())
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn bridge_extensions_dir_lives_under_server_data() {
         assert_eq!(
             fleet_bridge_extensions_dir(Path::new("/tmp/fleet-server-data")),
@@ -908,5 +1000,14 @@ mod tests {
         assert!(fleet_bridge_installed(&dir));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn temp_test_dir(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("{name}-{}", std::process::id()))
+    }
+
+    fn read_json(path: &Path) -> serde_json::Value {
+        let bytes = std::fs::read(path).unwrap();
+        serde_json::from_slice(&bytes).unwrap()
     }
 }

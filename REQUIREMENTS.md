@@ -54,6 +54,9 @@ which is why `+` (new server) failed with no feedback.
   `code serve-web --server-data-dir <D>` loads extensions from `<D>/extensions`.
   Fleet now installs the bundled `fleet-bridge` VSIX there before starting each local
   server.
+- ✅ **Local spawned server state** — Fleet defaults local `code serve-web`
+  workspaces, server data, logs, shims, and reporter sockets under `~/.fleet/mux`
+  instead of macOS temp folders. Override with `FLEET_MUX_DIR`.
 - **fleet-reporter discovery** — the bundled `Fleet.app` can't find `fleet-reporter` on a
   GUI-launch PATH; bundle it into the `.app` / look next-to-exe.
 - **Binary discovery on GUI launch** — apps opened from Finder don't inherit your shell
