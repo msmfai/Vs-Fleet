@@ -16,6 +16,7 @@ const paletteBtn = document.getElementById("palette-open");
 const paletteEl = document.getElementById("palette");
 const paletteInput = document.getElementById("palette-input");
 const paletteList = document.getElementById("palette-list");
+const rowMenuEl = document.getElementById("row-menu");
 if (spawnBtn) spawnBtn.onclick = spawnServer;
 if (jumpBtn) jumpBtn.onclick = jumpNextUnread;
 if (cycleBtn) cycleBtn.onclick = cycleUnread;
@@ -46,6 +47,7 @@ let paletteOpen = false;
 let paletteQuery = "";
 let paletteIndex = 0;
 let paletteRestoreEl = null;
+let rowMenu = { open: false, serverId: null, x: 0, y: 0, index: 0, restoreEl: null };
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -476,10 +478,78 @@ function rowKeyboardShortcuts(model) {
   if (sessionActionBusy(model.srv.id)) return shortcuts.join(" ");
   if (model.agent && inbox.connected) shortcuts.push("M", "S");
   if (canRetryServer(model.srv, model.pendingState)) shortcuts.push("R");
+  if (canDismissAgent(model.agent, model.state)) shortcuts.push("D");
   if (canCloseServerRow(model.srv) || canDismissAgent(model.agent, model.state)) {
     shortcuts.push("Delete", "Backspace");
   }
   return shortcuts.join(" ");
+}
+
+function rowMenuItems(id) {
+  const srv = displayed().find((item) => item.id === id);
+  if (!srv) return [];
+  const model = serverRowModel(srv);
+  const busy = sessionActionBusy(id);
+  const closeVerb = isOwned(srv) ? "Close" : "Forget";
+  const items = [{
+    id: "open",
+    label: model.srv.agentOnly ? "Show Session" : "Open",
+    shortcut: "Enter",
+    action: () => activateServer(id),
+  }];
+
+  if (model.agent) {
+    items.push({
+      id: "mute",
+      label: model.agent.muted ? "Unmute" : "Mute",
+      shortcut: "M",
+      disabled: busy || !inbox.connected,
+      action: () => toggleMuteRow(id),
+    });
+    items.push({
+      id: "solo",
+      label: model.agent.soloed ? "Clear Solo" : "Solo",
+      shortcut: "S",
+      disabled: busy || !inbox.connected,
+      action: () => toggleSoloRow(id),
+    });
+  }
+
+  if (canRetryServer(model.srv, model.pendingState)) {
+    items.push({
+      id: "retry",
+      label: "Retry",
+      shortcut: "R",
+      disabled: busy || spawning,
+      action: () => retryRow(id),
+    });
+  }
+
+  if (canDismissAgent(model.agent, model.state)) {
+    items.push({
+      id: "dismiss",
+      label: "Dismiss",
+      shortcut: "D",
+      disabled: busy || !inbox.connected,
+      action: () => dismissRow(id),
+    });
+  }
+
+  if (canCloseServerRow(srv)) {
+    items.push({
+      id: "close",
+      label: closeVerb,
+      shortcut: "Delete",
+      disabled: busy || closing.has(id),
+      action: () => closeServer(id),
+    });
+  }
+
+  return items;
+}
+
+function visibleRowMenuItems() {
+  return rowMenu.open && rowMenu.serverId ? rowMenuItems(rowMenu.serverId) : [];
 }
 
 // Registered servers + still-pending ones + Hub sessions whose editor bridge has
@@ -666,6 +736,9 @@ function renderEmptyState(status) {
 
 function render() {
   const list = displayed();
+  if (rowMenu.open && rowMenu.serverId && !list.some((srv) => srv.id === rowMenu.serverId)) {
+    closeRowMenu({ restoreFocus: false });
+  }
   const status = railStatus(list);
   statusEl.textContent = status.message;
   statusEl.title = status.title || "";
@@ -686,6 +759,7 @@ function render() {
   railEl.replaceChildren();
   if (!list.length) {
     if (paletteOpen) closePalette({ restoreFocus: false });
+    closeRowMenu({ restoreFocus: false });
     renderEmptyState(status);
     return;
   }
@@ -712,6 +786,11 @@ function render() {
     if (srv.agentOnly) row.title = bridgeState(srv);
     row.onclick = () => activateServer(srv.id);
     row.onkeydown = (ev) => handleRowKeydown(ev, row, srv.id);
+    row.oncontextmenu = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      openRowMenu(srv.id, ev.clientX, ev.clientY, row);
+    };
 
     if (srv.pending && pendingState.state !== "error") row.appendChild(el("span", "glyph spinner", ""));
     else row.appendChild(el("span", "glyph", STATE_GLYPH[state] || "·"));
@@ -817,6 +896,7 @@ function render() {
 
   if (focusAfterRender) focusAfterRender.focus({ preventScroll: true });
   if (paletteOpen) renderPalette();
+  if (rowMenu.open) renderRowMenu();
 }
 
 function focusServerRow(id) {
@@ -972,6 +1052,108 @@ function movePalette(delta) {
   if (!count) return;
   paletteIndex = (paletteIndex + delta + count) % count;
   renderPalette();
+}
+
+function openRowMenu(id, x, y, restoreEl = null) {
+  if (!rowMenuEl) return;
+  if (paletteOpen) closePalette({ restoreFocus: false });
+  rowMenu = {
+    open: true,
+    serverId: id,
+    x,
+    y,
+    index: 0,
+    restoreEl: restoreEl || document.activeElement,
+  };
+  renderRowMenu();
+  requestAnimationFrame(() => focusRowMenuItem());
+}
+
+function closeRowMenu(options = {}) {
+  if (!rowMenu.open) return;
+  const restoreEl = rowMenu.restoreEl;
+  rowMenu = { open: false, serverId: null, x: 0, y: 0, index: 0, restoreEl: null };
+  if (rowMenuEl) {
+    rowMenuEl.classList.add("hidden");
+    rowMenuEl.replaceChildren();
+    rowMenuEl.removeAttribute("aria-activedescendant");
+  }
+  if (options.restoreFocus !== false) {
+    if (restoreEl && restoreEl.isConnected && restoreEl.focus) restoreEl.focus({ preventScroll: true });
+    else focusServerRow(selected);
+  }
+}
+
+function positionRowMenu() {
+  if (!rowMenuEl || !rowMenu.open) return;
+  const rect = rowMenuEl.getBoundingClientRect();
+  const left = Math.max(8, Math.min(rowMenu.x, window.innerWidth - rect.width - 8));
+  const top = Math.max(8, Math.min(rowMenu.y, window.innerHeight - rect.height - 8));
+  rowMenuEl.style.left = `${left}px`;
+  rowMenuEl.style.top = `${top}px`;
+}
+
+function focusRowMenuItem() {
+  if (!rowMenuEl || !rowMenu.open) return;
+  const item = rowMenuEl.querySelector(".row-menu-item.active");
+  if (item) item.focus({ preventScroll: true });
+}
+
+function renderRowMenu() {
+  if (!rowMenuEl || !rowMenu.open) return;
+  const items = visibleRowMenuItems();
+  if (!items.length) {
+    closeRowMenu({ restoreFocus: false });
+    return;
+  }
+  if (rowMenu.index >= items.length) rowMenu.index = Math.max(0, items.length - 1);
+  rowMenuEl.replaceChildren();
+  rowMenuEl.classList.remove("hidden");
+  rowMenuEl.style.left = `${rowMenu.x}px`;
+  rowMenuEl.style.top = `${rowMenu.y}px`;
+
+  items.forEach((item, index) => {
+    const active = index === rowMenu.index;
+    const btn = el("button", `row-menu-item${active ? " active" : ""}${item.disabled ? " disabled" : ""}`, "");
+    const itemId = `row-menu-${item.id}`;
+    btn.id = itemId;
+    btn.type = "button";
+    btn.tabIndex = active ? 0 : -1;
+    btn.setAttribute("role", "menuitem");
+    if (item.disabled) btn.setAttribute("aria-disabled", "true");
+    if (item.shortcut) btn.setAttribute("aria-keyshortcuts", item.shortcut);
+    btn.onmouseenter = () => {
+      if (rowMenu.index === index) return;
+      rowMenu.index = index;
+      renderRowMenu();
+    };
+    btn.onmousedown = (ev) => ev.preventDefault();
+    btn.onclick = () => chooseRowMenuItem(index);
+    btn.appendChild(el("span", "row-menu-label", item.label));
+    if (item.shortcut) btn.appendChild(el("span", "row-menu-shortcut", item.shortcut));
+    rowMenuEl.appendChild(btn);
+    if (active) rowMenuEl.setAttribute("aria-activedescendant", itemId);
+  });
+
+  requestAnimationFrame(() => {
+    positionRowMenu();
+    focusRowMenuItem();
+  });
+}
+
+function moveRowMenu(delta) {
+  const items = visibleRowMenuItems();
+  if (!items.length) return;
+  rowMenu.index = (rowMenu.index + delta + items.length) % items.length;
+  renderRowMenu();
+}
+
+function chooseRowMenuItem(index = rowMenu.index) {
+  const item = visibleRowMenuItems()[index];
+  if (!item || item.disabled) return;
+  const action = item.action;
+  closeRowMenu({ restoreFocus: false });
+  action();
 }
 
 function showHostStatus(payload) {
@@ -1201,6 +1383,10 @@ function handleRowKeydown(ev, row, id) {
   if (ev.key === "Enter" || ev.key === " ") {
     ev.preventDefault();
     activateServer(id);
+  } else if (ev.key === "ContextMenu" || (ev.shiftKey && ev.key === "F10")) {
+    ev.preventDefault();
+    const rect = row.getBoundingClientRect();
+    openRowMenu(id, rect.left + 24, rect.top + Math.min(rect.height - 4, 32), row);
   } else if (plainKey === "m") {
     ev.preventDefault();
     toggleMuteRow(id);
@@ -1210,6 +1396,9 @@ function handleRowKeydown(ev, row, id) {
   } else if (plainKey === "r") {
     ev.preventDefault();
     retryRow(id);
+  } else if (plainKey === "d") {
+    ev.preventDefault();
+    dismissRow(id);
   } else if (ev.key === "Backspace" || ev.key === "Delete") {
     ev.preventDefault();
     removeRow(id);
@@ -1278,6 +1467,23 @@ function retryRow(id) {
     return;
   }
   retryServer(id);
+}
+
+function dismissRow(id) {
+  if (sessionActionBusy(id)) {
+    showRailInfo("action in progress");
+    return;
+  }
+  const agent = agentFor(id);
+  if (!canDismissAgent(agent, agent && agent.state)) {
+    showRailInfo("nothing to dismiss");
+    return;
+  }
+  if (!inbox.connected) {
+    showRailInfo("hub disconnected");
+    return;
+  }
+  dismissSession(id);
 }
 
 function removeRow(id) {
@@ -1420,9 +1626,59 @@ if (paletteEl) {
   });
 }
 
+if (rowMenuEl) {
+  rowMenuEl.addEventListener("keydown", (ev) => {
+    ev.stopPropagation();
+    const key = ev.key.toLowerCase();
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      closeRowMenu();
+    } else if (ev.key === "ArrowDown") {
+      ev.preventDefault();
+      moveRowMenu(1);
+    } else if (ev.key === "ArrowUp") {
+      ev.preventDefault();
+      moveRowMenu(-1);
+    } else if (ev.key === "Home") {
+      ev.preventDefault();
+      rowMenu.index = 0;
+      renderRowMenu();
+    } else if (ev.key === "End") {
+      ev.preventDefault();
+      rowMenu.index = Math.max(0, visibleRowMenuItems().length - 1);
+      renderRowMenu();
+    } else if (ev.key === "Enter" || ev.key === " ") {
+      ev.preventDefault();
+      chooseRowMenuItem();
+    } else if (!ev.metaKey && !ev.ctrlKey && !ev.altKey) {
+      const index = visibleRowMenuItems().findIndex((item) => token(item.shortcut) === key);
+      if (index >= 0) {
+        ev.preventDefault();
+        chooseRowMenuItem(index);
+      }
+    }
+  });
+}
+
+document.addEventListener("mousedown", (ev) => {
+  if (!rowMenu.open || !rowMenuEl) return;
+  if (!rowMenuEl.contains(ev.target)) closeRowMenu({ restoreFocus: false });
+});
+
+window.addEventListener("resize", () => {
+  if (rowMenu.open) closeRowMenu({ restoreFocus: false });
+});
+
 document.addEventListener("keydown", (ev) => {
   const command = ev.metaKey || ev.ctrlKey;
   const key = ev.key.toLowerCase();
+  if (rowMenu.open) {
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      closeRowMenu();
+    }
+    return;
+  }
   if (paletteOpen) {
     if (command && key === "k") {
       ev.preventDefault();
