@@ -13,6 +13,13 @@
 | 0.1 | First skeleton. v1-local scope frozen; remote as extension points. |
 | 1.0 | Full spec. Topology corrected to **phone-home registration** (sessions register into a Hub the client owns; the client does not dial out). Unit of tracking fixed as **a VS Code-Server environment ("session")**. Detection layer rewritten around confirmed research: Claude `Notification` **and** `PermissionRequest` hooks are broken in the VS Code extension UI; OSC 9/777 are dropped by the integrated terminal but recoverable via the **stable Shell Integration read-stream**; Codex **app-server JSON-RPC** is the authoritative Codex channel. Deployed environments standardized on **code-server/openvscode-server** (Microsoft VS Code Server licensing forbids the intended use). Host framework fixed as **Tauri**. Transport fixed as **WebSocket**. Durable identity fixed as **MQTT-style persistent sessions**. Wayland foreign-window focus marked impossible-to-guarantee. Competitive risk (VS Code **Agents window**) recorded. |
 
+## Related living docs
+
+- [North Star](NORTH_STAR.md) - current dogfooding scope and architecture direction.
+- [Requirements](REQUIREMENTS.md) - runtime/build dependencies and known open items.
+- [Research](research/README.md) - source-controlled dossiers for upstream behavior
+  and Fleet design implications.
+
 ---
 
 ## 1. Summary
