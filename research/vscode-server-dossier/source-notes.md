@@ -232,11 +232,31 @@ inference drawn from them.
     window.
   - Webview labels must be unique.
   - `on_page_load` can observe started/finished page loads.
+  - `background_throttling(...)` can change the default hidden/minimized browser
+    suspend behavior. Tauri documents that browsers may throttle timers or unload
+    a hidden view after roughly five minutes by default; the policy is supported
+    on macOS 14+ and unsupported on Linux, Windows, and Android.
 
   Fleet implications:
 
   - Fleet already enables Tauri's `unstable` feature. A persistent child-webview
     pool is a direct extension of the API currently used for rail + editor.
+  - Persistent hidden VS Code tabs should be built with background throttling
+    disabled on supported macOS versions, then verified with a greater-than-five
+    minute hidden-tab soak.
+
+- Tauri `Webview` docs:
+  <https://docs.rs/tauri/2.11.2/tauri/webview/struct.Webview.html>
+
+  Upstream facts:
+
+  - Child webviews can be navigated, resized, moved, focused, hidden, shown, and
+    closed through `Webview` methods.
+
+  Fleet implications:
+
+  - Fleet does not need a new window model to prototype persistent tabs. The
+    existing child-webview host can switch editor visibility in place.
 
 - MDN WebSocket docs:
   <https://developer.mozilla.org/en-US/docs/Web/API/WebSocket>

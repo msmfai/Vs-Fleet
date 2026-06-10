@@ -6,6 +6,12 @@ Scope: VS Code Server / `code serve-web` behavior relevant to Fleet's Tauri
 multiplexer, with emphasis on Claude Code inside connected servers, terminal text
 rendering, and keeping editor tabs connected while switching.
 
+## Detailed Notes
+
+- [Source Notes](source-notes.md)
+- [Verification Plan](verification-plan.md)
+- [Least-Disruptive Keepalive Plan](least-disruptive-keepalive.md)
+
 ## Executive Findings
 
 1. Fleet's bridge cannot be treated as independent of the browser workbench. The
