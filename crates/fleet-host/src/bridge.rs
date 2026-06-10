@@ -8,7 +8,8 @@
 //! the active server). A server vanishes from the rail when its bridge drops.
 
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{Read, Write};
+use std::path::Path;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc, Mutex,
@@ -143,12 +144,54 @@ struct Hello {
     label: String,
 }
 
-/// Per-host launch token for the bridge phone-home endpoint.
+/// Load or create the bridge phone-home token.
 ///
-/// The bridge port is intentionally stable for local reachability, but stale
-/// Fleet-spawned VS Code servers from an older host process can otherwise phone
-/// home into a later Fleet launch. This token makes a bridge registration belong
-/// to the current host lifetime without changing the push model.
+/// The bridge port is intentionally stable for local reachability. Persisting
+/// the token lets Fleet cold-reboot while already-running VS Code web servers
+/// reconnect with the token they were launched with, without admitting arbitrary
+/// local processes that do not know the token.
+pub fn launch_token_from_path(path: &Path) -> String {
+    match std::fs::read_to_string(path) {
+        Ok(raw) => {
+            let token = raw.trim();
+            if is_launch_token(token) {
+                return token.to_string();
+            }
+            tracing::warn!(path = %path.display(), "bridge token file is invalid; replacing it");
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => tracing::warn!(path = %path.display(), error = %e, "bridge token file unreadable; replacing it"),
+    }
+
+    let token = launch_token();
+    if let Err(e) = write_launch_token(path, &token) {
+        tracing::warn!(path = %path.display(), error = %e, "bridge token could not be persisted");
+    }
+    token
+}
+
+fn write_launch_token(path: &Path, token: &str) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).truncate(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(token.as_bytes())?;
+    file.write_all(b"\n")?;
+    Ok(())
+}
+
+fn is_launch_token(token: &str) -> bool {
+    token.len() == 32 && token.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Generate a fresh launch token for the bridge phone-home endpoint.
 pub fn launch_token() -> String {
     let mut bytes = [0_u8; 16];
     if std::fs::File::open("/dev/urandom")
@@ -312,6 +355,15 @@ fn parse_hello(v: &serde_json::Value, expected_token: &str) -> HelloDecision {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    fn temp_token_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "fleet-bridge-token-{name}-{}-{}",
+            std::process::id(),
+            current_time_nanos()
+        ))
+    }
 
     #[test]
     fn hello_parser_accepts_matching_launch_token() {
@@ -376,6 +428,35 @@ mod tests {
         let token = launch_token();
         assert_eq!(token.len(), 32);
         assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn launch_token_from_path_reuses_existing_valid_token() {
+        let path = temp_token_path("reuse");
+        let token = "0123456789abcdef0123456789abcdef";
+        std::fs::write(&path, format!("{token}\n")).unwrap();
+
+        assert_eq!(launch_token_from_path(&path), token);
+        assert_eq!(launch_token_from_path(&path), token);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn launch_token_from_path_creates_and_repairs_token_file() {
+        let path = temp_token_path("repair");
+
+        let first = launch_token_from_path(&path);
+        assert!(is_launch_token(&first));
+        assert_eq!(std::fs::read_to_string(&path).unwrap().trim(), first);
+
+        std::fs::write(&path, "not-a-valid-token").unwrap();
+        let repaired = launch_token_from_path(&path);
+        assert!(is_launch_token(&repaired));
+        assert_ne!(repaired, "not-a-valid-token");
+        assert_eq!(std::fs::read_to_string(&path).unwrap().trim(), repaired);
+
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
