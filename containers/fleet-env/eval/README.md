@@ -85,9 +85,9 @@ eval root so the latest visual result is part of the normal repo working tree:
 |-------------|------|
 | `artifacts/eval.json` | the §3.5 result schema (machine-readable; the source of truth) |
 | `artifacts/eval.xml`  | **JUnit XML** — one `<testsuite>` per scenario, one `<testcase>` per row; CI (GitLab/GitHub/Jenkins) ingests this for pass/fail/skip + per-test timing |
-| `artifacts/eval.html` | **self-contained HTML** — screenshots embedded as base64 data-URIs, so it opens anywhere (including a CI artifact viewer) with no external assets; failures auto-expanded |
+| `artifacts/eval.html` | **HTML report** — links to the captured PNGs in `artifacts/`; failures auto-expanded |
 | `index.html` | **screenshot review page** — screenshot-first, keyboard-scrollable gallery with the row detail, rationale, provenance, machineΔ, timings, and evidence beside each image |
-| `artifacts/*.png`     | per-behaviour before/after screenshots (also embedded into the HTML) |
+| `artifacts/*.png`     | per-behaviour before/after screenshots used by both HTML pages |
 
 The console stream shows live `PASS / FAIL / SKIP / ERROR` per cell with the
 machineΔ and timings. **Exit code is non-zero on any unexpected failure or error**
@@ -236,7 +236,7 @@ eval/
     bridgeHub.mjs    WS server the in-container bridges dial into (observe/act)
     env.mjs          the Env unit: docker run + Playwright page + bridge + probes
     machine.mjs      machine-state probes (procs/mem/fs/timing) for the before/after Δ
-    report.mjs       Reporter: console + JSON + JUnit XML + self-contained HTML  (Track F)
+    report.mjs       Reporter: console + JSON + JUnit XML + linked screenshot HTML  (Track F)
   scripts/
     failed-ids.mjs   extract failed behaviour ids from a report (retry-on-flake)
     merge-report.mjs fold a retry report over the base (flaky → pass)

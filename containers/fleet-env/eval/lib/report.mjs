@@ -1,5 +1,5 @@
-// Reporter — console + JSON (§3.5 frozen schema) + JUnit XML + self-contained HTML
-// (screenshots embedded as base64 data-URIs). Track A shipped the console+JSON stub;
+// Reporter — console + JSON (§3.5 frozen schema) + JUnit XML + linked HTML
+// screenshot reports. Track A shipped the console+JSON stub;
 // Track F (this file) ADDS the XML/HTML emitters. The JSON shape is unchanged so all
 // emitters consume the same Report object. The review HTML is a screenshot-first
 // artifact for human inspection; eval.html remains the row-oriented CI report.
@@ -9,8 +9,8 @@
 //                 timingsMs,screenshots,skipped?,error?} ],
 //     summary: {pass,fail,skipped,durationMs} }
 
-import { writeFileSync, readFileSync } from "node:fs";
-import { extname } from "node:path";
+import { existsSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 export class Reporter {
   /** @param {{image?:string, scenarios?:number, behaviours?:number}} runMeta */
@@ -119,11 +119,12 @@ export class Reporter {
     console.log(`[eval] wrote JUnit XML → ${path}`);
   }
 
-  // ─── Self-contained HTML (screenshots embedded as base64 data-URIs) ─────────
-  // No external assets: the file opens anywhere, including CI artifact viewers.
-  toHTML() {
+  // ─── HTML report with linked screenshot PNGs ───────────────────────────────
+  // Screenshots stay as normal files so large visual runs do not create huge
+  // base64 documents or force the browser to parse every image as one string.
+  toHTML({ assetBase = process.cwd() } = {}) {
     const s = this.summary();
-    const rows = this.results.map((r, i) => this._htmlRow(r, i)).join("\n");
+    const rows = this.results.map((r, i) => this._htmlRow(r, i, assetBase)).join("\n");
     const passPct = this.results.length
       ? Math.round((s.pass / this.results.length) * 100) : 0;
     return `<!doctype html>
@@ -183,7 +184,7 @@ ${rows}
 `;
   }
 
-  _htmlRow(r, i) {
+  _htmlRow(r, i, assetBase) {
     let cls, label;
     if (r.skipped) { cls = "skip"; label = "SKIP"; }
     else if (r.error) { cls = "error"; label = "ERROR"; }
@@ -221,10 +222,10 @@ ${rows}
     const paths = Array.isArray(r.screenshots) ? r.screenshots : [];
     if (paths.length) {
       const figs = paths.map((p) => {
-        const uri = imgDataURI(p);
+        const src = imgSrc(p, assetBase);
         const cap = escHtml(baseName(p));
-        return uri
-          ? `<figure><img src="${uri}" alt="${cap}" loading="lazy"><figcaption>${cap}</figcaption></figure>`
+        return src
+          ? `<figure><img src="${escHtml(src)}" alt="${cap}" loading="lazy" decoding="async"><figcaption>${cap}</figcaption></figure>`
           : `<figure><figcaption class="err">missing: ${cap}</figcaption></figure>`;
       }).join("");
       body.push(`<div class="shots">${figs}</div>`);
@@ -244,14 +245,14 @@ ${rows}
   }
 
   writeHTML(path) {
-    writeFileSync(path, this.toHTML());
+    writeFileSync(path, this.toHTML({ assetBase: resolve(dirname(path)) }));
     console.log(`[eval] wrote HTML report → ${path}`);
   }
 
   // ─── Screenshot review page ────────────────────────────────────────────────
-  // One self-contained page for flicking through captured screens with the row's
+  // One page for flicking through captured screens with the row's
   // detail, rationale, provenance, and evidence beside the image.
-  toReviewHTML() {
+  toReviewHTML({ assetBase = process.cwd() } = {}) {
     const s = this.summary();
     const shots = [];
     for (const r of this.results) {
@@ -259,7 +260,7 @@ ${rows}
         shots.push({ row: r, path: p });
       }
     }
-    const cards = shots.map((it, i) => this._reviewShot(it.row, it.path, i, shots.length)).join("\n");
+    const cards = shots.map((it, i) => this._reviewShot(it.row, it.path, i, shots.length, assetBase)).join("\n");
     const empty = shots.length ? "" : `<section class="empty">
   <h2>No screenshots captured</h2>
   <p>This run produced result rows, but none of them had a readable screenshot path.</p>
@@ -340,8 +341,8 @@ ${empty}
 `;
   }
 
-  _reviewShot(r, path, index, total) {
-    const uri = imgDataURI(path);
+  _reviewShot(r, path, index, total, assetBase) {
+    const src = imgSrc(path, assetBase);
     const cls = statusClass(r);
     const label = statusLabel(r);
     const p = provLabel(r.provenance);
@@ -360,8 +361,8 @@ ${empty}
     if (r.evidence && Object.keys(r.evidence).length) {
       dl.push(`<dt>evidence</dt><dd><pre>${escHtml(JSON.stringify(r.evidence, null, 2))}</pre></dd>`);
     }
-    const image = uri
-      ? `<img src="${uri}" alt="${escHtml(baseName(path))}">`
+    const image = src
+      ? `<img src="${escHtml(src)}" alt="${escHtml(baseName(path))}" loading="lazy" decoding="async">`
       : `<p class="id">missing screenshot: ${escHtml(path)}</p>`;
     return `<section class="shot" id="shot-${index + 1}">
   <div class="frame">${image}</div>
@@ -379,7 +380,7 @@ ${empty}
   }
 
   writeReviewHTML(path) {
-    writeFileSync(path, this.toReviewHTML());
+    writeFileSync(path, this.toReviewHTML({ assetBase: resolve(dirname(path)) }));
     console.log(`[eval] wrote screenshot review → ${path}`);
   }
 
@@ -475,15 +476,23 @@ function rationaleLines(r) {
   return String(r).split("\n").map((l) => l.trim()).filter(Boolean);
 }
 
-// Read a PNG/JPEG off disk and return a base64 data: URI; null if unreadable.
-function imgDataURI(p) {
-  try {
-    const buf = readFileSync(p);
-    const ext = extname(p).toLowerCase();
-    const mime = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg"
-      : ext === ".webp" ? "image/webp" : "image/png";
-    return `data:${mime};base64,${buf.toString("base64")}`;
-  } catch {
-    return null;
+function imgSrc(p, assetBase) {
+  const abs = findImagePath(p, assetBase);
+  if (!abs) return null;
+  return relative(assetBase, abs).split(sep).join("/") || baseName(abs);
+}
+
+function findImagePath(p, assetBase) {
+  const raw = String(p);
+  if (isAbsolute(raw)) return existsSync(raw) ? raw : null;
+  const bases = [
+    process.cwd(),
+    assetBase,
+    dirname(assetBase),
+  ];
+  for (const base of bases) {
+    const abs = resolve(base, raw);
+    if (existsSync(abs)) return abs;
   }
+  return null;
 }
