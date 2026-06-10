@@ -57,18 +57,39 @@ impl MuxState {
 /// The single editor surface webview label.
 pub const EDITOR: &str = "editor";
 
-/// Look up a server's URL by id, but only after the server's bridge has phoned
-/// home. Fleet-spawned servers are recorded by the supervisor immediately so
-/// they can be closed while starting; the editor surface should not navigate to
-/// them until the bridge registration proves VS Code's extension host is alive.
-fn ready_server_url(app: &AppHandle, id: &str) -> Option<String> {
-    app.try_state::<crate::bridge::BridgeRegistry>()
+/// Look up the editor URL for a server id.
+///
+/// Bridge-registered servers are already known-good phone-home entries. For
+/// Fleet-spawned servers, though, waiting for bridge registration can deadlock:
+/// the bridge extension may not activate until the editor surface first loads
+/// the VS Code web server. So spawned servers can navigate from the supervisor's
+/// URL immediately, then bridge registration catches up once VS Code starts.
+fn server_url(app: &AppHandle, id: &str) -> Option<String> {
+    if let Some(url) = app
+        .try_state::<crate::bridge::BridgeRegistry>()
         .and_then(|reg| {
             reg.servers()
                 .into_iter()
                 .find(|s| s.id == id)
                 .map(|s| s.url)
         })
+    {
+        return Some(url);
+    }
+
+    app.try_state::<crate::spawn::ServerSupervisor>()
+        .and_then(|sup| {
+            sup.servers()
+                .into_iter()
+                .find(|s| s.id == id)
+                .map(|s| s.url)
+        })
+}
+
+fn bridge_registered(app: &AppHandle, id: &str) -> bool {
+    app.try_state::<crate::bridge::BridgeRegistry>()
+        .map(|reg| reg.servers().into_iter().any(|s| s.id == id))
+        .unwrap_or(false)
 }
 
 /// Build the multiplexer window: the rail + ONE editor surface that navigates
@@ -152,6 +173,31 @@ pub fn select_server(app: AppHandle, id: String) {
     select(&app, id);
 }
 
+/// Select a newly-spawned server and retry navigation while VS Code is still
+/// coming up. `code serve-web` can take a few seconds to bind; an early WebView
+/// navigation to a not-yet-listening port otherwise fails once and stays blank.
+pub fn select_spawned(app: AppHandle, id: String) {
+    select_impl(&app, id.clone(), true);
+    std::thread::spawn(move || {
+        for delay_ms in [750_u64, 1_500, 3_000, 6_000] {
+            std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            let still_selected = app
+                .try_state::<MuxState>()
+                .and_then(|state| state.selected.lock().ok().and_then(|g| g.clone()))
+                .as_deref()
+                == Some(id.as_str());
+            if !still_selected {
+                break;
+            }
+            if bridge_registered(&app, &id) {
+                tracing::info!(server_id = %id, "spawned server registered; stopping navigation retries");
+                break;
+            }
+            select_impl(&app, id.clone(), true);
+        }
+    });
+}
+
 /// Tauri command: spawn a new code-server and add it to the rail. Returns its id.
 #[tauri::command]
 pub fn spawn_server(
@@ -160,6 +206,7 @@ pub fn spawn_server(
 ) -> Result<String, String> {
     let server = sup.spawn().map_err(|e| e.to_string())?;
     let _ = app.emit(crate::bridge::SERVERS_CHANGED, ());
+    select_spawned(app, server.id.clone());
     Ok(server.id)
 }
 
@@ -176,6 +223,10 @@ pub fn close_server(app: AppHandle, sup: State<'_, crate::spawn::ServerSuperviso
 /// it, but a pending→ready transition does). code-server shows its own loading
 /// screen while the workbench builds.
 pub fn select(app: &AppHandle, id: String) {
+    select_impl(app, id, false);
+}
+
+fn select_impl(app: &AppHandle, id: String, force_navigate: bool) {
     let Some(state) = app.try_state::<MuxState>() else {
         return;
     };
@@ -185,12 +236,25 @@ pub fn select(app: &AppHandle, id: String) {
     // Navigate the editor to the server's URL (only if it changed, so re-selecting
     // the same server doesn't reload it). The loading overlay is raised/lowered by
     // the editor's own page-load events (see `build_window`).
-    if let Some(target) = ready_server_url(app, &id) {
+    if let Some(target) = server_url(app, &id) {
         if let Ok(mut loaded) = state.loaded.lock() {
-            if loaded.as_deref() != Some(target.as_str()) {
+            if force_navigate || loaded.as_deref() != Some(target.as_str()) {
                 if let (Some(wv), Ok(parsed)) = (app.get_webview(EDITOR), target.parse()) {
-                    let _ = wv.navigate(parsed);
-                    *loaded = Some(target);
+                    tracing::info!(
+                        server_id = %id,
+                        url = %target,
+                        force = force_navigate,
+                        "navigating editor surface"
+                    );
+                    match wv.navigate(parsed) {
+                        Ok(()) => *loaded = Some(target),
+                        Err(e) => tracing::warn!(
+                            server_id = %id,
+                            url = %target,
+                            error = %e,
+                            "editor surface navigation failed"
+                        ),
+                    }
                 }
             }
         }

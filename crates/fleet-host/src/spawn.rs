@@ -138,7 +138,7 @@ impl ServerSupervisor {
 
         // --- the editor: VS Code serve-web --------------------------------------
         let user_data = base.join(format!("cs-userdata-{id}"));
-        let editor = std::env::var("FLEET_EDITOR_BIN").unwrap_or_else(|_| "code".into());
+        let editor = editor_bin();
         install_fleet_bridge(&editor, &user_data)?;
         let url = format!("http://127.0.0.1:{port}/?folder={}", folder.display());
         let (cs_out, cs_err) = log_files(&format!("cs-{id}"));
@@ -185,7 +185,7 @@ impl ServerSupervisor {
 
     /// Launch this server's `fleet-reporter --serve` (session id = server id).
     fn spawn_reporter(&self, id: &str, socket: &Path) -> std::io::Result<Child> {
-        let bin = std::env::var("FLEET_REPORTER_BIN").unwrap_or_else(|_| "fleet-reporter".into());
+        let bin = reporter_bin();
         let (out, err) = log_files(&format!("reporter-{id}"));
         Command::new(bin)
             .args([
@@ -430,6 +430,30 @@ impl ServerSupervisor {
     }
 }
 
+impl Drop for ServerSupervisor {
+    fn drop(&mut self) {
+        if let Ok(mut containers) = self.containers.lock() {
+            let docker = docker_bin();
+            for (_id, name) in containers.drain() {
+                let _ = Command::new(&docker)
+                    .args(["rm", "-f", &name])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            }
+        }
+
+        if let Ok(mut children) = self.children.lock() {
+            for (_id, group) in children.drain() {
+                for mut child in group {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+            }
+        }
+    }
+}
+
 /// Which launch path `spawn()` takes. `FLEET_SPAWN_MODE=container` opts into Docker,
 /// `=ssh` deploys to the remote in `FLEET_SSH_TARGET`; anything else (incl. unset)
 /// keeps the default local-process path.
@@ -450,6 +474,50 @@ fn spawn_mode() -> SpawnMode {
 /// The `docker` CLI to drive (`FLEET_DOCKER_BIN`, default `docker`).
 fn docker_bin() -> String {
     std::env::var("FLEET_DOCKER_BIN").unwrap_or_else(|_| "docker".into())
+}
+
+fn editor_bin() -> PathBuf {
+    if let Ok(bin) = std::env::var("FLEET_EDITOR_BIN") {
+        if !bin.trim().is_empty() {
+            return PathBuf::from(bin);
+        }
+    }
+    find_on_path("code")
+        .or_else(|| {
+            [
+                "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
+                "/Applications/Visual Studio Code - Insiders.app/Contents/Resources/app/bin/code",
+            ]
+            .into_iter()
+            .map(PathBuf::from)
+            .find(|p| p.is_file())
+        })
+        .unwrap_or_else(|| PathBuf::from("code"))
+}
+
+fn reporter_bin() -> PathBuf {
+    if let Ok(bin) = std::env::var("FLEET_REPORTER_BIN") {
+        if !bin.trim().is_empty() {
+            return PathBuf::from(bin);
+        }
+    }
+    bundled_bin("fleet-reporter")
+        .or_else(|| find_on_path("fleet-reporter"))
+        .unwrap_or_else(|| PathBuf::from("fleet-reporter"))
+}
+
+fn bundled_bin(name: &str) -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join(name)))
+        .filter(|path| path.is_file())
+}
+
+fn find_on_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join(name))
+        .find(|path| path.is_file())
 }
 
 /// Inspect a running container for the host-reachable editor URL: the host port that
@@ -479,7 +547,7 @@ fn inspect_url(docker: &str, name: &str) -> Option<String> {
 /// actually reads: `<server-data-dir>/extensions`. This is intentionally tied to
 /// the per-server data dir, because `serve-web` ignores the desktop/user extension
 /// store when `--server-data-dir` is set.
-fn install_fleet_bridge(editor: &str, server_data: &Path) -> std::io::Result<()> {
+fn install_fleet_bridge(editor: &Path, server_data: &Path) -> std::io::Result<()> {
     let extensions_dir = fleet_bridge_extensions_dir(server_data);
     if fleet_bridge_installed(&extensions_dir) {
         return Ok(());
@@ -509,7 +577,8 @@ fn install_fleet_bridge(editor: &str, server_data: &Path) -> std::io::Result<()>
     let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
     let detail = if stderr.is_empty() { stdout } else { stderr };
     Err(std::io::Error::other(format!(
-        "failed to install fleet-bridge extension with `{editor}`: {detail}"
+        "failed to install fleet-bridge extension with `{}`: {detail}",
+        editor.display()
     )))
 }
 

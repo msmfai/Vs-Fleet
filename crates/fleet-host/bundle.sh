@@ -13,16 +13,20 @@ set -eo pipefail
 
 PROFILE="${1:-release}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$HERE/../.." && pwd)"
 APP="$HERE/Fleet.app"
 BIN="$HERE/target/$PROFILE/fleet-host"
+REPORTER_BIN="$ROOT/target/$PROFILE/fleet-reporter"
 BRIDGE_VSIX="$HERE/../../packages/fleet-bridge/fleet-bridge-0.2.0.vsix"
 BUILD_VERSION="$(date -u +%Y%m%d%H%M%S)"
 
 echo "building fleet-host ($PROFILE)..."
 if [ "$PROFILE" = "release" ]; then
   ( cd "$HERE" && cargo build --release )
+  ( cd "$ROOT" && cargo build --release -p fleet-reporter )
 else
   ( cd "$HERE" && cargo build )
+  ( cd "$ROOT" && cargo build -p fleet-reporter )
 fi
 [ -x "$BIN" ] || { echo "binary not found: $BIN"; exit 1; }
 
@@ -30,6 +34,11 @@ echo "assembling $APP..."
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/fleet-host"
+if [ -x "$REPORTER_BIN" ]; then
+  cp "$REPORTER_BIN" "$APP/Contents/MacOS/fleet-reporter"
+else
+  echo "warning: fleet-reporter binary not found at $REPORTER_BIN"
+fi
 if [ -f "$BRIDGE_VSIX" ]; then
   cp "$BRIDGE_VSIX" "$APP/Contents/Resources/fleet-bridge.vsix"
 else
