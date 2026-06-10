@@ -52,6 +52,17 @@ fn embedded_hub_runtime_dir_from(override_dir: Option<PathBuf>, home: Option<Pat
         .join("run")
 }
 
+fn embedded_hub_persist_enabled() -> bool {
+    embedded_hub_persist_enabled_from(std::env::var("FLEET_EMBEDDED_HUB_PERSIST").ok().as_deref())
+}
+
+fn embedded_hub_persist_enabled_from(value: Option<&str>) -> bool {
+    !matches!(
+        value.map(|v| v.trim().to_ascii_lowercase()),
+        Some(v) if matches!(v.as_str(), "0" | "false" | "off" | "no")
+    )
+}
+
 /// Fixed loopback port for the command-bridge WS server, so each code-server can
 /// be launched with `FLEET_BRIDGE_URL=ws://127.0.0.1:<this>` before Fleet starts.
 const BRIDGE_PORT: u16 = 51778;
@@ -215,7 +226,7 @@ fn main() {
                                 unix_path: runtime_dir.join("hub.sock"),
                                 lock_path: runtime_dir.join("hub.lock"),
                                 db_path: runtime_dir.join("hub.db"),
-                                persist: false,
+                                persist: embedded_hub_persist_enabled(),
                                 ..Default::default()
                             };
                             match fleet_hub::run(config).await {
@@ -441,6 +452,18 @@ mod tests {
             ),
             PathBuf::from("/custom/fleet-run")
         );
+    }
+
+    #[test]
+    fn embedded_hub_persistence_defaults_on_and_can_be_disabled() {
+        assert!(embedded_hub_persist_enabled_from(None));
+        assert!(embedded_hub_persist_enabled_from(Some("")));
+        assert!(embedded_hub_persist_enabled_from(Some("1")));
+        assert!(embedded_hub_persist_enabled_from(Some("true")));
+        assert!(!embedded_hub_persist_enabled_from(Some("0")));
+        assert!(!embedded_hub_persist_enabled_from(Some("false")));
+        assert!(!embedded_hub_persist_enabled_from(Some("off")));
+        assert!(!embedded_hub_persist_enabled_from(Some("no")));
     }
 
     #[test]
