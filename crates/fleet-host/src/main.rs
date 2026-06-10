@@ -103,6 +103,12 @@ fn main() {
             }
         })
         .setup(move |app| {
+            #[cfg(target_os = "macos")]
+            {
+                app.set_activation_policy(tauri::ActivationPolicy::Regular);
+                app.set_dock_visibility(true);
+            }
+
             let handle = app.handle().clone();
             let bridge_handle = app.handle().clone();
             let shared = shared.clone();
