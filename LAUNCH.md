@@ -96,6 +96,11 @@ removes the env, the shim, and stops the reporter).
   `ws-server-*` workspaces, `cs-userdata-server-*` data dirs, shims, reporter
   sockets, logs, and the `TMPDIR` used by `code serve-web`. Override with
   `FLEET_MUX_DIR` when a test needs isolation.
+- Fleet-spawned local processes use a GUI-safe tool PATH. It preserves the
+  inherited PATH, then adds common user CLI locations such as `~/.local/bin`,
+  Homebrew, per-user Nix profiles, and Home Manager app resource bins. This lets
+  a Finder-launched `Fleet.app` still discover `code`, `fleet-reporter`,
+  `claude`, and cmux-style wrappers; explicit `FLEET_*_BIN` overrides still win.
 - The embedded local Hub is a live mirror by default: it stores its lock/socket
   under `~/.fleet/run` and does not restore old sessions on cold boot. Override
   the runtime directory with `FLEET_RUNTIME_DIR`.

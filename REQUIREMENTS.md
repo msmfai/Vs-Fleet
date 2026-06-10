@@ -61,10 +61,11 @@ which is why `+` (new server) failed with no feedback.
   mirror under `~/.fleet/run`, and bridge registrations carry a per-window token
   so stale orphaned servers from an older Fleet process cannot attach to a new
   window.
-- **fleet-reporter discovery** — the bundled `Fleet.app` can't find `fleet-reporter` on a
-  GUI-launch PATH; bundle it into the `.app` / look next-to-exe.
-- **Binary discovery on GUI launch** — apps opened from Finder don't inherit your shell
-  PATH, so `code` / `fleet-reporter` may be missing; resolve via absolute paths or PATH
-  augmentation (or launch Fleet from a shell).
+- ✅ **GUI-launch binary discovery** — the debug app bundle includes
+  `fleet-reporter`, resolves bundled helpers next to `fleet-host`, and builds a
+  conservative tool PATH for Finder/LaunchServices launches. The path keeps the
+  inherited PATH first, then adds common macOS/Homebrew/Nix/Home Manager CLI
+  locations so `code`, `docker`, `claude`, and cmux-style wrappers are still
+  discoverable without launching Fleet from a shell.
 - **Surface spawn errors** — the rail's `spawnServer` swallows errors; a failed `+` shows
   nothing. Show the reason instead.
