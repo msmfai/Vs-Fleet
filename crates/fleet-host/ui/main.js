@@ -507,6 +507,20 @@ function rowMenuItems(id) {
     shortcut: "Enter",
     action: () => activateServer(id),
   }];
+  items.push({
+    id: "copy-id",
+    label: "Copy Session ID",
+    shortcut: "I",
+    action: () => copyRowValue("session id", id),
+  });
+  if (model.srv.url) {
+    items.push({
+      id: "copy-url",
+      label: "Copy URL",
+      shortcut: "U",
+      action: () => copyRowValue("url", model.srv.url),
+    });
+  }
 
   if (model.agent) {
     items.push({
@@ -1172,6 +1186,39 @@ function chooseRowMenuItem(index = rowMenu.index) {
   const action = item.action;
   closeRowMenu({ restoreFocus: false });
   action();
+}
+
+async function copyRowValue(label, value) {
+  try {
+    await copyText(String(value || ""));
+    showRailInfo(`copied ${label}`);
+  } catch (e) {
+    showHostStatus({
+      level: "error",
+      source: "rail",
+      message: `copy failed: ${String(e)}`,
+    });
+  }
+}
+
+async function copyText(text) {
+  if (!text) throw new Error("nothing to copy");
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    if (!document.execCommand("copy")) throw new Error("clipboard unavailable");
+  } finally {
+    textarea.remove();
+  }
 }
 
 function showHostStatus(payload) {
