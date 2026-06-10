@@ -16,6 +16,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 APP="$HERE/Fleet.app"
 BIN="$HERE/target/$PROFILE/fleet-host"
 BRIDGE_VSIX="$HERE/../../packages/fleet-bridge/fleet-bridge-0.2.0.vsix"
+BUILD_VERSION="$(date -u +%Y%m%d%H%M%S)"
 
 echo "building fleet-host ($PROFILE)..."
 if [ "$PROFILE" = "release" ]; then
@@ -55,7 +56,7 @@ fi
   echo '  <key>CFBundleIdentifier</key><string>dev.fleet.host</string>'
   echo '  <key>CFBundlePackageType</key><string>APPL</string>'
   echo '  <key>CFBundleShortVersionString</key><string>0.1.0</string>'
-  echo '  <key>CFBundleVersion</key><string>1</string>'
+  echo "  <key>CFBundleVersion</key><string>$BUILD_VERSION</string>"
   echo '  <key>NSHighResolutionCapable</key><true/>'
   echo '  <key>LSMinimumSystemVersion</key><string>10.15</string>'
   if [ "$ICON_PRESENT" -eq 1 ]; then
