@@ -192,6 +192,7 @@ impl ServerSupervisor {
             id: id.clone(),
             label: id.clone(),
             url,
+            owned: true,
         };
         self.children.lock().unwrap().insert(id.clone(), children);
         self.servers.lock().unwrap().push(server.clone());
@@ -297,6 +298,7 @@ impl ServerSupervisor {
             id: id.clone(),
             label: id.clone(),
             url,
+            owned: true,
         };
         self.containers.lock().unwrap().insert(id.clone(), name);
         self.servers.lock().unwrap().push(server.clone());
@@ -416,6 +418,7 @@ impl ServerSupervisor {
             id: id.clone(),
             label: format!("{id} @ {target}"),
             url,
+            owned: true,
         };
         self.children
             .lock()
@@ -1665,6 +1668,7 @@ wait
             id: "server-test".into(),
             label: "server-test".into(),
             url: "http://127.0.0.1:1/".into(),
+            owned: true,
         });
         supervisor
             .children

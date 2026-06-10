@@ -62,26 +62,31 @@ impl BridgeRegistry {
                 id: id.clone(),
                 label: c.label.clone(),
                 url: c.url.clone(),
+                owned: false,
             })
             .collect();
         servers.sort_by(|a, b| a.id.cmp(&b.id));
         servers
     }
 
-    /// Forward a VS Code command id to a server's bridge (no-op if not connected).
+    /// Forward a VS Code command id to a server's bridge.
     /// Synchronous + thread-safe — callable from the UI thread.
-    pub fn send_command(&self, server_id: &str, command: &str) {
+    pub fn send_command(&self, server_id: &str, command: &str) -> bool {
         let frame = serde_json::json!({ "type": "command", "id": command }).to_string();
         if let Ok(map) = self.inner.lock() {
             match map.get(server_id) {
                 Some(c) => {
                     let sent = c.tx.send(frame).is_ok();
                     tracing::info!(%server_id, %command, sent, "forwarding command to bridge");
+                    sent
                 }
                 None => {
-                    tracing::warn!(%server_id, %command, "no bridge for active server — dropped")
+                    tracing::warn!(%server_id, %command, "no bridge for active server — dropped");
+                    false
                 }
             }
+        } else {
+            false
         }
     }
 
@@ -242,6 +247,7 @@ async fn handle_conn(
         hello.label.clone(),
     );
     let _ = app.emit(SERVERS_CHANGED, registry.servers());
+    crate::mux::refresh_menu(&app);
 
     loop {
         tokio::select! {
@@ -260,6 +266,7 @@ async fn handle_conn(
         sleep(BRIDGE_DROP_GRACE).await;
         if registry.unregister(&hello.server_id, generation) {
             let _ = app.emit(SERVERS_CHANGED, registry.servers());
+            crate::mux::refresh_menu(&app);
         }
     });
 }
@@ -369,5 +376,33 @@ mod tests {
         let token = launch_token();
         assert_eq!(token.len(), 32);
         assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn send_command_reports_delivery() {
+        let registry = BridgeRegistry::new();
+        assert!(!registry.send_command("server-1", "workbench.action.terminal.new"));
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        registry.register(
+            "server-1".into(),
+            tx,
+            "http://127.0.0.1:9000/".into(),
+            "server-1".into(),
+        );
+
+        assert!(registry.send_command("server-1", "workbench.action.terminal.new"));
+        let frame = rx.try_recv().unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&frame).unwrap();
+        assert_eq!(
+            parsed,
+            serde_json::json!({
+                "type": "command",
+                "id": "workbench.action.terminal.new",
+            })
+        );
+
+        drop(rx);
+        assert!(!registry.send_command("server-1", "workbench.action.files.save"));
     }
 }
