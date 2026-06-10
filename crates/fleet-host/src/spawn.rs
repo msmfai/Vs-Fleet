@@ -96,6 +96,8 @@ impl ServerSupervisor {
 
         let base = fleet_mux_base();
         let _ = std::fs::create_dir_all(&base);
+        let process_cwd = fleet_spawn_cwd(&base);
+        std::fs::create_dir_all(&process_cwd)?;
         let folder = base.join(format!("ws-{id}"));
         // The workspace is either a fresh clone of FLEET_SPAWN_REPO (repo-as-workspace,
         // the north-star ergonomic) or an empty folder with a hint file.
@@ -127,7 +129,7 @@ impl ServerSupervisor {
         let reporter_socket = base.join(format!("reporter-{id}.sock"));
         let _ = std::fs::remove_file(&reporter_socket);
         let mut children: Vec<Child> = Vec::new();
-        match self.spawn_reporter(&id, &reporter_socket) {
+        match self.spawn_reporter(&id, &reporter_socket, &process_cwd) {
             Ok(child) => children.push(child),
             Err(e) => {
                 tracing::warn!(%id, error = %e, "reporter not started (no agent state)")
@@ -172,7 +174,10 @@ impl ServerSupervisor {
             &base.to_string_lossy(),
         );
         let mut cmd = Command::new(&editor);
-        cmd.args(&args).env("PATH", path).env("TMPDIR", &tmp_dir);
+        cmd.args(&args)
+            .env("PATH", path)
+            .env("TMPDIR", &tmp_dir)
+            .current_dir(&process_cwd);
         for (k, v) in &env {
             cmd.env(k, v);
         }
@@ -191,7 +196,7 @@ impl ServerSupervisor {
     }
 
     /// Launch this server's `fleet-reporter --serve` (session id = server id).
-    fn spawn_reporter(&self, id: &str, socket: &Path) -> std::io::Result<Child> {
+    fn spawn_reporter(&self, id: &str, socket: &Path, cwd: &Path) -> std::io::Result<Child> {
         let bin = reporter_bin();
         let (out, err) = log_files(&format!("reporter-{id}"));
         Command::new(bin)
@@ -204,6 +209,7 @@ impl ServerSupervisor {
                 "--session-id",
                 id,
             ])
+            .current_dir(cwd)
             .stdout(out)
             .stderr(err)
             .spawn()
@@ -712,17 +718,51 @@ fn install_claude_shim(shim_dir: &Path, reporter_socket: &Path) -> std::io::Resu
         serde_json::to_vec_pretty(&claude_hooks_settings(reporter_socket))?,
     )?;
 
-    // exec the REAL claude (never the shim — would recurse) with our hooks file.
+    // Exec the selected claude (never this shim) with our hooks file. The script
+    // removes Fleet's shim dir from PATH first so wrapper tools such as cmux can
+    // resolve their own real `claude` without bouncing back into Fleet.
     let shim = shim_dir.join("claude");
-    let script = format!(
-        "#!/bin/sh\n# Fleet claude shim — adds lifecycle hooks that relay to this\n# server's reporter, then runs the real claude unchanged.\nexec '{}' --settings '{}' \"$@\"\n",
-        real.display(),
-        hooks_file.display(),
-    );
+    let script = claude_shim_script(&real, &hooks_file, shim_dir);
     std::fs::write(&shim, script)?;
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755))?;
     Ok(shim)
+}
+
+fn claude_shim_script(real: &Path, hooks_file: &Path, shim_dir: &Path) -> String {
+    format!(
+        r#"#!/bin/sh
+# fleet-host-claude-shim
+# Fleet adds lifecycle hooks for this server, then execs the selected claude.
+# Remove only Fleet's shim dir from PATH first so downstream wrappers that call
+# `claude` do not resolve back to this shim and stack --settings recursively.
+fleet_shim_dir={shim_dir}
+clean_path=""
+saved_ifs=$IFS
+IFS=:
+for dir in $PATH; do
+  [ -n "$dir" ] || continue
+  [ "$dir" = "$fleet_shim_dir" ] && continue
+  if [ -z "$clean_path" ]; then
+    clean_path="$dir"
+  else
+    clean_path="$clean_path:$dir"
+  fi
+done
+IFS=$saved_ifs
+PATH="$clean_path"
+export PATH
+
+if [ "${{FLEET_CLAUDE_SHIM_ACTIVE:-}}" = "1" ]; then
+  exec {real} "$@"
+fi
+export FLEET_CLAUDE_SHIM_ACTIVE=1
+exec {real} --settings {hooks_file} "$@"
+"#,
+        real = shq(&real.to_string_lossy()),
+        hooks_file = shq(&hooks_file.to_string_lossy()),
+        shim_dir = shq(&shim_dir.to_string_lossy()),
+    )
 }
 
 /// Find the real `claude` binary: `FLEET_CLAUDE_BIN`, else the first `claude` on
@@ -871,6 +911,31 @@ fn fleet_mux_base_from(override_dir: Option<PathBuf>, home: Option<PathBuf>) -> 
         .join("mux")
 }
 
+/// Working directory for local child processes Fleet spawns.
+///
+/// Tauri apps launched by macOS can inherit a temp cwd under `/private/var/folders`.
+/// Keep the process root boring and user-owned while `--default-folder` still opens
+/// the per-server workspace under `~/.fleet/mux/ws-*`.
+fn fleet_spawn_cwd(base: &Path) -> PathBuf {
+    fleet_spawn_cwd_from(
+        std::env::var_os("FLEET_SPAWN_CWD").map(PathBuf::from),
+        std::env::var_os("HOME").map(PathBuf::from),
+        base,
+    )
+}
+
+fn fleet_spawn_cwd_from(
+    override_dir: Option<PathBuf>,
+    home: Option<PathBuf>,
+    base: &Path,
+) -> PathBuf {
+    if let Some(dir) = override_dir.filter(|p| !p.as_os_str().is_empty()) {
+        return dir;
+    }
+    home.filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| base.to_path_buf())
+}
+
 /// `(stdout, stderr)` redirected to `<fleet-mux>/<name>.log` so spawned
 /// processes are debuggable (falls back to null if the file can't be created).
 fn log_files(name: &str) -> (Stdio, Stdio) {
@@ -949,6 +1014,24 @@ mod tests {
     }
 
     #[test]
+    fn fleet_spawn_cwd_defaults_to_home_and_honors_override() {
+        let base = PathBuf::from("/Users/example/.fleet/mux");
+        assert_eq!(
+            fleet_spawn_cwd_from(None, Some(PathBuf::from("/Users/example")), &base),
+            PathBuf::from("/Users/example")
+        );
+        assert_eq!(
+            fleet_spawn_cwd_from(
+                Some(PathBuf::from("/custom/cwd")),
+                Some(PathBuf::from("/Users/example")),
+                &base
+            ),
+            PathBuf::from("/custom/cwd")
+        );
+        assert_eq!(fleet_spawn_cwd_from(None, None, &base), base);
+    }
+
+    #[test]
     fn spawned_server_settings_live_under_server_data_user_dir() {
         assert_eq!(
             spawned_server_settings_path(Path::new("/tmp/fleet-server-data")),
@@ -1016,6 +1099,78 @@ mod tests {
         assert_eq!(map["FLEET_BRIDGE_URL"], "ws://127.0.0.1:51778");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn claude_shim_removes_fleet_path_before_execing_wrapper() {
+        let dir = temp_test_dir("fleet-claude-shim-path-clean");
+        let shim_dir = dir.join("fleet-shim");
+        let wrapper_dir = dir.join("cmux-wrapper");
+        let real_dir = dir.join("real-claude");
+        let hooks_file = shim_dir.join("fleet-hooks.json");
+        let shim = shim_dir.join("claude");
+        let wrapper = wrapper_dir.join("claude");
+        let real = real_dir.join("claude");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&shim_dir).unwrap();
+        std::fs::create_dir_all(&wrapper_dir).unwrap();
+        std::fs::create_dir_all(&real_dir).unwrap();
+        std::fs::write(&hooks_file, "{}").unwrap();
+
+        write_executable(
+            &wrapper,
+            r#"#!/bin/sh
+self_dir=${0%/*}
+clean_path=""
+saved_ifs=$IFS
+IFS=:
+for dir in $PATH; do
+  [ -n "$dir" ] || continue
+  [ "$dir" = "$self_dir" ] && continue
+  if [ -z "$clean_path" ]; then clean_path="$dir"; else clean_path="$clean_path:$dir"; fi
+done
+IFS=$saved_ifs
+PATH="$clean_path"
+export PATH
+exec claude CMUX "$@"
+"#,
+        );
+        write_executable(
+            &real,
+            r#"#!/bin/sh
+printf 'REAL_CLAUDE\n'
+for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
+"#,
+        );
+        write_executable(&shim, &claude_shim_script(&wrapper, &hooks_file, &shim_dir));
+
+        let out = Command::new(&shim)
+            .env(
+                "PATH",
+                format!(
+                    "{}:{}:{}",
+                    shim_dir.display(),
+                    wrapper_dir.display(),
+                    real_dir.display()
+                ),
+            )
+            .arg("hello")
+            .output()
+            .unwrap();
+
+        assert!(out.status.success());
+        let stdout = String::from_utf8(out.stdout).unwrap();
+        let args = stdout
+            .lines()
+            .filter_map(|line| line.strip_prefix("ARG:"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            args,
+            vec!["CMUX", "--settings", hooks_file.to_str().unwrap(), "hello"]
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn bridge_extensions_dir_lives_under_server_data() {
         assert_eq!(
@@ -1045,5 +1200,12 @@ mod tests {
     fn read_json(path: &Path) -> serde_json::Value {
         let bytes = std::fs::read(path).unwrap();
         serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[cfg(unix)]
+    fn write_executable(path: &Path, content: &str) {
+        std::fs::write(path, content).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
 }
