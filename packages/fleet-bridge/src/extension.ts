@@ -14,7 +14,7 @@
  * `error:string`. On success the payload fields are action/query specific (below).
  *
  * HELLO (bridge→server, on connect; not a reply):
- *   { type:"hello", server_id, url, label, caps:string[] }
+ *   { type:"hello", server_id, url, label, caps:string[], token?:string }
  *     caps = the capability tokens this bridge supports, so the harness can gate
  *     behaviours via Behaviour.needs[]. Current caps (see CAPS const):
  *       "command" "query" "openFile" "typeText" "termSend" "writeFile"
@@ -81,7 +81,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const serverId = process.env.FLEET_SERVER_ID;
 
   // Diagnostic log file so Fleet can verify activation/receipt/execution.
-  const logPath = path.join(os.tmpdir(), "fleet-mux", `bridge-${serverId || "unknown"}.log`);
+  const logDir = process.env.FLEET_BRIDGE_LOG_DIR || path.join(os.tmpdir(), "fleet-mux");
+  const logPath = path.join(logDir, `bridge-${serverId || "unknown"}.log`);
   const log = (msg: string): void => {
     try {
       fs.mkdirSync(path.dirname(logPath), { recursive: true });
@@ -167,8 +168,14 @@ export function activate(context: vscode.ExtensionContext): void {
         url: process.env.FLEET_SERVER_URL || "",
         label: process.env.FLEET_SERVER_LABEL || serverId,
         caps: CAPS,
+        token: process.env.FLEET_BRIDGE_TOKEN || "",
       };
-      log(`ws open → hello ${JSON.stringify(registration)}`);
+      log(
+        `ws open → hello ${JSON.stringify({
+          ...registration,
+          token: registration.token ? "<redacted>" : "",
+        })}`
+      );
       socket.send(JSON.stringify(registration));
     });
 

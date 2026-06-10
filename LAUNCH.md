@@ -94,6 +94,13 @@ removes the env, the shim, and stops the reporter).
   native webview stack. Build/run it from `crates/fleet-host`.
 - Local Fleet-spawned VS Code servers default to `~/.fleet/mux`, including
   `ws-server-*` workspaces, `cs-userdata-server-*` data dirs, shims, reporter
-  sockets, and logs. Override with `FLEET_MUX_DIR` when a test needs isolation.
+  sockets, logs, and the `TMPDIR` used by `code serve-web`. Override with
+  `FLEET_MUX_DIR` when a test needs isolation.
+- The embedded local Hub is a live mirror by default: it stores its lock/socket
+  under `~/.fleet/run` and does not restore old sessions on cold boot. Override
+  the runtime directory with `FLEET_RUNTIME_DIR`.
+- Fleet generates a per-window bridge token and passes it to spawned servers via
+  `FLEET_BRIDGE_TOKEN`; stale orphaned servers from an older Fleet launch cannot
+  re-register into a new window.
 - The reporter socket defaults to `$XDG_RUNTIME_DIR/fleet/` (unix) or the temp
   dir. Override per-process with `FLEET_REPORTER_SOCKET`.

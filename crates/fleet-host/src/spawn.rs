@@ -55,10 +55,11 @@ pub struct ServerSupervisor {
     counter: AtomicU64,
     bridge_port: u16,
     hub_url: String,
+    bridge_token: String,
 }
 
 impl ServerSupervisor {
-    pub fn new(bridge_port: u16, hub_url: String) -> Self {
+    pub fn new(bridge_port: u16, hub_url: String, bridge_token: String) -> Self {
         Self {
             children: Mutex::new(HashMap::new()),
             containers: Mutex::new(HashMap::new()),
@@ -66,6 +67,7 @@ impl ServerSupervisor {
             counter: AtomicU64::new(1),
             bridge_port,
             hub_url,
+            bridge_token,
         }
     }
 
@@ -138,6 +140,8 @@ impl ServerSupervisor {
 
         // --- the editor: VS Code serve-web --------------------------------------
         let user_data = base.join(format!("cs-userdata-{id}"));
+        let tmp_dir = base.join("tmp");
+        std::fs::create_dir_all(&tmp_dir)?;
         let editor = editor_bin();
         write_spawned_server_settings(&user_data)?;
         install_fleet_bridge(&editor, &user_data)?;
@@ -164,9 +168,11 @@ impl ServerSupervisor {
             &id,
             &format!("ws://127.0.0.1:{}", self.bridge_port),
             &url,
+            &self.bridge_token,
+            &base.to_string_lossy(),
         );
         let mut cmd = Command::new(&editor);
-        cmd.args(&args).env("PATH", path);
+        cmd.args(&args).env("PATH", path).env("TMPDIR", &tmp_dir);
         for (k, v) in &env {
             cmd.env(k, v);
         }
@@ -249,6 +255,8 @@ impl ServerSupervisor {
                 "-e",
                 &format!("FLEET_BRIDGE_PORT={}", self.bridge_port),
                 "-e",
+                &format!("FLEET_BRIDGE_TOKEN={}", self.bridge_token),
+                "-e",
                 &format!("FLEET_HUB_URL={}", self.hub_url),
                 "-p",
                 &format!("{port}:8080"),
@@ -327,6 +335,8 @@ impl ServerSupervisor {
             &id,
             &format!("ws://127.0.0.1:{r_bridge}"),
             &url,
+            &self.bridge_token,
+            ".fleet",
         );
 
         let env_str = env
@@ -550,9 +560,7 @@ fn inspect_url(docker: &str, name: &str) -> Option<String> {
 /// store when `--server-data-dir` is set.
 fn install_fleet_bridge(editor: &Path, server_data: &Path) -> std::io::Result<()> {
     let extensions_dir = fleet_bridge_extensions_dir(server_data);
-    if fleet_bridge_installed(&extensions_dir) {
-        return Ok(());
-    }
+    let already_installed = fleet_bridge_installed(&extensions_dir);
 
     std::fs::create_dir_all(&extensions_dir)?;
     let vsix = find_fleet_bridge_vsix().ok_or_else(|| {
@@ -562,6 +570,9 @@ fn install_fleet_bridge(editor: &Path, server_data: &Path) -> std::io::Result<()
         )
     })?;
 
+    // Always refresh with --force. Fleet reuses per-server data dirs across host
+    // restarts, and the local bridge VSIX can change during development without
+    // a version bump.
     let out = Command::new(editor)
         .arg("--install-extension")
         .arg(&vsix)
@@ -570,7 +581,11 @@ fn install_fleet_bridge(editor: &Path, server_data: &Path) -> std::io::Result<()
         .arg("--force")
         .output()?;
     if out.status.success() {
-        tracing::info!(extensions_dir = %extensions_dir.display(), "installed fleet-bridge extension");
+        tracing::info!(
+            extensions_dir = %extensions_dir.display(),
+            refreshed = already_installed,
+            "installed fleet-bridge extension"
+        );
         return Ok(());
     }
 
@@ -794,11 +809,15 @@ fn fleet_env(
     id: &str,
     bridge_url: &str,
     server_url: &str,
+    bridge_token: &str,
+    bridge_log_dir: &str,
 ) -> Vec<(String, String)> {
     vec![
         ("FLEET_REPORTER_SOCKET".into(), reporter_socket.into()),
         ("FLEET_SESSION_ID".into(), id.into()),
         ("FLEET_BRIDGE_URL".into(), bridge_url.into()),
+        ("FLEET_BRIDGE_TOKEN".into(), bridge_token.into()),
+        ("FLEET_BRIDGE_LOG_DIR".into(), bridge_log_dir.into()),
         ("FLEET_SERVER_ID".into(), id.into()),
         ("FLEET_SERVER_LABEL".into(), id.into()),
         ("FLEET_SERVER_URL".into(), server_url.into()),
@@ -978,6 +997,23 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn fleet_env_includes_bridge_token_and_log_dir() {
+        let env = fleet_env(
+            "/tmp/reporter.sock",
+            "server-1",
+            "ws://127.0.0.1:51778",
+            "http://127.0.0.1:9000/",
+            "token-1",
+            "/Users/example/.fleet/mux",
+        );
+        let map: std::collections::HashMap<_, _> = env.into_iter().collect();
+
+        assert_eq!(map["FLEET_BRIDGE_TOKEN"], "token-1");
+        assert_eq!(map["FLEET_BRIDGE_LOG_DIR"], "/Users/example/.fleet/mux");
+        assert_eq!(map["FLEET_BRIDGE_URL"], "ws://127.0.0.1:51778");
     }
 
     #[test]

@@ -21,6 +21,7 @@ mod render;
 mod spawn;
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -32,6 +33,22 @@ const DEFAULT_HUB_URL: &str = "ws://127.0.0.1:51777";
 
 fn default_hub_addr() -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], fleet_hub::DEFAULT_WS_PORT))
+}
+
+fn embedded_hub_runtime_dir() -> PathBuf {
+    embedded_hub_runtime_dir_from(
+        std::env::var_os("FLEET_RUNTIME_DIR").map(PathBuf::from),
+        std::env::var_os("HOME").map(PathBuf::from),
+    )
+}
+
+fn embedded_hub_runtime_dir_from(override_dir: Option<PathBuf>, home: Option<PathBuf>) -> PathBuf {
+    if let Some(dir) = override_dir.filter(|d| !d.as_os_str().is_empty()) {
+        return dir;
+    }
+    home.unwrap_or_else(std::env::temp_dir)
+        .join(".fleet")
+        .join("run")
 }
 
 /// Fixed loopback port for the command-bridge WS server, so each code-server can
@@ -59,12 +76,17 @@ fn main() {
 
     let shared: hub_client::Shared = Arc::new(Mutex::new(RenderedInbox::default()));
     let registry = bridge::BridgeRegistry::new();
+    let bridge_token = bridge::launch_token();
 
     tauri::Builder::default()
         .manage(shared.clone())
         .manage(mux::MuxState::new())
         .manage(registry.clone())
-        .manage(spawn::ServerSupervisor::new(BRIDGE_PORT, ws_url.clone()))
+        .manage(spawn::ServerSupervisor::new(
+            BRIDGE_PORT,
+            ws_url.clone(),
+            bridge_token.clone(),
+        ))
         .invoke_handler(tauri::generate_handler![
             get_inbox,
             mux::get_servers,
@@ -117,6 +139,7 @@ fn main() {
             let shared = shared.clone();
             let ws_url = ws_url.clone();
             let registry = registry.clone();
+            let bridge_token = bridge_token.clone();
             // The embedded Hub, Hub link, and command-bridge / phone-home server
             // share one background runtime so Tauri owns the main thread.
             std::thread::spawn(move || {
@@ -127,9 +150,13 @@ fn main() {
                 rt.block_on(async move {
                     if start_local_hub {
                         tokio::spawn(async {
+                            let runtime_dir = embedded_hub_runtime_dir();
                             let config = fleet_hub::HubConfig {
                                 ws_addr: default_hub_addr(),
-                                persist: true,
+                                unix_path: runtime_dir.join("hub.sock"),
+                                lock_path: runtime_dir.join("hub.lock"),
+                                db_path: runtime_dir.join("hub.db"),
+                                persist: false,
                                 ..Default::default()
                             };
                             match fleet_hub::run(config).await {
@@ -145,7 +172,9 @@ fn main() {
                         // disconnected state on normal launches.
                         tokio::time::sleep(Duration::from_millis(100)).await;
                     }
-                    if let Err(e) = bridge::serve(bridge_handle, registry, BRIDGE_PORT).await {
+                    if let Err(e) =
+                        bridge::serve(bridge_handle, registry, BRIDGE_PORT, bridge_token).await
+                    {
                         tracing::error!(error = %e, "bridge server failed to bind");
                     }
                     hub_client::run(handle, shared, ws_url).await;
@@ -174,4 +203,24 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Fleet host");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn embedded_hub_runtime_defaults_under_home_and_honors_override() {
+        assert_eq!(
+            embedded_hub_runtime_dir_from(None, Some(PathBuf::from("/Users/example"))),
+            PathBuf::from("/Users/example/.fleet/run")
+        );
+        assert_eq!(
+            embedded_hub_runtime_dir_from(
+                Some(PathBuf::from("/custom/fleet-run")),
+                Some(PathBuf::from("/Users/example"))
+            ),
+            PathBuf::from("/custom/fleet-run")
+        );
+    }
 }
