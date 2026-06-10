@@ -183,9 +183,10 @@ Each track is independent once §3 lands. Format: scope · key files · DoD.
   with A on capability advertisement (`hello` reports supported caps). DoD: each new
   action/query has a round-trip test; behaviours needing them unblock.
 
-- **Track F — Scale / orchestration / reporting / CI**. JUnit XML + HTML report with
-  linked screenshots; concurrency tuning + colima resource guidance; a `make
-  eval`/`npm test`; retry-on-flake (configurable); container/image GC; a `--soak`
+- **Track F — Scale / orchestration / reporting / CI**. JUnit XML + HTML report,
+  PNG screenshot metadata, and a hosted screenshot review server; concurrency
+  tuning + colima resource guidance; a `make eval`/`npm test`; retry-on-flake
+  (configurable); container/image GC; a `--soak`
   mode (M rounds). DoD: `make eval` runs the full matrix at N≥10, emits all reports,
   leaves zero orphan containers.
 

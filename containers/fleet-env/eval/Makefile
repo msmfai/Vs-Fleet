@@ -4,15 +4,17 @@
 #   make eval PARALLEL=12      tune concurrency
 #   make eval SCENARIOS=base BEHAVIOURS=terminal.new
 #   make eval RETRIES=2        retry-on-flake (re-run failed rows, see below)
+#   make review                serve the screenshot review UI
+#   make metadata              write test context into screenshot PNG metadata
 #   make list                  print registered scenarios + behaviours
 #   make soak ROUNDS=5         run the matrix N times (stability / leak hunt)
 #   make gc                    remove orphan eval containers + dangling images
 #   make clean                 gc + wipe the artifacts dir
 #
-# Reports land in $(OUT): eval.json (§3.5), eval.xml (JUnit), eval.html (row report).
-# The screenshot review page is written to ./index.html at the eval root. run.mjs
-# auto-emits XML/HTML via FLEET_EVAL_* and the JSON via --json. Exit code is
-# non-zero on any unexpected fail/error.
+# Reports land in $(OUT): eval.json (§3.5), eval.xml (JUnit), eval.html (row report),
+# and screenshot PNGs tagged with their test context. `make review` serves the PNG
+# review UI. run.mjs auto-emits XML/HTML via FLEET_EVAL_* and the JSON via --json.
+# Exit code is non-zero on any unexpected fail/error.
 
 SHELL      := /bin/bash
 NODE       ?= node
@@ -21,6 +23,8 @@ RETRIES    ?= 0
 ROUNDS     ?= 3
 OUT        ?= artifacts
 IMAGE      ?= fleet-env:latest
+HOST       ?= 127.0.0.1
+REVIEW_PORT ?= 51779
 
 # Optional selectors → CLI flags only when set.
 SCENARIOS  ?=
@@ -45,15 +49,13 @@ endif
 JSON  := $(OUT)/eval.json
 JUNIT := $(OUT)/eval.xml
 HTML  := $(OUT)/eval.html
-REVIEW := $(CURDIR)/index.html
 
 # Exported so run.mjs's Reporter.finish() emits the XML/HTML without extra flags.
 export FLEET_EVAL_OUT   := $(OUT)
 export FLEET_EVAL_JUNIT := $(JUNIT)
 export FLEET_EVAL_HTML  := $(HTML)
-export FLEET_EVAL_REVIEW := $(REVIEW)
 
-.PHONY: eval list soak gc clean reports help install
+.PHONY: eval list soak gc clean reports review metadata help install
 
 help:
 	@grep -E '^#( |$$)' Makefile | sed -E 's/^# ?//'
@@ -79,7 +81,7 @@ eval:
 	  if [ $$rc -eq 0 ]; then echo "[make] retry passed — treating prior failures as flaky"; fi; \
 	done; \
 	$(MAKE) --no-print-directory gc; \
-	echo "[make] reports → $(JSON)  $(JUNIT)  $(HTML)  $(REVIEW)"; \
+	echo "[make] reports → $(JSON)  $(JUNIT)  $(HTML)  $(OUT)/*.png"; \
 	exit $$rc
 
 # Run the matrix ROUNDS times back-to-back (stability + leak hunting). Stops on the
@@ -96,7 +98,13 @@ list:
 	@$(NODE) run.mjs --list
 
 reports:
-	@echo "$(JSON)"; echo "$(JUNIT)"; echo "$(HTML)"; echo "$(REVIEW)"
+	@echo "$(JSON)"; echo "$(JUNIT)"; echo "$(HTML)"; echo "$(OUT)/*.png"
+
+review:
+	@$(NODE) scripts/review-server.mjs --json $(JSON) --host $(HOST) --port $(REVIEW_PORT)
+
+metadata:
+	@$(NODE) scripts/tag-png-context.mjs $(JSON)
 
 # Garbage-collect: kill/remove any leftover eval containers (name fleet-eval-*) and
 # prune dangling images. Safe to run anytime; never touches non-eval containers.

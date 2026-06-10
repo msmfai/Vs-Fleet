@@ -7,6 +7,8 @@
     "list": "node run.mjs --list",
     "eval": "make eval",
     "test": "make eval",
+    "review": "make review",
+    "metadata": "make metadata",
     "soak": "make soak",
     "gc": "make gc",
     "clean": "make clean"
