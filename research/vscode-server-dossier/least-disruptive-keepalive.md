@@ -12,19 +12,19 @@ and native menu command forwarding. Replace only the singleton editor surface
 with one editor child webview per Fleet server, selected by visibility and
 layout instead of by navigating the only editor webview to a new URL.
 
-The first implementation should be feature-gated, for example:
+Implementation note: the code now defaults to persistent editors, with this
+rollback gate:
 
 ```text
-FLEET_EDITOR_KEEPALIVE=1
+FLEET_EDITOR_KEEPALIVE=0
 ```
 
-That gate is a rollout guard, not the target product behavior. After VM
-screenshots, bridge-generation checks, and memory measurements pass, flip the
-default to persistent editors.
+That rollback is for comparison and emergency disablement. The target product
+behavior is persistent editors by default.
 
 ## Why This Is The Smallest Useful Change
 
-Current code shape:
+Original singleton code shape:
 
 - `build_window` creates one rail child webview and one singleton editor child
   webview.
@@ -58,8 +58,8 @@ enum EditorMode {
 }
 ```
 
-Keep the current singleton path available until the VM suite proves persistent
-editors are stable. In persistent mode:
+Keep the singleton path available as `FLEET_EDITOR_KEEPALIVE=0` while the VM
+suite proves persistent editors are stable. In persistent mode:
 
 1. Replace `MuxState.loaded: Mutex<Option<String>>` with per-server editor
    metadata:
@@ -174,7 +174,7 @@ valuable, but it does not replace persistent editor webviews.
 
 Add or extend one VM behavior around a single Fleet app run:
 
-1. Start Fleet with `FLEET_EDITOR_KEEPALIVE=1`.
+1. Start Fleet with keepalive enabled (the default).
 2. Spawn two `code serve-web` servers.
 3. Wait for both bridge hellos and record bridge generations.
 4. Open an integrated terminal in each server and print a unique marker.

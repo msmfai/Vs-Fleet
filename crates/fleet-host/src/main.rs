@@ -88,7 +88,7 @@ fn main() {
                     app.try_state::<mux::MuxState>(),
                 ) {
                     if let Some(active) = mux.selected.lock().ok().and_then(|g| g.clone()) {
-                        sup.close(&active);
+                        mux::close_server_by_id(app, &sup, &active);
                     }
                 }
             } else if let Some(server_id) = id.strip_prefix("server:") {
@@ -127,9 +127,11 @@ fn main() {
                 rt.block_on(async move {
                     if start_local_hub {
                         tokio::spawn(async {
-                            let mut config = fleet_hub::HubConfig::default();
-                            config.ws_addr = default_hub_addr();
-                            config.persist = true;
+                            let config = fleet_hub::HubConfig {
+                                ws_addr: default_hub_addr(),
+                                persist: true,
+                                ..Default::default()
+                            };
                             match fleet_hub::run(config).await {
                                 Ok(()) => tracing::info!("embedded Fleet Hub stopped"),
                                 Err(e) if e.downcast_ref::<fleet_hub::LockError>().is_some() => {

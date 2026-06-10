@@ -21,11 +21,11 @@ rendering, and keeping editor tabs connected while switching.
    bridge registration before navigating the editor can prevent the extension
    from ever activating.
 
-2. The current one-editor-webview design necessarily disconnects the previous
+2. Fleet's old one-editor-webview design necessarily disconnected the previous
    VS Code client on tab switch. A WebSocket is owned by the loaded page; when
    Fleet navigates the only editor webview to another server, the old page and
-   its client-side sockets go away. That is why bridge generations change and
-   why a terminal UI can visibly rebuild on return.
+   its client-side sockets go away. That is why bridge generations changed and
+   why a terminal UI could visibly rebuild on return.
 
 3. Keeping tabs live means keeping one loaded workbench document alive per
    server. The strongest design direction is a persistent child-webview pool:
@@ -48,11 +48,13 @@ rendering, and keeping editor tabs connected while switching.
    recommends the same setting for boxes, smears, or wrong glyphs in VS Code,
    Cursor, and Devin Desktop integrated terminals.
 
-## Current Fleet Facts
+## Fleet Facts
 
-- Fleet's host currently builds one rail webview plus one editor webview and
-  navigates that single editor surface between server URLs:
+- Fleet's host now builds one rail webview plus a placeholder editor webview,
+  then creates one persistent editor child webview per selected server:
   `crates/fleet-host/src/mux.rs`.
+- Keepalive is default-on. `FLEET_EDITOR_KEEPALIVE=0` restores the legacy
+  singleton editor path for rollback/comparison.
 - Fleet's bridge registry removes a server after the bridge WebSocket drops
   and a short grace period: `crates/fleet-host/src/bridge.rs`.
 - `fleet-bridge` is a workspace extension with `activationEvents:

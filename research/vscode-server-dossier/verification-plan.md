@@ -1,11 +1,11 @@
 # Verification Plan
 
-This is the proof plan for the research claims before Fleet changes its editor
-switching architecture.
+This is the proof plan for the editor keepalive architecture.
 
-## 1. Current Baseline
+## 1. Legacy Baseline
 
-Goal: prove the current one-webview navigation model reconnects.
+Goal: prove the legacy one-webview navigation model reconnects. Run with
+`FLEET_EDITOR_KEEPALIVE=0`.
 
 Procedure:
 
@@ -28,17 +28,17 @@ Procedure:
    - full Fleet-window screenshot including rail and editor;
    - Fleet host RSS, VS Code server RSS, webview renderer RSS, process count.
 
-Expected current result: at least the inactive server's workbench client reloads
+Expected legacy result: at least the inactive server's workbench client reloads
 or reconnects when its URL is reloaded into the singleton editor webview.
 
-## 2. Persistent Child Webview Prototype
+## 2. Persistent Child Webview Implementation
 
 Goal: prove a hidden child webview keeps one server connected while another is
 selected.
 
 Procedure:
 
-1. Implement a prototype branch with one child webview per spawned server.
+1. Run Fleet with keepalive enabled (the default).
 2. Use a unique webview label per server.
 3. Show/hide child webviews on selection without navigating already-loaded
    webviews.

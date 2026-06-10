@@ -1,15 +1,18 @@
 # L2.MUX — The multiplexer (rail · bridge registration · native-menu forward · embed · switch)
 
 The host-side multiplexer is `fleet-host` (Tauri): ONE window = the Discord-style
-**rail** webview (`mux::RAIL`, `index.html`, Fleet IPC) + ONE **editor surface**
-webview (`mux::EDITOR`, external code-server origin, no IPC). The rail's server list
-is the **supervisor** (Fleet-spawned, `spawn::ServerSupervisor::servers()`) chained
-with the **push-driven registry** (`bridge::BridgeRegistry::servers()`), deduped by id
-in `mux::get_servers`. Servers appear ONLY by phoning home (`hello` → `bridge.rs`
-`handle_conn`) — there is no static list. The native menu (`mux::build_menu`) forwards
-real VS Code command ids (`cmd:<id>`) through the registry to the **active** server's
-bridge (`registry.send_command`). Switching (`mux::select`) navigates the single editor
-webview to the target's `url` and re-syncs the rail.
+**rail** webview (`mux::RAIL`, `index.html`, Fleet IPC) + persistent **editor
+surfaces** (one child webview per live server, external code-server origin, no IPC).
+`mux::EDITOR` is only the blank placeholder / rollback singleton. The rail's server
+list is the **supervisor** (Fleet-spawned, `spawn::ServerSupervisor::servers()`)
+chained with the **push-driven registry** (`bridge::BridgeRegistry::servers()`),
+deduped by id in `mux::get_servers`. Servers appear by phoning home (`hello` →
+`bridge.rs` `handle_conn`) or immediately through the supervisor when Fleet spawned
+them. The native menu (`mux::build_menu`) forwards real VS Code command ids
+(`cmd:<id>`) through the registry to the **active** server's bridge
+(`registry.send_command`). Switching (`mux::select`) shows the target server's
+persistent editor webview, creating/navigating it on first selection, and hides the
+previous editor without navigating it away.
 
 These exercise host-side Rust + the Tauri window, which the current container eval
 harness (which only drives in-container bridges over `:51778`) does **not** start. So
@@ -134,7 +137,7 @@ A few assertions overlap the in-container bridge already wired by the eval harne
   the dedup + stable ordering that keeps rail rows from churning/duplicating.
 - status: TODO
 
-### L2.MUX.007 — Selecting a server navigates the single editor webview to its url
+### L2.MUX.007 — Selecting a server creates/shows its persistent editor webview
 - layer: L2
 - scenarios: [base]
 - isolation: fresh
@@ -143,36 +146,38 @@ A few assertions overlap the in-container bridge already wired by the eval harne
   registered; editor webview at `about:blank`; `selected==None`.
 - action: invoke `select_server("env-1")` (the rail-click path → `mux::select`).
 - expected: `MuxState.selected` becomes `Some("env-1")`; `mux::server_url` resolves the
-  url; the EDITOR webview navigates to that url; `MuxState.loaded` becomes that url;
-  the rail eval's `window.__fleetSyncSelection()` runs.
-- assert: `selected_server()` == `"env-1"`; the EDITOR webview's URL == `env-1`'s url
-  (poll until the code-server workbench responds `200`/`302`); the rail's selected row
-  has the active marker.
+  url; a child webview labeled from `env-1` is created if missing; that webview
+  navigates to the URL; the placeholder `EDITOR` webview is hidden; the rail eval's
+  `window.__fleetSyncSelection()` runs.
+- assert: `selected_server()` == `"env-1"`; the persistent editor webview's URL ==
+  `env-1`'s url (poll until the code-server workbench responds `200`/`302`); the
+  rail's selected row has the active marker; the placeholder is not visible.
 - machine-state: the embedded code-server's ext-host comes online (the webview is a
   real workbench client — like Playwright in the eval harness).
 - edges: see MUX.008 (re-select no-op), MUX.009 (unknown id), MUX.010 (switch
   reattach).
-- why: switch = navigate the ONE editor surface (the cmux single-webview model) — the
-  core value prop; guards `select` resolving the url via supervisor→registry and
-  actually driving the webview.
+- why: first select attaches one persistent editor client to that server. Later
+  switches must preserve that client rather than unload it, which is the Fleet
+  version of cmux's "pane stays alive" contract.
 - status: TODO
 
-### L2.MUX.008 — Re-selecting the already-loaded server does NOT reload the editor
+### L2.MUX.008 — Re-selecting the already-loaded server does NOT reload its editor
 - layer: L2
 - scenarios: [base]
 - isolation: fresh
 - needs: [host-harness]
-- precondition: `env-1` selected and loaded (MUX.007); `MuxState.loaded == env-1.url`.
+- precondition: `env-1` selected and loaded (MUX.007); its `EditorEntry.loaded_url`
+  is `env-1.url`.
 - action: invoke `select_server("env-1")` again.
-- expected: `select` updates `selected` (idempotent) but the `loaded.as_deref() !=
-  Some(target)` guard is FALSE, so `wv.navigate` is NOT called — the webview keeps its
-  live session (no reload, no terminal churn).
+- expected: `select` updates `selected` (idempotent) but the per-server loaded URL
+  guard is false, so `wv.navigate` is NOT called — the webview keeps its live session
+  (no reload, no terminal churn).
 - assert: instrument/observe that no `navigate` fires on the second select (e.g. the
   embedded workbench's page-load counter is unchanged; the editor's running terminal
   survives — `terminalCount` via the in-container bridge query is unchanged across the
   re-select).
-- why: re-clicking the active tab must not nuke the session (the whole point of one
-  stable webview); guards the `loaded`-equality short-circuit in `select`.
+- why: re-clicking the active tab must not nuke the session; guards the per-server
+  loaded-URL short-circuit in `select`.
 - status: TODO
 
 ### L2.MUX.009 — Selecting an unknown server id is a clean no-op (no navigate)
@@ -183,15 +188,15 @@ A few assertions overlap the in-container bridge already wired by the eval harne
 - precondition: registry has `env-1`; editor at `about:blank`.
 - action: invoke `select_server("does-not-exist")`.
 - expected: `select` sets `selected=Some("does-not-exist")` but `server_url` returns
-  `None`, so the `if let Some(target)` branch is skipped — no navigate; `loaded`
-  unchanged; the rail sync eval still runs.
-- assert: editor webview URL stays `about:blank`; `selected_server()` ==
-  `"does-not-exist"` (selection recorded) but `loaded` is still `None`.
+  `None`, so no editor webview is created or navigated; the placeholder remains
+  visible; the rail sync eval still runs.
+- assert: no `editor:does-not-exist` webview exists; placeholder editor URL stays
+  `about:blank`; `selected_server()` == `"does-not-exist"`.
 - why: a stale rail click (server dropped between render and click) must not crash or
   blank-navigate; guards the `server_url` `None` path.
 - status: TODO
 
-### L2.MUX.010 — Switching away and back reattaches the prior workspace session
+### L2.MUX.010 — Switching away and back preserves both workspace clients
 - layer: L2
 - scenarios: [base]
 - isolation: fresh
@@ -199,17 +204,18 @@ A few assertions overlap the in-container bridge already wired by the eval harne
 - precondition: TWO servers `env-1`,`env-2` registered; `env-1` selected; a terminal
   opened in `env-1`'s embedded workbench running a marker (`echo FLEET_REATTACH; sleep
   600`).
-- action: `select_server("env-2")` (navigate away), then `select_server("env-1")`
-  (navigate back).
-- expected: code-server keeps `env-1`'s session server-side, so navigating back
-  reattaches its terminal + the still-running process (the cmux reattach model).
+- action: `select_server("env-2")`, then `select_server("env-1")`.
+- expected: Fleet hides `env-1`'s persistent editor webview and shows `env-2`'s; on
+  return it shows the already-loaded `env-1` webview without navigating it. Both
+  bridge generations stay stable through the switch.
 - assert: after the round-trip, query `env-1`'s in-container bridge: `terminalCount`
   is the same as before the switch-away and `terminalText` still contains
-  `FLEET_REATTACH` (the process survived the webview navigation, because the
-  server-side session persisted).
-- why: this is the multiplexer's reason to exist — switching tabs must not kill
-  in-flight agents/terminals; guards that switch navigates (not destroys) and
-  code-server's server-side session model is intact.
+  `FLEET_REATTACH`; assert the bridge did not deregister/reregister for either
+  server; assert full-window screenshots include the rail, selected tab, VS Code tabs,
+  and a nonblank editor pane.
+- why: this is the multiplexer's reason to exist — switching tabs must feel like
+  cmux: in-flight agents/terminals stay alive and switching is instantaneous surface
+  visibility work, not a client teardown/reconnect cycle.
 - status: TODO
 
 ### L2.MUX.011 — Native menu `cmd:<id>` forwards the command to the ACTIVE server only

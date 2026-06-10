@@ -1,22 +1,20 @@
 //! The multiplexer window — Fleet's core value proposition.
 //!
 //! ONE window hosting the Discord-style **rail** (Fleet's own UI: the list of
-//! VS Code *server* workspaces + their agent state) plus ONE embedded **editor
-//! surface** (a single webview) that navigates between servers on switch.
-//! code-server keeps each workspace's session server-side, so navigating back
-//! reattaches its terminals + running agent (the cmux model: window → workspace →
-//! surface). A single full-size webview is stable; multiple occluded/1×1 webviews
-//! churn the connection or garble the GPU terminal.
+//! VS Code *server* workspaces + their agent state) plus persistent embedded
+//! **editor surfaces** (one child webview per live server). Switching servers is
+//! a visibility/layout operation, not a navigation away from the previous VS Code
+//! client, so terminals and bridge connections stay warm like a tmux/cmux pane.
 //!
 //! Only the rail webview gets Fleet's IPC; each editor surface is a plain
 //! external origin (the code-server) with no Fleet API access.
 
-use std::sync::Mutex;
+use std::{collections::HashMap, sync::Mutex};
 
 use serde::{Deserialize, Serialize};
 use tauri::{
-    webview::WebviewBuilder, App, AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State,
-    WindowEvent,
+    utils::config::BackgroundThrottlingPolicy, webview::WebviewBuilder, App, AppHandle, Emitter,
+    LogicalPosition, LogicalSize, Manager, State, WindowEvent,
 };
 
 /// Width of the rail, in logical pixels.
@@ -37,15 +35,23 @@ pub struct Server {
     pub url: String,
 }
 
-/// Multiplexer state: which server is selected + what URL the editor currently
-/// shows. The server LIST is the supervisor (spawned) + the push-driven
+/// One persistent editor webview owned by a server id.
+#[derive(Debug, Clone)]
+struct EditorEntry {
+    label: String,
+    loaded_url: Option<String>,
+}
+
+/// Multiplexer state: which server is selected + editor webviews by server id.
+/// The server LIST is the supervisor (spawned) + the push-driven
 /// [`crate::bridge::BridgeRegistry`].
 #[derive(Default)]
 pub struct MuxState {
     pub selected: Mutex<Option<String>>,
-    /// The URL currently loaded in the editor surface (so we only re-navigate on
-    /// an actual change).
+    /// Legacy singleton loaded URL, used only when `FLEET_EDITOR_KEEPALIVE=0`.
     loaded: Mutex<Option<String>>,
+    /// Persistent editor webviews keyed by Fleet server id.
+    editors: Mutex<HashMap<String, EditorEntry>>,
 }
 
 impl MuxState {
@@ -54,8 +60,36 @@ impl MuxState {
     }
 }
 
-/// The single editor surface webview label.
+/// The placeholder/singleton editor surface webview label.
 pub const EDITOR: &str = "editor";
+
+fn keepalive_enabled() -> bool {
+    keepalive_env_enabled(std::env::var("FLEET_EDITOR_KEEPALIVE").ok().as_deref())
+}
+
+fn keepalive_env_enabled(value: Option<&str>) -> bool {
+    !matches!(
+        value.map(|v| v.trim().to_ascii_lowercase()),
+        Some(v) if matches!(v.as_str(), "0" | "false" | "off" | "no")
+    )
+}
+
+fn editor_label_for(id: &str) -> String {
+    let mut label = String::from("editor:");
+    for b in id.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.') {
+            label.push(b as char);
+        } else {
+            use std::fmt::Write;
+            let _ = write!(label, "~{b:02x}");
+        }
+    }
+    label
+}
+
+fn editor_builder(label: impl Into<String>, url: tauri::WebviewUrl) -> WebviewBuilder<tauri::Wry> {
+    WebviewBuilder::new(label, url).background_throttling(BackgroundThrottlingPolicy::Disabled)
+}
 
 /// Look up the editor URL for a server id.
 ///
@@ -92,9 +126,8 @@ fn bridge_registered(app: &AppHandle, id: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Build the multiplexer window: the rail + ONE editor surface that navigates
-/// between servers on switch (a single full-size webview is stable; multiple
-/// occluded/1×1 webviews churn the VS Code connection).
+/// Build the multiplexer window: the rail plus a placeholder editor surface.
+/// Persistent server editor webviews are created on first selection.
 pub fn build_window(app: &mut App) -> tauri::Result<()> {
     let width = 1320.0_f64;
     let height = 860.0_f64;
@@ -123,15 +156,18 @@ pub fn build_window(app: &mut App) -> tauri::Result<()> {
         LogicalSize::new(RAIL_W, height),
     )?;
 
-    // ONE editor surface (blank until a server is selected). code-server shows its
-    // own loading screen while the workbench builds, so no Fleet-side overlay.
+    // Placeholder editor surface (blank until a server is selected). It also acts
+    // as the rollback singleton when FLEET_EDITOR_KEEPALIVE=0.
     let blank = "about:blank".parse().expect("about:blank is a valid url");
     window.add_child(
-        WebviewBuilder::new(EDITOR, tauri::WebviewUrl::External(blank)),
+        editor_builder(EDITOR, tauri::WebviewUrl::External(blank)),
         LogicalPosition::new(RAIL_W, 0.0),
         LogicalSize::new(width - RAIL_W, height),
     )?;
-    tracing::info!("multiplexer window built (awaiting registrations)");
+    tracing::info!(
+        keepalive = keepalive_enabled(),
+        "multiplexer window built (awaiting registrations)"
+    );
 
     let app_handle = app.handle().clone();
     window.on_window_event(move |event| {
@@ -181,19 +217,26 @@ pub fn select_spawned(app: AppHandle, id: String) {
     std::thread::spawn(move || {
         for delay_ms in [750_u64, 1_500, 3_000, 6_000] {
             std::thread::sleep(std::time::Duration::from_millis(delay_ms));
-            let still_selected = app
-                .try_state::<MuxState>()
-                .and_then(|state| state.selected.lock().ok().and_then(|g| g.clone()))
-                .as_deref()
-                == Some(id.as_str());
-            if !still_selected {
-                break;
-            }
             if bridge_registered(&app, &id) {
                 tracing::info!(server_id = %id, "spawned server registered; stopping navigation retries");
                 break;
             }
-            select_impl(&app, id.clone(), true);
+            if keepalive_enabled() {
+                if server_url(&app, &id).is_none() {
+                    break;
+                }
+                refresh_persistent_editor(&app, &id, true);
+            } else {
+                let still_selected = app
+                    .try_state::<MuxState>()
+                    .and_then(|state| state.selected.lock().ok().and_then(|g| g.clone()))
+                    .as_deref()
+                    == Some(id.as_str());
+                if !still_selected {
+                    break;
+                }
+                select_impl(&app, id.clone(), true);
+            }
         }
     });
 }
@@ -213,15 +256,12 @@ pub fn spawn_server(
 /// Tauri command: close server `id` (kills the process Fleet spawned).
 #[tauri::command]
 pub fn close_server(app: AppHandle, sup: State<'_, crate::spawn::ServerSupervisor>, id: String) {
-    sup.close(&id);
-    let _ = app.emit(crate::bridge::SERVERS_CHANGED, ());
+    close_server_by_id(&app, &sup, &id);
 }
 
-/// Switch the editor surface to server `id` (shared by the rail and the menu):
-/// navigate the single editor webview to that server's URL. Only navigates when
-/// the target URL actually changes (so re-selecting a loaded server doesn't reload
-/// it, but a pending→ready transition does). code-server shows its own loading
-/// screen while the workbench builds.
+/// Switch the editor surface to server `id` (shared by the rail and the menu).
+/// In keepalive mode this shows that server's persistent editor webview; in
+/// rollback singleton mode it navigates the single editor webview.
 pub fn select(app: &AppHandle, id: String) {
     select_impl(app, id, false);
 }
@@ -233,15 +273,29 @@ fn select_impl(app: &AppHandle, id: String, force_navigate: bool) {
     if let Ok(mut sel) = state.selected.lock() {
         *sel = Some(id.clone());
     }
+
+    if keepalive_enabled() {
+        select_persistent(app, &state, &id, force_navigate);
+        sync_rail_selection(app);
+        return;
+    }
+
+    select_singleton(app, &state, &id, force_navigate);
+    sync_rail_selection(app);
+}
+
+fn select_singleton(app: &AppHandle, state: &State<'_, MuxState>, id: &str, force_navigate: bool) {
     // Navigate the editor to the server's URL (only if it changed, so re-selecting
     // the same server doesn't reload it). The loading overlay is raised/lowered by
     // the editor's own page-load events (see `build_window`).
-    if let Some(target) = server_url(app, &id) {
+    if let Some(target) = server_url(app, id) {
         if let Ok(mut loaded) = state.loaded.lock() {
             if force_navigate || loaded.as_deref() != Some(target.as_str()) {
                 if let (Some(wv), Ok(parsed)) = (app.get_webview(EDITOR), target.parse()) {
                     tracing::info!(
+                        mode = "singleton",
                         server_id = %id,
+                        editor_label = EDITOR,
                         url = %target,
                         force = force_navigate,
                         "navigating editor surface"
@@ -249,7 +303,9 @@ fn select_impl(app: &AppHandle, id: String, force_navigate: bool) {
                     match wv.navigate(parsed) {
                         Ok(()) => *loaded = Some(target),
                         Err(e) => tracing::warn!(
+                            mode = "singleton",
                             server_id = %id,
+                            editor_label = EDITOR,
                             url = %target,
                             error = %e,
                             "editor surface navigation failed"
@@ -259,6 +315,262 @@ fn select_impl(app: &AppHandle, id: String, force_navigate: bool) {
             }
         }
     }
+    retile(app);
+}
+
+fn select_persistent(app: &AppHandle, state: &State<'_, MuxState>, id: &str, force_navigate: bool) {
+    let Some(target) = server_url(app, id) else {
+        retile(app);
+        return;
+    };
+    let Some(label) = ensure_persistent_editor(app, state, id) else {
+        retile(app);
+        return;
+    };
+    navigate_persistent_editor(app, state, id, &label, &target, force_navigate);
+    retile(app);
+    if let Some(wv) = app.get_webview(&label) {
+        let _ = wv.set_focus();
+    }
+}
+
+fn refresh_persistent_editor(app: &AppHandle, id: &str, force_navigate: bool) {
+    let Some(state) = app.try_state::<MuxState>() else {
+        return;
+    };
+    let Some(target) = server_url(app, id) else {
+        return;
+    };
+    let Some(label) = ensure_persistent_editor(app, &state, id) else {
+        return;
+    };
+    navigate_persistent_editor(app, &state, id, &label, &target, force_navigate);
+}
+
+fn ensure_persistent_editor(
+    app: &AppHandle,
+    state: &State<'_, MuxState>,
+    id: &str,
+) -> Option<String> {
+    if let Ok(editors) = state.editors.lock() {
+        if let Some(entry) = editors.get(id) {
+            return Some(entry.label.clone());
+        }
+    }
+
+    let label = editor_label_for(id);
+    if app.get_webview(&label).is_none() {
+        let win = app.get_window(WINDOW)?;
+        let (pos, size) = editor_pane(app).unwrap_or((
+            LogicalPosition::new(RAIL_W, 0.0),
+            LogicalSize::new(960.0, 720.0),
+        ));
+        let blank = "about:blank".parse().expect("about:blank is a valid url");
+        match win.add_child(
+            editor_builder(label.clone(), tauri::WebviewUrl::External(blank)),
+            pos,
+            size,
+        ) {
+            Ok(wv) => {
+                let _ = wv.hide();
+                tracing::info!(
+                    mode = "persistent",
+                    server_id = %id,
+                    editor_label = %label,
+                    "created persistent editor surface"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    mode = "persistent",
+                    server_id = %id,
+                    editor_label = %label,
+                    error = %e,
+                    "persistent editor surface creation failed"
+                );
+                return None;
+            }
+        }
+    }
+
+    if let Ok(mut editors) = state.editors.lock() {
+        editors.entry(id.to_string()).or_insert(EditorEntry {
+            label: label.clone(),
+            loaded_url: None,
+        });
+    }
+    Some(label)
+}
+
+fn navigate_persistent_editor(
+    app: &AppHandle,
+    state: &State<'_, MuxState>,
+    id: &str,
+    label: &str,
+    target: &str,
+    force_navigate: bool,
+) {
+    let should_navigate = state
+        .editors
+        .lock()
+        .ok()
+        .and_then(|editors| {
+            editors
+                .get(id)
+                .map(|entry| force_navigate || entry.loaded_url.as_deref() != Some(target))
+        })
+        .unwrap_or(force_navigate);
+    if !should_navigate {
+        return;
+    }
+
+    let Ok(parsed) = target.parse() else {
+        tracing::warn!(
+            mode = "persistent",
+            server_id = %id,
+            editor_label = %label,
+            url = %target,
+            "persistent editor URL could not be parsed"
+        );
+        return;
+    };
+    let Some(wv) = app.get_webview(label) else {
+        tracing::warn!(
+            mode = "persistent",
+            server_id = %id,
+            editor_label = %label,
+            url = %target,
+            "persistent editor surface missing during navigation"
+        );
+        return;
+    };
+    tracing::info!(
+        mode = "persistent",
+        server_id = %id,
+        editor_label = %label,
+        url = %target,
+        force = force_navigate,
+        "navigating persistent editor surface"
+    );
+    match wv.navigate(parsed) {
+        Ok(()) => {
+            if let Ok(mut editors) = state.editors.lock() {
+                if let Some(entry) = editors.get_mut(id) {
+                    entry.loaded_url = Some(target.to_string());
+                }
+            }
+        }
+        Err(e) => tracing::warn!(
+            mode = "persistent",
+            server_id = %id,
+            editor_label = %label,
+            url = %target,
+            error = %e,
+            "persistent editor surface navigation failed"
+        ),
+    }
+}
+
+pub fn close_server_by_id(app: &AppHandle, sup: &crate::spawn::ServerSupervisor, id: &str) {
+    let was_selected = app
+        .try_state::<MuxState>()
+        .and_then(|state| state.selected.lock().ok().and_then(|g| g.clone()))
+        .as_deref()
+        == Some(id);
+
+    close_editor(app, id);
+    let closed = sup.close(id);
+    if let Some(reg) = app.try_state::<crate::bridge::BridgeRegistry>() {
+        let _ = reg.forget(id);
+    }
+
+    if was_selected {
+        if let Some(state) = app.try_state::<MuxState>() {
+            if let Ok(mut selected) = state.selected.lock() {
+                *selected = None;
+            }
+            if !keepalive_enabled() {
+                blank_singleton_editor(app, &state);
+            }
+        }
+    }
+
+    let _ = app.emit(crate::bridge::SERVERS_CHANGED, ());
+
+    if was_selected {
+        if let Some(next) = first_server_id(app, Some(id)) {
+            select_impl(app, next, false);
+        } else {
+            retile(app);
+            sync_rail_selection(app);
+        }
+    } else {
+        retile(app);
+    }
+
+    tracing::info!(server_id = %id, closed, "close server requested");
+}
+
+fn close_editor(app: &AppHandle, id: &str) {
+    let Some(state) = app.try_state::<MuxState>() else {
+        return;
+    };
+    let entry = state
+        .editors
+        .lock()
+        .ok()
+        .and_then(|mut editors| editors.remove(id));
+    if let Some(entry) = entry {
+        if let Some(wv) = app.get_webview(&entry.label) {
+            match wv.close() {
+                Ok(()) => tracing::info!(
+                    server_id = %id,
+                    editor_label = %entry.label,
+                    "closed persistent editor surface"
+                ),
+                Err(e) => tracing::warn!(
+                    server_id = %id,
+                    editor_label = %entry.label,
+                    error = %e,
+                    "persistent editor surface close failed"
+                ),
+            }
+        }
+    }
+}
+
+fn blank_singleton_editor(app: &AppHandle, state: &State<'_, MuxState>) {
+    let blank = "about:blank".parse().expect("about:blank is a valid url");
+    if let Some(wv) = app.get_webview(EDITOR) {
+        let _ = wv.navigate(blank);
+    }
+    if let Ok(mut loaded) = state.loaded.lock() {
+        *loaded = None;
+    }
+}
+
+fn first_server_id(app: &AppHandle, exclude: Option<&str>) -> Option<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut ids = Vec::new();
+    if let Some(sup) = app.try_state::<crate::spawn::ServerSupervisor>() {
+        for server in sup.servers() {
+            if exclude != Some(server.id.as_str()) && seen.insert(server.id.clone()) {
+                ids.push(server.id);
+            }
+        }
+    }
+    if let Some(reg) = app.try_state::<crate::bridge::BridgeRegistry>() {
+        for server in reg.servers() {
+            if exclude != Some(server.id.as_str()) && seen.insert(server.id.clone()) {
+                ids.push(server.id);
+            }
+        }
+    }
+    ids.sort();
+    ids.into_iter().next()
+}
+
+fn sync_rail_selection(app: &AppHandle) {
     if let Some(rail) = app.get_webview(RAIL) {
         let _ = rail.eval("window.__fleetSyncSelection && window.__fleetSyncSelection()");
     }
@@ -512,10 +824,78 @@ fn retile(app: &AppHandle) {
         let _ = rail.set_size(LogicalSize::new(RAIL_W, h));
     }
 
-    // The single editor surface fills the pane to the right of the rail.
+    let pos = LogicalPosition::new(RAIL_W, 0.0);
     let pane = LogicalSize::new((w - RAIL_W).max(120.0), h);
-    if let Some(wv) = app.get_webview(EDITOR) {
-        let _ = wv.set_position(LogicalPosition::new(RAIL_W, 0.0));
+
+    if keepalive_enabled() {
+        let Some(state) = app.try_state::<MuxState>() else {
+            return;
+        };
+        let selected = state.selected.lock().ok().and_then(|g| g.clone());
+        let mut active_visible = false;
+        if let Ok(editors) = state.editors.lock() {
+            for (id, entry) in editors.iter() {
+                if selected.as_deref() == Some(id.as_str()) {
+                    if let Some(wv) = app.get_webview(&entry.label) {
+                        let _ = wv.set_position(pos);
+                        let _ = wv.set_size(pane);
+                        let _ = wv.show();
+                        active_visible = true;
+                    }
+                } else if let Some(wv) = app.get_webview(&entry.label) {
+                    let _ = wv.hide();
+                }
+            }
+        }
+        if let Some(wv) = app.get_webview(EDITOR) {
+            if active_visible {
+                let _ = wv.hide();
+            } else {
+                let _ = wv.set_position(pos);
+                let _ = wv.set_size(pane);
+                let _ = wv.show();
+            }
+        }
+    } else if let Some(wv) = app.get_webview(EDITOR) {
+        let _ = wv.set_position(pos);
         let _ = wv.set_size(pane);
+        let _ = wv.show();
+    }
+}
+
+fn editor_pane(app: &AppHandle) -> Option<(LogicalPosition<f64>, LogicalSize<f64>)> {
+    let win = app.get_window(WINDOW)?;
+    let size = win.inner_size().ok()?;
+    let sf = win.scale_factor().ok()?;
+    let w = size.width as f64 / sf;
+    let h = size.height as f64 / sf;
+    Some((
+        LogicalPosition::new(RAIL_W, 0.0),
+        LogicalSize::new((w - RAIL_W).max(120.0), h),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{editor_label_for, keepalive_env_enabled};
+
+    #[test]
+    fn keepalive_defaults_on_with_common_disable_values() {
+        assert!(keepalive_env_enabled(None));
+        assert!(keepalive_env_enabled(Some("1")));
+        assert!(keepalive_env_enabled(Some("true")));
+        assert!(!keepalive_env_enabled(Some("0")));
+        assert!(!keepalive_env_enabled(Some("false")));
+        assert!(!keepalive_env_enabled(Some("OFF")));
+        assert!(!keepalive_env_enabled(Some(" no ")));
+    }
+
+    #[test]
+    fn editor_labels_escape_external_server_ids() {
+        assert_eq!(editor_label_for("server-1"), "editor:server-1");
+        assert_eq!(
+            editor_label_for("host/ws 1@prod"),
+            "editor:host~2fws~201~40prod"
+        );
     }
 }
