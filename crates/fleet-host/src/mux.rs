@@ -810,14 +810,17 @@ fn build_server_menu<M: Manager<tauri::Wry>>(
         .separator()
         .item(
             &MenuItemBuilder::with_id("rail:palette", "Session Palette")
+                .accelerator("CmdOrCtrl+K")
                 .build(manager)?,
         )
         .item(
             &MenuItemBuilder::with_id("rail:jump-unread", "Jump to Next Unread")
+                .accelerator("CmdOrCtrl+J")
                 .build(manager)?,
         )
         .item(
             &MenuItemBuilder::with_id("rail:cycle-unread", "Cycle Unread Without Marking Read")
+                .accelerator("CmdOrCtrl+Shift+J")
                 .build(manager)?,
         )
         .separator();
