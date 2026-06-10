@@ -184,7 +184,7 @@ Each track is independent once §3 lands. Format: scope · key files · DoD.
   action/query has a round-trip test; behaviours needing them unblock.
 
 - **Track F — Scale / orchestration / reporting / CI**. JUnit XML + HTML report with
-  embedded screenshots; concurrency tuning + colima resource guidance; a `make
+  linked screenshots; concurrency tuning + colima resource guidance; a `make
   eval`/`npm test`; retry-on-flake (configurable); container/image GC; a `--soak`
   mode (M rounds). DoD: `make eval` runs the full matrix at N≥10, emits all reports,
   leaves zero orphan containers.
