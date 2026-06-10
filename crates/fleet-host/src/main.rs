@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use render::RenderedInbox;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tracing_subscriber::EnvFilter;
 
 const DEFAULT_HUB_URL: &str = "ws://127.0.0.1:51777";
@@ -77,7 +77,10 @@ fn main() {
             let id = event.id().as_ref();
             if id == "spawn:new" {
                 if let Some(sup) = app.try_state::<spawn::ServerSupervisor>() {
-                    let _ = sup.spawn();
+                    if let Ok(server) = sup.spawn() {
+                        let _ = app.emit(bridge::SERVERS_CHANGED, ());
+                        mux::select_spawned(app.clone(), server.id);
+                    }
                 }
             } else if id == "spawn:close-current" {
                 if let (Some(sup), Some(mux)) = (
@@ -158,7 +161,10 @@ fn main() {
             {
                 if let Some(sup) = app.try_state::<spawn::ServerSupervisor>() {
                     for _ in 0..n {
-                        let _ = sup.spawn();
+                        if let Ok(server) = sup.spawn() {
+                            let _ = app.emit(bridge::SERVERS_CHANGED, ());
+                            mux::select_spawned(app.handle().clone(), server.id);
+                        }
                     }
                 }
             }
