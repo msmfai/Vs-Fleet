@@ -37,11 +37,11 @@ fi
 
 # Convert the source PNG to local build icons. This is deliberately driven from
 # icons/icon.png so replacing that one file is enough.
-ICON_LINE=""
+ICON_PRESENT=0
 "$HERE/scripts/refresh-icons.sh" --strict
 if [ -f "$HERE/icons/Fleet.icns" ]; then
   cp "$HERE/icons/Fleet.icns" "$APP/Contents/Resources/Fleet.icns"
-  ICON_LINE="  <key>CFBundleIconFile</key><string>Fleet.icns</string>"
+  ICON_PRESENT=1
 fi
 
 {
@@ -58,10 +58,19 @@ fi
   echo '  <key>CFBundleVersion</key><string>1</string>'
   echo '  <key>NSHighResolutionCapable</key><true/>'
   echo '  <key>LSMinimumSystemVersion</key><string>10.15</string>'
-  [ -n "$ICON_LINE" ] && echo "$ICON_LINE"
+  if [ "$ICON_PRESENT" -eq 1 ]; then
+    echo '  <key>CFBundleIconFile</key><string>Fleet</string>'
+    echo '  <key>CFBundleIconName</key><string>Fleet</string>'
+  fi
   echo '</dict>'
   echo '</plist>'
 } > "$APP/Contents/Info.plist"
+
+touch "$APP"
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+if [ -x "$LSREGISTER" ]; then
+  "$LSREGISTER" -f "$APP" >/dev/null 2>&1 || true
+fi
 
 echo "done → $APP"
 echo "launch:  open '$APP'        (persists across terminals; close from its window)"

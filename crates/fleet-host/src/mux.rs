@@ -81,7 +81,8 @@ pub fn build_window(app: &mut App) -> tauri::Result<()> {
     let mut builder = tauri::window::WindowBuilder::new(app, WINDOW)
         .title("Fleet")
         .inner_size(width, height)
-        .min_inner_size(760.0, 480.0);
+        .min_inner_size(760.0, 480.0)
+        .icon(tauri::include_image!("icons/128x128.png"))?;
     // macOS: overlay the title bar so the top strip passes through to the
     // embedded VS Code's own toolbar (menus / command center / tabs) instead of
     // covering it with an empty native title bar. The traffic lights float over

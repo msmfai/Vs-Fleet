@@ -38,6 +38,41 @@ mkdir -p "$OUT"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+render_pngs_with_pillow() {
+  python3 - "$SRC" "$OUT" <<'PY'
+import sys
+from pathlib import Path
+from PIL import Image
+
+src = Path(sys.argv[1])
+out = Path(sys.argv[2])
+
+try:
+    resample = Image.Resampling.LANCZOS
+except AttributeError:
+    resample = Image.LANCZOS
+
+img = Image.open(src).convert("RGBA")
+
+def save(size, name):
+    resized = img.resize((size, size), resample)
+    resized.save(out / name, "PNG")
+
+save(32, "32x32.png")
+save(128, "128x128.png")
+save(512, ".fleet-icon-512-rgba.png")
+PY
+}
+
+if command -v python3 >/dev/null && python3 -c 'import PIL' >/dev/null 2>&1; then
+  render_pngs_with_pillow || soft_fail "failed to render RGBA PNGs with Pillow"
+  sips -s format icns "$OUT/.fleet-icon-512-rgba.png" --out "$OUT/Fleet.icns" >/dev/null 2>&1 \
+    || soft_fail "failed to write $OUT/Fleet.icns"
+  rm -f "$OUT/.fleet-icon-512-rgba.png"
+  note "refreshed derived icons from $SRC"
+  exit 0
+fi
+
 # This both validates that the file is a readable image and normalizes whatever
 # PNG flavor the user dropped in. Alpha is allowed but not required.
 NORMALIZED="$TMP/icon.png"
