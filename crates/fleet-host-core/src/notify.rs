@@ -47,7 +47,7 @@
 //! the Hub, never intercepts keystrokes, and never fires a notification unless a
 //! state transition warrants it.
 
-use crate::{SessionTab, TabState};
+use crate::{mute::should_notify, InboxView, SessionTab, TabState};
 use fleet_protocol::Urgency;
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -272,6 +272,69 @@ pub fn tab_transition(old: Option<&SessionTab>, new: Option<&SessionTab>) -> Not
         // No old, no new: no-op (degenerate call, should not occur in practice).
         (None, None) => NotificationOutcome::Noop,
     }
+}
+
+/// Compute notification outcomes for a whole inbox transition.
+///
+/// This is the host-facing helper: unlike [`tab_transition`], it can account for
+/// solo suppression because it sees the full old/new tab lists. A tab's
+/// notification state is "should notify", not merely "is waiting":
+/// muting a waiting tab or soloing another tab auto-resolves its pending ping,
+/// and unmuting/unsoloing a still-waiting tab can fire a new ping.
+pub fn view_transition(old: &InboxView, new: &InboxView) -> Vec<NotificationOutcome> {
+    let mut outcomes = Vec::new();
+
+    for new_tab in &new.tabs {
+        let old_tab = old
+            .tabs
+            .iter()
+            .find(|tab| tab.session_id == new_tab.session_id);
+        let old_notify = old_tab
+            .map(|tab| should_notify(tab, &old.tabs))
+            .unwrap_or(false);
+        let new_notify = should_notify(new_tab, &new.tabs);
+
+        let outcome = match (old_tab, old_notify, new_notify) {
+            (None, _, true) => fire_for(new_tab),
+            (Some(_), false, true) => fire_for(new_tab),
+            (Some(_), true, false) => NotificationOutcome::AutoResolve {
+                session_id: new_tab.session_id.clone(),
+            },
+            (Some(old_tab), true, true) if old_tab.urgency != new_tab.urgency => fire_for(new_tab),
+            _ => NotificationOutcome::Noop,
+        };
+
+        if outcome != NotificationOutcome::Noop {
+            outcomes.push(outcome);
+        }
+    }
+
+    for old_tab in &old.tabs {
+        if new
+            .tabs
+            .iter()
+            .any(|tab| tab.session_id == old_tab.session_id)
+        {
+            continue;
+        }
+        if should_notify(old_tab, &old.tabs) {
+            outcomes.push(NotificationOutcome::AutoResolve {
+                session_id: old_tab.session_id.clone(),
+            });
+        }
+    }
+
+    outcomes
+}
+
+fn fire_for(tab: &SessionTab) -> NotificationOutcome {
+    let (title, body) = notification_text(tab);
+    NotificationOutcome::Fire(NotificationIntent {
+        session_id: tab.session_id.clone(),
+        title,
+        body,
+        sound: tab_urgency_to_sound(tab.urgency),
+    })
 }
 
 // ── Unit tests ────────────────────────────────────────────────────────────────
@@ -779,5 +842,81 @@ mod tests {
                 new_tab.state
             );
         }
+    }
+
+    #[test]
+    fn view_transition_muting_waiting_tab_auto_resolves_ping() {
+        let old = InboxView {
+            tabs: vec![waiting("s1", Urgency::Approval)],
+        };
+        let new = InboxView {
+            tabs: vec![waiting_muted("s1", Urgency::Approval)],
+        };
+
+        assert_eq!(
+            view_transition(&old, &new),
+            vec![NotificationOutcome::AutoResolve {
+                session_id: "s1".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn view_transition_solo_suppresses_other_waiting_tab() {
+        let old = InboxView {
+            tabs: vec![
+                waiting("solo", Urgency::Approval),
+                waiting("other", Urgency::Question),
+            ],
+        };
+        let mut soloed = waiting("solo", Urgency::Approval);
+        soloed.soloed = true;
+        let new = InboxView {
+            tabs: vec![soloed, waiting("other", Urgency::Question)],
+        };
+
+        assert_eq!(
+            view_transition(&old, &new),
+            vec![NotificationOutcome::AutoResolve {
+                session_id: "other".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn view_transition_unsolo_can_fire_for_still_waiting_session() {
+        let mut soloed = waiting("solo", Urgency::Approval);
+        soloed.soloed = true;
+        let old = InboxView {
+            tabs: vec![soloed, waiting("other", Urgency::Question)],
+        };
+        let new = InboxView {
+            tabs: vec![
+                waiting("solo", Urgency::Approval),
+                waiting("other", Urgency::Question),
+            ],
+        };
+
+        let outcomes = view_transition(&old, &new);
+        assert_eq!(outcomes.len(), 1);
+        match &outcomes[0] {
+            NotificationOutcome::Fire(intent) => {
+                assert_eq!(intent.session_id, "other");
+                assert_eq!(intent.sound, Some(NotificationSound::Question));
+            }
+            other => panic!("expected Fire for unsuppressed waiting tab, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn view_transition_removed_suppressed_waiting_tab_is_noop() {
+        let mut soloed = waiting("solo", Urgency::Approval);
+        soloed.soloed = true;
+        let old = InboxView {
+            tabs: vec![soloed.clone(), waiting("suppressed", Urgency::Question)],
+        };
+        let new = InboxView { tabs: vec![soloed] };
+
+        assert_eq!(view_transition(&old, &new), Vec::new());
     }
 }

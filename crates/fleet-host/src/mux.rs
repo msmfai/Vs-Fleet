@@ -239,8 +239,8 @@ pub fn selected_server(state: State<'_, MuxState>) -> Option<String> {
 
 /// Tauri command: switch the editor surface to server `id`.
 #[tauri::command]
-pub fn select_server(app: AppHandle, id: String) {
-    select(&app, id);
+pub fn select_server(app: AppHandle, id: String) -> bool {
+    select(&app, id)
 }
 
 /// Select a newly-spawned server and retry navigation while VS Code is still
@@ -362,14 +362,22 @@ fn set_host_status(app: &AppHandle, status: HostStatus) {
 /// Switch the editor surface to server `id` (shared by the rail and the menu).
 /// In keepalive mode this shows that server's persistent editor webview; in
 /// rollback singleton mode it navigates the single editor webview.
-pub fn select(app: &AppHandle, id: String) {
-    select_impl(app, id, false);
+pub fn select(app: &AppHandle, id: String) -> bool {
+    select_impl(app, id, false)
 }
 
-fn select_impl(app: &AppHandle, id: String, force_navigate: bool) {
+fn select_impl(app: &AppHandle, id: String, force_navigate: bool) -> bool {
     let Some(state) = app.try_state::<MuxState>() else {
-        return;
+        return false;
     };
+    if server_url(app, &id).is_none() {
+        tracing::warn!(
+            server_id = %id,
+            force = force_navigate,
+            "selection ignored because server URL is not known"
+        );
+        return false;
+    }
     if let Ok(mut sel) = state.selected.lock() {
         *sel = Some(id.clone());
     }
@@ -379,12 +387,13 @@ fn select_impl(app: &AppHandle, id: String, force_navigate: bool) {
         select_persistent(app, &state, &id, force_navigate);
         sync_rail_selection(app);
         refresh_menu(app);
-        return;
+        return true;
     }
 
     select_singleton(app, &state, &id, force_navigate);
     sync_rail_selection(app);
     refresh_menu(app);
+    true
 }
 
 fn select_singleton(app: &AppHandle, state: &State<'_, MuxState>, id: &str, force_navigate: bool) {
@@ -796,6 +805,19 @@ fn build_server_menu<M: Manager<tauri::Wry>>(
             &MenuItemBuilder::with_id("spawn:close-current", close_current.label)
                 .accelerator("CmdOrCtrl+Shift+W")
                 .enabled(close_current.enabled)
+                .build(manager)?,
+        )
+        .separator()
+        .item(
+            &MenuItemBuilder::with_id("rail:palette", "Session Palette")
+                .build(manager)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("rail:jump-unread", "Jump to Next Unread")
+                .build(manager)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("rail:cycle-unread", "Cycle Unread Without Marking Read")
                 .build(manager)?,
         )
         .separator();

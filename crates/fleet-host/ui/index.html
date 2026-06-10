@@ -11,18 +11,19 @@
       <span class="brand">Fleet</span>
       <span id="status" class="status" aria-live="polite">connecting…</span>
       <div class="header-actions">
-        <button id="jump" class="tool-button" type="button" title="Next Unread" aria-label="Next unread">!</button>
+        <button id="jump" class="tool-button" type="button" title="Jump to next unread" aria-label="Jump to next unread">!</button>
+        <button id="cycle-unread" class="tool-button" type="button" title="Cycle unread without marking read" aria-label="Cycle unread without marking read">↷</button>
         <button id="palette-open" class="tool-button" type="button" title="Session Palette" aria-label="Session palette">⌕</button>
         <button id="spawn" class="spawn" type="button" title="New Server" aria-label="New server">+</button>
       </div>
     </header>
     <div id="status-detail" class="status-detail hidden" role="status" aria-live="polite"></div>
-    <main id="rail">
-      <p class="empty">No servers configured.</p>
+    <main id="rail" aria-label="Fleet sessions" aria-describedby="status" aria-busy="true">
+      <p class="empty">Loading.</p>
     </main>
     <div id="palette" class="palette hidden" role="dialog" aria-modal="true" aria-label="Session palette">
       <div class="palette-panel">
-        <input id="palette-input" class="palette-input" type="text" autocomplete="off" spellcheck="false" aria-label="Search sessions" placeholder="Search sessions" />
+        <input id="palette-input" class="palette-input" type="text" autocomplete="off" spellcheck="false" role="combobox" aria-controls="palette-list" aria-expanded="false" aria-autocomplete="list" aria-label="Search sessions" placeholder="Search sessions" />
         <div id="palette-list" class="palette-list" role="listbox"></div>
       </div>
     </div>

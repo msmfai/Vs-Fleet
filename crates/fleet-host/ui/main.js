@@ -11,15 +11,19 @@ const statusEl = document.getElementById("status");
 const statusDetailEl = document.getElementById("status-detail");
 const spawnBtn = document.getElementById("spawn");
 const jumpBtn = document.getElementById("jump");
+const cycleBtn = document.getElementById("cycle-unread");
 const paletteBtn = document.getElementById("palette-open");
 const paletteEl = document.getElementById("palette");
 const paletteInput = document.getElementById("palette-input");
 const paletteList = document.getElementById("palette-list");
 if (spawnBtn) spawnBtn.onclick = spawnServer;
 if (jumpBtn) jumpBtn.onclick = jumpNextUnread;
+if (cycleBtn) cycleBtn.onclick = cycleUnread;
 if (paletteBtn) paletteBtn.onclick = () => openPalette();
 
 const STATE_GLYPH = { working: "▶", waiting: "⏸", idle: "·", done: "✓", error: "✕", dead: "☠" };
+const AGENT_GLYPH = { claude: "C", codex: "O", agent: "A" };
+const LOCATION_GLYPH = { laptop: "⌨", docker: "▣", remote: "⇄" };
 const URGENCY_LABEL = { approval: "approval", question: "question", "idle-done": "done" };
 const PENDING_SLOW_MS = 15_000;
 const PENDING_TIMEOUT_MS = 45_000;
@@ -29,7 +33,10 @@ const STATUS_CLEAR_BY_LEVEL_MS = { error: 30_000, warning: 20_000, info: 10_000 
 let servers = [];          // registered (phoned home) — from the backend
 let pending = [];          // [{id, label, startedAt}] spawned but not yet registered
 let selected = null;
-let inbox = { tabs: [], waiting_count: 0, connected: false };
+let desiredSelection = null;
+let desiredAcknowledge = true;
+let inbox = { tabs: [], waiting_count: 0, waiting_total: 0, connected: false };
+let inboxRevision = 0;
 let statusOverride = null;
 let statusTimer = null;
 let spawning = false;
@@ -38,6 +45,7 @@ const sessionActions = new Set();
 let paletteOpen = false;
 let paletteQuery = "";
 let paletteIndex = 0;
+let paletteRestoreEl = null;
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -91,6 +99,120 @@ function isOwned(srv) {
   return srv && srv.owned !== false;
 }
 
+function canCloseServerRow(srv) {
+  return Boolean(srv && !srv.agentOnly);
+}
+
+function serverById(id) {
+  return displayed().find((srv) => srv.id === id);
+}
+
+function focusedServerId() {
+  const active = document.activeElement;
+  return active && active.closest ? active.closest(".srv")?.dataset.serverId || null : null;
+}
+
+function adjacentDisplayId(id) {
+  const list = displayed();
+  const index = list.findIndex((srv) => srv.id === id);
+  if (index < 0 || list.length <= 1) return null;
+  const nextIndex = index < list.length - 1 ? index + 1 : index - 1;
+  return list[nextIndex]?.id || null;
+}
+
+function focusBestServerRow(...ids) {
+  const visible = new Set(displayed().map((srv) => srv.id));
+  const target = ids.find((id) => id && visible.has(id)) || displayed()[0]?.id;
+  if (target) focusServerRow(target);
+}
+
+function clearLocalSelection(id) {
+  if (selected === id) selected = null;
+  if (desiredSelection === id) {
+    desiredSelection = null;
+    desiredAcknowledge = true;
+  }
+}
+
+function removeInboxSession(id) {
+  const oldNotify = notifyMapForTabs(inbox.tabs || []);
+  const tabs = (inbox.tabs || []).filter((tab) => tab.session_id !== id);
+  replaceInboxTabs(tabs, oldNotify);
+}
+
+function setInbox(next) {
+  inbox = next || inbox;
+  inboxRevision += 1;
+}
+
+function shouldNotifyTab(tab, anySoloed) {
+  return Boolean(tab.attention && !tab.muted && (!anySoloed || tab.soloed));
+}
+
+function notifyMapForTabs(tabs) {
+  const anySoloed = tabs.some((tab) => tab.soloed);
+  return new Map(tabs.map((tab) => [tab.session_id, shouldNotifyTab(tab, anySoloed)]));
+}
+
+function reconcileUnread(tab, oldNotify, newNotify) {
+  if (!oldNotify && newNotify && !tab.unread) return true;
+  if (oldNotify && !newNotify && tab.unread) return false;
+  return Boolean(tab.unread);
+}
+
+function deriveInboxTabs(tabs, oldNotify = null) {
+  const anySoloed = tabs.some((tab) => tab.soloed);
+  const nextTabs = tabs.map((tab) => {
+    const nextNotify = shouldNotifyTab(tab, anySoloed);
+    const previousNotify = oldNotify ? Boolean(oldNotify.get(tab.session_id)) : nextNotify;
+    return {
+      ...tab,
+      unread: reconcileUnread(tab, previousNotify, nextNotify),
+      ping_suppressed: Boolean(tab.attention && !nextNotify),
+      pinging: nextNotify,
+    };
+  });
+  return {
+    tabs: nextTabs,
+    waiting_count: nextTabs.filter((tab) => tab.pinging).length,
+    waiting_total: nextTabs.filter((tab) => tab.attention).length,
+  };
+}
+
+function replaceInboxTabs(tabs, oldNotify = null) {
+  setInbox({ ...inbox, ...deriveInboxTabs(tabs, oldNotify) });
+}
+
+function updateInboxTabs(mapper) {
+  const tabs = inbox.tabs || [];
+  replaceInboxTabs(tabs.map(mapper), notifyMapForTabs(tabs));
+}
+
+function applyLocalMute(id, muted) {
+  updateInboxTabs((tab) => tab.session_id === id
+    ? { ...tab, muted, soloed: false }
+    : tab);
+}
+
+function applyLocalSolo(id, soloed) {
+  updateInboxTabs((tab) => {
+    if (soloed) {
+      return tab.session_id === id
+        ? { ...tab, soloed: true, muted: false }
+        : { ...tab, soloed: false };
+    }
+    return tab.session_id === id
+      ? { ...tab, soloed: false, muted: false }
+      : tab;
+  });
+}
+
+function applyLocalFocus(id) {
+  updateInboxTabs((tab) => tab.session_id === id
+    ? { ...tab, unread: false }
+    : tab);
+}
+
 function rowTitle(srv, agent) {
   const title = agent && agent.title && agent.title.trim();
   return title || displayLabel(srv);
@@ -118,8 +240,16 @@ function serverPreview(agent, state) {
   return meta ? `${meta} · ${state}` : state;
 }
 
+function bridgeState(srv) {
+  return srv && srv.agentOnly ? "editor bridge not connected" : "";
+}
+
 function canDismissAgent(agent, state) {
   return Boolean(agent && (state === "dead" || state === "error"));
+}
+
+function canRetryServer(srv, pendingState) {
+  return Boolean(srv && srv.pending && isOwned(srv) && pendingState && pendingState.state === "error");
 }
 
 function serverRowModel(srv) {
@@ -140,7 +270,9 @@ function serverRowModel(srv) {
     state,
     preview,
     attention: agent ? agent.attention : false,
-    flags: stateFlags(agent),
+    pinging: agent ? Boolean(agent.pinging) : false,
+    suppressed: agent ? Boolean(agent.ping_suppressed) : false,
+    flags: rowFlags(srv, agent),
   };
 }
 
@@ -157,6 +289,7 @@ function searchableFields(model) {
     agent && agent.urgency,
     agent && agent.confidence,
     agent && agent.last_message,
+    bridgeState(model.srv),
   ].filter(Boolean).map((v) => String(v));
 }
 
@@ -195,7 +328,8 @@ function paletteScore(queryText, model) {
     score += best;
   }
   if (model.agent && model.agent.unread) score += 30;
-  if (model.attention) score += 20;
+  if (model.pinging) score += 20;
+  else if (model.attention) score += 5;
   if (model.srv.id === selected) score += 3;
   return score;
 }
@@ -208,14 +342,20 @@ function paletteCandidates() {
     .sort((a, b) => b.score - a.score || a.order - b.order);
 }
 
-function attentionCandidates() {
-  const rows = displayed().map(serverRowModel);
-  const unread = rows.filter((row) => row.agent && row.agent.unread);
-  return unread.length ? unread : rows.filter((row) => row.attention);
+function renderedRows() {
+  return displayed().map(serverRowModel);
 }
 
-function nextAttentionCandidate() {
-  const candidates = attentionCandidates();
+function unreadCandidates(options = {}) {
+  return renderedRows().filter((row) => {
+    if (!row.agent || !row.agent.unread) return false;
+    if (options.openableOnly && row.srv.agentOnly) return false;
+    return true;
+  });
+}
+
+function nextUnreadCandidate(options = {}) {
+  const candidates = unreadCandidates(options);
   if (!candidates.length) return null;
   const current = candidates.findIndex((row) => row.srv.id === selected);
   return candidates[(current + 1 + candidates.length) % candidates.length];
@@ -248,13 +388,30 @@ function stateFlags(agent) {
   if (!agent) return [];
   if (agent.soloed) return ["solo"];
   if (agent.muted) return ["muted"];
+  if (agent.ping_suppressed) return ["silenced"];
   return [];
 }
 
-function appendStateBadges(parent, agent) {
-  for (const flag of stateFlags(agent)) {
-    const chip = el("span", `state-chip ${flag}`, flag);
-    chip.title = flag;
+function rowFlags(srv, agent) {
+  const flags = stateFlags(agent);
+  if (srv && srv.agentOnly) flags.push("bridge");
+  return flags;
+}
+
+function stateFlagLabel(flag) {
+  if (flag === "bridge") return "bridge";
+  return flag === "silenced" ? "silent" : flag;
+}
+
+function stateFlagTitle(flag) {
+  if (flag === "bridge") return "editor bridge not connected";
+  return stateFlagLabel(flag);
+}
+
+function appendStateFlagChips(parent, flags, extraClass = "") {
+  for (const flag of flags) {
+    const chip = el("span", `state-chip ${flag}${extraClass ? ` ${extraClass}` : ""}`, stateFlagLabel(flag));
+    chip.title = stateFlagTitle(flag);
     parent.appendChild(chip);
   }
 }
@@ -274,8 +431,33 @@ function appendAttentionBadges(parent, agent) {
   parent.appendChild(badge);
 }
 
+function appendIdentityChips(parent, agent) {
+  if (!agent) return;
+  const wrap = el("span", "identity");
+  const agentToken = token(agent.agent);
+  const locationToken = token(agent.location);
+  if (agentToken) {
+    const chip = el("span", `identity-chip agent-${agentToken}`, AGENT_GLYPH[agentToken] || agentToken[0].toUpperCase());
+    chip.title = agentToken;
+    wrap.appendChild(chip);
+  }
+  if (locationToken) {
+    const chip = el("span", `identity-chip location-${locationToken}`, LOCATION_GLYPH[locationToken] || locationToken[0].toUpperCase());
+    chip.title = locationToken;
+    wrap.appendChild(chip);
+  }
+  if (wrap.childNodes.length) parent.appendChild(wrap);
+}
+
 function actionKey(id, action) {
   return `${action}:${id}`;
+}
+
+function sessionActionBusy(id) {
+  for (const action of ["mute", "solo", "dismiss", "retry", "focus"]) {
+    if (sessionActions.has(actionKey(id, action))) return true;
+  }
+  return false;
 }
 
 function sessionActionButton(action, text, title, active, disabled, toggle = true) {
@@ -289,12 +471,24 @@ function sessionActionButton(action, text, title, active, disabled, toggle = tru
   return btn;
 }
 
-// Registered servers + still-pending ones (those that haven't phoned home yet).
+// Registered servers + still-pending ones + Hub sessions whose editor bridge has
+// not registered yet. The rail is an inbox first; bridge lag must not hide state.
 function displayed() {
   const regIds = new Set(servers.map((s) => s.id));
-  const stillPending = pending.filter((p) => !regIds.has(p.id)).map((p) => ({ ...p, pending: true }));
+  const stillPending = pending.filter((p) => !regIds.has(p.id)).map((p) => ({ ...p, pending: true, agentOnly: false }));
+  const visibleIds = new Set([...regIds, ...stillPending.map((p) => p.id)]);
+  const inboxOnly = (inbox.tabs || [])
+    .filter((tab) => !visibleIds.has(tab.session_id))
+    .map((tab) => ({
+      id: tab.session_id,
+      label: tab.title || tab.session_id,
+      url: "",
+      owned: false,
+      pending: false,
+      agentOnly: true,
+    }));
   const tabOrder = new Map((inbox.tabs || []).map((tab, index) => [tab.session_id, index]));
-  return [...servers.map((s) => ({ ...s, pending: false })), ...stillPending]
+  return [...servers.map((s) => ({ ...s, pending: false, agentOnly: false })), ...stillPending, ...inboxOnly]
     .map((srv, index) => ({
       srv,
       index,
@@ -302,6 +496,10 @@ function displayed() {
     }))
     .sort((a, b) => a.rank - b.rank || a.index - b.index)
     .map((entry) => entry.srv);
+}
+
+function silencedWaitingCount() {
+  return (inbox.tabs || []).filter((tab) => tab.attention && tab.ping_suppressed).length;
 }
 
 function railStatus(list) {
@@ -324,6 +522,14 @@ function railStatus(list) {
   if (closing.size) return { message: "closing", level: "waiting", title: "Closing server" };
   if (!inbox.connected) return { message: "disconnected", level: "disconnected", title: "Hub disconnected" };
   if (inbox.waiting_count > 0) return { message: `${inbox.waiting_count} waiting`, level: "waiting", title: "" };
+  const silenced = silencedWaitingCount();
+  if (silenced > 0) {
+    return {
+      message: silenced === 1 ? "1 muted" : `${silenced} muted`,
+      level: "info",
+      title: "Waiting sessions silenced by mute/solo",
+    };
+  }
   return { message: "connected", level: "connected", title: "" };
 }
 
@@ -336,9 +542,53 @@ function updateSpawnButton() {
   spawnBtn.setAttribute("aria-busy", spawning ? "true" : "false");
 }
 
+function countBadge(count) {
+  if (count <= 0) return null;
+  return count > 9 ? "9+" : String(count);
+}
+
+function countPhrase(count, noun) {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+function setToolButtonState(btn, options) {
+  if (!btn) return;
+  btn.disabled = Boolean(options.disabled);
+  btn.title = options.title;
+  btn.setAttribute("aria-label", options.title);
+  btn.classList.toggle("attention", Boolean(options.attention));
+  const count = countBadge(options.count || 0);
+  if (count) btn.dataset.count = count;
+  else delete btn.dataset.count;
+}
+
 function updateToolbarButtons() {
-  if (jumpBtn) jumpBtn.disabled = !attentionCandidates().length;
-  if (paletteBtn) paletteBtn.disabled = !displayed().length;
+  const unread = unreadCandidates();
+  const openableUnread = unreadCandidates({ openableOnly: true });
+  const rowCount = displayed().length;
+  const waitingOnBridge = unread.length > 0 && openableUnread.length === 0;
+  setToolButtonState(jumpBtn, {
+    disabled: !openableUnread.length,
+    attention: Boolean(openableUnread.length),
+    count: openableUnread.length,
+    title: openableUnread.length
+      ? `Jump to next unread (${countPhrase(openableUnread.length, "session")})`
+      : waitingOnBridge ? "Unread sessions are waiting for editor bridges" : "No unread sessions",
+  });
+  setToolButtonState(cycleBtn, {
+    disabled: !unread.length,
+    attention: Boolean(unread.length),
+    count: unread.length,
+    title: unread.length
+      ? `Cycle unread without marking read (${countPhrase(unread.length, "session")})`
+      : "No unread sessions",
+  });
+  setToolButtonState(paletteBtn, {
+    disabled: !rowCount,
+    attention: false,
+    count: 0,
+    title: rowCount ? `Session palette (${countPhrase(rowCount, "session")})` : "No sessions",
+  });
 }
 
 function statusClearDelay(level) {
@@ -374,12 +624,42 @@ function renderStatusDetail() {
   statusDetailEl.appendChild(close);
 }
 
+function emptyTitle() {
+  if (spawning) return "Starting server";
+  if (statusOverride && statusOverride.message) return statusOverride.message;
+  if (!inbox.connected) return "Hub disconnected";
+  return "No sessions";
+}
+
+function renderEmptyState(status) {
+  railEl.removeAttribute("role");
+  railEl.removeAttribute("aria-activedescendant");
+  const wrap = el("div", `empty-state ${status.level}`);
+  wrap.setAttribute("role", "status");
+
+  const marker = el("span", spawning ? "empty-spinner" : "empty-dot", "");
+  const title = el("div", "empty-title", emptyTitle());
+  const action = el("button", `empty-action${spawning ? " busy" : ""}`, spawning ? "Starting" : "New Server");
+  action.type = "button";
+  action.disabled = spawning;
+  action.title = spawning ? "Starting server" : "New Server";
+  action.setAttribute("aria-label", action.title);
+  action.setAttribute("aria-busy", spawning ? "true" : "false");
+  action.onclick = spawnServer;
+
+  wrap.appendChild(marker);
+  wrap.appendChild(title);
+  wrap.appendChild(action);
+  railEl.appendChild(wrap);
+}
+
 function render() {
   const list = displayed();
   const status = railStatus(list);
   statusEl.textContent = status.message;
   statusEl.title = status.title || "";
   statusEl.className = `status ${status.level}`;
+  railEl.setAttribute("aria-busy", spawning ? "true" : "false");
   updateSpawnButton();
   updateToolbarButtons();
   renderStatusDetail();
@@ -393,25 +673,32 @@ function render() {
   let focusAfterRender = null;
 
   railEl.replaceChildren();
-  railEl.setAttribute("role", "list");
   if (!list.length) {
-    railEl.appendChild(el("p", "empty", inbox.connected ? "No servers." : "Connecting."));
+    if (paletteOpen) closePalette({ restoreFocus: false });
+    renderEmptyState(status);
     return;
   }
+  railEl.setAttribute("role", "list");
 
   for (const model of list.map(serverRowModel)) {
-    const { srv, agent: a, pendingState, isClosing, title, state, attention, flags, preview } = model;
+    const { srv, agent: a, pendingState, isClosing, title, state, attention, pinging, suppressed, flags, preview } = model;
+    const actionBusy = sessionActionBusy(srv.id);
 
     const row = el(
       "div",
-      `srv ${state}${attention ? " attention" : ""}${flags.includes("muted") ? " muted-state" : ""}${flags.includes("solo") ? " soloed-state" : ""}${srv.id === selected ? " selected" : ""}${srv.pending ? " pending" : ""}${pendingState && pendingState.level ? ` ${pendingState.level}` : ""}${isClosing ? " closing" : ""}`
+      `srv ${state}${pinging ? " attention" : ""}${flags.includes("muted") ? " muted-state" : ""}${suppressed ? " suppressed-state" : ""}${flags.includes("solo") ? " soloed-state" : ""}${srv.id === selected ? " selected" : ""}${srv.pending ? " pending" : ""}${srv.agentOnly ? " agent-only" : ""}${pendingState && pendingState.level ? ` ${pendingState.level}` : ""}${isClosing ? " closing" : ""}${actionBusy ? " action-pending" : ""}`
     );
     row.dataset.serverId = srv.id;
     row.tabIndex = 0;
     row.setAttribute("role", "listitem");
     row.setAttribute("aria-current", srv.id === selected ? "true" : "false");
-    row.setAttribute("aria-label", `${title}, ${preview}${flags.length ? `, ${flags.join(", ")}` : ""}`);
-    row.onclick = () => selectServer(srv.id);
+    row.setAttribute("aria-busy", actionBusy ? "true" : "false");
+    row.setAttribute(
+      "aria-label",
+      [title, state, preview, ...flags.map(stateFlagTitle)].filter(Boolean).join(", ")
+    );
+    if (srv.agentOnly) row.title = bridgeState(srv);
+    row.onclick = () => activateServer(srv.id);
     row.onkeydown = (ev) => handleRowKeydown(ev, row, srv.id);
 
     if (srv.pending && pendingState.state !== "error") row.appendChild(el("span", "glyph spinner", ""));
@@ -420,6 +707,7 @@ function render() {
     const body = el("div", "body");
     body.appendChild(el("div", "label", title));
     const sub = el("div", "sub");
+    appendIdentityChips(sub, a);
     if (isClosing) sub.appendChild(el("span", "preview muted", "closing…"));
     else if (pendingState) sub.appendChild(el("span", `preview ${pendingState.state === "error" ? "error-text" : "muted"}`, pendingState.text));
     else sub.appendChild(el("span", `preview ${a && a.last_message && inbox.connected ? "" : "muted"}`, preview));
@@ -427,13 +715,13 @@ function render() {
     row.appendChild(body);
 
     const right = el("div", "right");
-    appendStateBadges(right, a);
-    if (attention) appendAttentionBadges(right, a);
-    else if (a && a.unread) right.appendChild(el("span", "dot"));
+    appendStateFlagChips(right, flags);
+    if (pinging) appendAttentionBadges(right, a);
+    else if (a && a.unread && !a.ping_suppressed) right.appendChild(el("span", "dot"));
     if (a) {
       const mutePending = sessionActions.has(actionKey(srv.id, "mute"));
       const soloPending = sessionActions.has(actionKey(srv.id, "solo"));
-      const actionDisabled = !inbox.connected;
+      const actionDisabled = !inbox.connected || actionBusy;
       const mute = sessionActionButton(
         "mute",
         a.muted ? "U" : "M",
@@ -478,20 +766,41 @@ function render() {
         if (srv.id === activeServerId && activeAction === "dismiss") focusAfterRender = dismiss;
       }
     }
-    const closeVerb = isOwned(srv) ? "Close" : "Forget";
-    const close = el("button", `close${isClosing ? " busy" : ""}`, isClosing ? "" : "×");
-    close.type = "button";
-    close.disabled = isClosing;
-    close.title = isClosing
-      ? `${closeVerb === "Close" ? "Closing" : "Forgetting"} server`
-      : `${closeVerb} server`;
-    close.setAttribute("aria-label", `${close.title} ${title}`);
-    close.onclick = (ev) => { ev.stopPropagation(); closeServer(srv.id); };
-    right.appendChild(close);
+    if (canRetryServer(srv, pendingState)) {
+      const retryPending = sessionActions.has(actionKey(srv.id, "retry")) || spawning;
+      const retry = sessionActionButton(
+        "retry",
+        "↻",
+        `Retry ${title}`,
+        false,
+        retryPending || actionBusy,
+        false
+      );
+      retry.onclick = (ev) => {
+        ev.stopPropagation();
+        retryServer(srv.id);
+      };
+      right.appendChild(retry);
+      if (srv.id === activeServerId && activeAction === "retry") focusAfterRender = retry;
+    }
+    let close = null;
+    if (canCloseServerRow(srv)) {
+      const closeVerb = isOwned(srv) ? "Close" : "Forget";
+      close = el("button", `close${isClosing ? " busy" : ""}`, isClosing ? "" : "×");
+      close.type = "button";
+      close.disabled = isClosing || actionBusy;
+      close.title = isClosing
+        ? `${closeVerb === "Close" ? "Closing" : "Forgetting"} server`
+        : actionBusy ? "Action in progress"
+        : `${closeVerb} server`;
+      close.setAttribute("aria-label", `${close.title} ${title}`);
+      close.onclick = (ev) => { ev.stopPropagation(); closeServer(srv.id); };
+      right.appendChild(close);
+    }
     row.appendChild(right);
 
     railEl.appendChild(row);
-    if (srv.id === activeServerId && !focusAfterRender) focusAfterRender = activeWasClose ? close : row;
+    if (srv.id === activeServerId && !focusAfterRender) focusAfterRender = activeWasClose && close ? close : row;
   }
 
   if (focusAfterRender) focusAfterRender.focus({ preventScroll: true });
@@ -505,28 +814,67 @@ function focusServerRow(id) {
   });
 }
 
-function activateServer(id) {
+async function activateServer(id, options = {}) {
   if (!id) return;
-  selectServer(id);
-  focusServerRow(id);
+  const target = serverById(id);
+  if (target && target.agentOnly) {
+    selected = id;
+    desiredSelection = id;
+    desiredAcknowledge = options.acknowledge !== false;
+    render();
+    focusServerRow(id);
+    showHostStatus({
+      level: "info",
+      source: "rail",
+      message: "session visible; editor bridge not connected yet",
+    });
+    return;
+  }
+
+  const selectedOk = await selectServer(id);
+  if (options.keepRailFocus) focusServerRow(id);
+  if (selectedOk && options.acknowledge !== false && agentFor(id)) focusSession(id);
 }
 
 function jumpNextUnread() {
-  const target = nextAttentionCandidate();
+  const target = nextUnreadCandidate({ openableOnly: true });
   if (!target) {
-    showHostStatus({ level: "info", source: "rail", message: "no unread sessions" });
+    const message = unreadCandidates().length
+      ? "unread sessions are waiting for editor bridges"
+      : "no unread sessions";
+    showHostStatus({ level: "info", source: "rail", message });
     return;
   }
   activateServer(target.srv.id);
 }
 
+function cycleUnread() {
+  const target = nextUnreadCandidate();
+  if (!target) {
+    showHostStatus({ level: "info", source: "rail", message: "no unread sessions" });
+    return;
+  }
+  activateServer(target.srv.id, { acknowledge: false });
+}
+
 function openPalette(query = "") {
-  if (!paletteEl || !paletteInput || !paletteList || !displayed().length) return;
+  if (!paletteEl || !paletteInput || !paletteList) return;
+  if (!displayed().length) {
+    showHostStatus({
+      level: "info",
+      source: "palette",
+      message: spawning ? "server is still starting" : "no sessions",
+    });
+    return;
+  }
+  const active = document.activeElement;
+  paletteRestoreEl = active && active !== document.body && active.focus ? active : null;
   paletteOpen = true;
   paletteQuery = query;
   paletteIndex = 0;
   paletteEl.classList.remove("hidden");
   paletteInput.value = paletteQuery;
+  paletteInput.setAttribute("aria-expanded", "true");
   renderPalette();
   requestAnimationFrame(() => {
     paletteInput.focus({ preventScroll: true });
@@ -534,34 +882,54 @@ function openPalette(query = "") {
   });
 }
 
-function closePalette() {
+function closePalette(options = {}) {
   if (!paletteOpen) return;
   paletteOpen = false;
   paletteQuery = "";
   paletteIndex = 0;
   if (paletteEl) paletteEl.classList.add("hidden");
   if (paletteList) paletteList.replaceChildren();
-  focusServerRow(selected);
+  if (paletteInput) {
+    paletteInput.setAttribute("aria-expanded", "false");
+    paletteInput.removeAttribute("aria-activedescendant");
+  }
+  const restoreEl = paletteRestoreEl;
+  paletteRestoreEl = null;
+  if (options.restoreFocus !== false) {
+    if (restoreEl && restoreEl.isConnected && restoreEl.focus) restoreEl.focus({ preventScroll: true });
+    else focusServerRow(selected);
+  }
 }
 
 function renderPalette() {
   if (!paletteOpen || !paletteList) return;
   const candidates = paletteCandidates();
-  if (paletteIndex >= candidates.length) paletteIndex = Math.max(0, candidates.length - 1);
+  const visible = candidates.slice(0, 12);
+  if (paletteIndex >= visible.length) paletteIndex = Math.max(0, visible.length - 1);
   paletteList.replaceChildren();
 
-  if (!candidates.length) {
+  if (!visible.length) {
+    if (paletteInput) paletteInput.removeAttribute("aria-activedescendant");
     const empty = el("div", "palette-empty", "No matches");
     paletteList.appendChild(empty);
     return;
   }
 
-  candidates.slice(0, 12).forEach((candidate, index) => {
+  visible.forEach((candidate, index) => {
     const active = index === paletteIndex;
-    const item = el("button", `palette-item${active ? " active" : ""}`, "");
-    item.type = "button";
+    const item = el("div", `palette-item${active ? " active" : ""}`, "");
+    const optionId = `palette-option-${index}`;
+    item.id = optionId;
+    item.tabIndex = -1;
     item.setAttribute("role", "option");
     item.setAttribute("aria-selected", active ? "true" : "false");
+    if (active && paletteInput) paletteInput.setAttribute("aria-activedescendant", optionId);
+    item.onmouseenter = () => {
+      if (paletteIndex === index) return;
+      paletteIndex = index;
+      renderPalette();
+    };
+    item.onmousedown = (ev) => ev.preventDefault();
     item.onclick = () => choosePalette(candidate.srv.id);
 
     const glyph = el("span", "palette-glyph", STATE_GLYPH[candidate.state] || "·");
@@ -569,19 +937,21 @@ function renderPalette() {
     body.appendChild(el("span", "palette-title", candidate.title));
     body.appendChild(el("span", "palette-sub", candidate.preview));
     const meta = el("span", "palette-meta");
-    if (candidate.agent && candidate.agent.unread) meta.appendChild(el("span", "dot tiny"));
-    if (candidate.attention) meta.appendChild(el("span", "badge palette-badge", waitingAge(candidate.agent && candidate.agent.waiting_since)));
+    if (candidate.pinging) meta.appendChild(el("span", "badge palette-badge", waitingAge(candidate.agent && candidate.agent.waiting_since)));
+    else if (candidate.agent && candidate.agent.unread && !candidate.agent.ping_suppressed) meta.appendChild(el("span", "dot tiny"));
+    if (candidate.flags.length) appendStateFlagChips(meta, candidate.flags, "palette-state");
     if (candidate.srv.id === selected) meta.appendChild(el("span", "state-chip selected-chip", "open"));
 
     item.appendChild(glyph);
     item.appendChild(body);
     item.appendChild(meta);
     paletteList.appendChild(item);
+    if (active) item.scrollIntoView({ block: "nearest" });
   });
 }
 
 function choosePalette(id) {
-  closePalette();
+  closePalette({ restoreFocus: false });
   activateServer(id);
 }
 
@@ -594,6 +964,7 @@ function movePalette(delta) {
 
 function showHostStatus(payload) {
   if (statusTimer) clearTimeout(statusTimer);
+  statusTimer = null;
   if (!payload || !payload.message) {
     statusOverride = null;
     render();
@@ -617,11 +988,15 @@ function showHostStatus(payload) {
 async function setSessionMuted(id, muted) {
   const key = actionKey(id, "mute");
   if (sessionActions.has(key)) return;
+  const previousInbox = inbox;
   sessionActions.add(key);
+  applyLocalMute(id, muted);
+  const optimisticRevision = inboxRevision;
   render();
   try {
     await invoke("set_session_muted", { sessionId: id, muted });
   } catch (e) {
+    if (inboxRevision === optimisticRevision) setInbox(previousInbox);
     showHostStatus({
       level: "error",
       source: "rail",
@@ -636,11 +1011,15 @@ async function setSessionMuted(id, muted) {
 async function setSessionSoloed(id, soloed) {
   const key = actionKey(id, "solo");
   if (sessionActions.has(key)) return;
+  const previousInbox = inbox;
   sessionActions.add(key);
+  applyLocalSolo(id, soloed);
+  const optimisticRevision = inboxRevision;
   render();
   try {
     await invoke("set_session_soloed", { sessionId: id, soloed });
   } catch (e) {
+    if (inboxRevision === optimisticRevision) setInbox(previousInbox);
     showHostStatus({
       level: "error",
       source: "rail",
@@ -655,15 +1034,47 @@ async function setSessionSoloed(id, soloed) {
 async function dismissSession(id) {
   const key = actionKey(id, "dismiss");
   if (sessionActions.has(key)) return;
+  const target = serverById(id);
+  const shouldRestoreFocus = focusedServerId() === id;
+  const focusFallback = adjacentDisplayId(id);
   sessionActions.add(key);
   render();
   try {
     await invoke("dismiss_session", { sessionId: id });
+    removeInboxSession(id);
+    if (target && target.agentOnly) clearLocalSelection(id);
   } catch (e) {
     showHostStatus({
       level: "error",
       source: "rail",
       message: `dismiss failed: ${String(e)}`,
+    });
+  } finally {
+    sessionActions.delete(key);
+    render();
+    if (shouldRestoreFocus) {
+      focusBestServerRow(target && target.agentOnly ? focusFallback : selected, focusFallback);
+    }
+  }
+}
+
+async function focusSession(id) {
+  if (!inbox.connected) return;
+  const key = actionKey(id, "focus");
+  if (sessionActions.has(key)) return;
+  const previousInbox = inbox;
+  sessionActions.add(key);
+  applyLocalFocus(id);
+  const optimisticRevision = inboxRevision;
+  render();
+  try {
+    await invoke("focus_session", { sessionId: id });
+  } catch (e) {
+    if (inboxRevision === optimisticRevision) setInbox(previousInbox);
+    showHostStatus({
+      level: "warning",
+      source: "rail",
+      message: `focus ack failed: ${String(e)}`,
     });
   } finally {
     sessionActions.delete(key);
@@ -680,7 +1091,7 @@ async function spawnServer() {
     const id = await invoke("spawn_server");
     pending = pending.filter((p) => p.id !== id);
     pending.push({ id, label: id, owned: true, startedAt: Date.now() });
-    selectServer(id); // shows the loading page + selects the pending tab
+    await selectServer(id); // shows the loading page + selects the pending tab
   } catch (e) {
     showHostStatus({ level: "error", source: "rail", message: `spawn failed: ${String(e)}` });
   } finally {
@@ -694,11 +1105,14 @@ async function closeServer(id) {
   const target = displayed().find((srv) => srv.id === id);
   const owned = isOwned(target);
   const wasPending = pending.some((p) => p.id === id);
+  const shouldRestoreFocus = focusedServerId() === id;
+  const focusFallback = adjacentDisplayId(id);
   closing.add(id);
   render();
   try {
     const killed = await invoke("close_server", { id });
     pending = pending.filter((p) => p.id !== id);
+    clearLocalSelection(id);
     if (!killed && !wasPending && owned) {
       showHostStatus({
         level: "warning",
@@ -712,43 +1126,124 @@ async function closeServer(id) {
   } finally {
     closing.delete(id);
     render();
+    if (shouldRestoreFocus) focusBestServerRow(selected, focusFallback);
+  }
+}
+
+async function retryServer(id) {
+  const key = actionKey(id, "retry");
+  if (sessionActions.has(key) || spawning) return;
+  const shouldRestoreFocus = focusedServerId() === id;
+  sessionActions.add(key);
+  closing.add(id);
+  pending = pending.filter((p) => p.id !== id);
+  render();
+  try {
+    await invoke("close_server", { id });
+    clearLocalSelection(id);
+    closing.delete(id);
+    await refreshServers();
+    await spawnServer();
+  } catch (e) {
+    showHostStatus({ level: "error", source: "rail", message: `retry failed: ${String(e)}` });
+  } finally {
+    closing.delete(id);
+    sessionActions.delete(key);
+    render();
+    if (shouldRestoreFocus) focusBestServerRow(selected);
   }
 }
 
 async function selectServer(id) {
+  const previousSelected = selected;
+  const previousDesired = desiredSelection;
+  const previousDesiredAcknowledge = desiredAcknowledge;
   selected = id;
+  // A successful editor open fulfils any deferred agent-only target. If opening
+  // fails, restore it so bridge registration can still complete the selection.
+  desiredSelection = null;
+  desiredAcknowledge = true;
   render();
-  try { await invoke("select_server", { id }); } catch (e) { /* ignore */ }
+  try {
+    const opened = await invoke("select_server", { id });
+    if (opened) return true;
+    selected = previousSelected;
+    desiredSelection = previousDesired;
+    desiredAcknowledge = previousDesiredAcknowledge;
+    showHostStatus({ level: "warning", source: "rail", message: "server is not ready to open" });
+    return false;
+  } catch (e) {
+    selected = previousSelected;
+    desiredSelection = previousDesired;
+    desiredAcknowledge = previousDesiredAcknowledge;
+    showHostStatus({ level: "error", source: "rail", message: `open failed: ${String(e)}` });
+    return false;
+  } finally {
+    render();
+  }
 }
 
 function handleRowKeydown(ev, row, id) {
   if (ev.target && ev.target.closest && ev.target.closest("button")) return;
   if (ev.key === "Enter" || ev.key === " ") {
     ev.preventDefault();
-    selectServer(id);
+    activateServer(id);
   } else if (ev.key === "Backspace" || ev.key === "Delete") {
     ev.preventDefault();
-    closeServer(id);
+    removeRow(id);
   } else if (ev.key === "ArrowDown") {
     ev.preventDefault();
     focusAdjacent(row, 1);
   } else if (ev.key === "ArrowUp") {
     ev.preventDefault();
     focusAdjacent(row, -1);
+  } else if (ev.key === "Home") {
+    ev.preventDefault();
+    focusBoundary("first");
+  } else if (ev.key === "End") {
+    ev.preventDefault();
+    focusBoundary("last");
+  }
+}
+
+function removeRow(id) {
+  if (sessionActionBusy(id)) {
+    showHostStatus({ level: "info", source: "rail", message: "action in progress" });
+    return;
+  }
+  const srv = displayed().find((item) => item.id === id);
+  const agent = agentFor(id);
+  if (srv && canCloseServerRow(srv)) {
+    closeServer(id);
+  } else if (canDismissAgent(agent, agent && agent.state)) {
+    dismissSession(id);
+  } else {
+    showHostStatus({ level: "info", source: "rail", message: "no server process to close" });
   }
 }
 
 function focusAdjacent(row, delta) {
-  const rows = Array.from(railEl.querySelectorAll(".srv"));
+  const rows = serverRows();
   const index = rows.indexOf(row);
   if (index < 0 || !rows.length) return;
   rows[(index + delta + rows.length) % rows.length].focus();
 }
 
+function focusBoundary(edge) {
+  const rows = serverRows();
+  const target = edge === "last" ? rows[rows.length - 1] : rows[0];
+  if (target) target.focus();
+}
+
+function serverRows() {
+  return Array.from(railEl.querySelectorAll(".srv"));
+}
+
 async function refreshServers() {
+  let backendSelected = null;
   try {
     servers = await invoke("get_servers");
-    selected = await invoke("selected_server");
+    backendSelected = await invoke("selected_server");
   } catch (e) {
     servers = [];
   }
@@ -756,31 +1251,53 @@ async function refreshServers() {
   pending = pending.filter((p) => !servers.some((s) => s.id === p.id));
 
   const ids = displayed().map((s) => s.id);
+  const preferred = desiredSelection || selected;
+  const desired = desiredSelection;
+  const acknowledgeDesired = desiredAcknowledge;
+  const backendValid = backendSelected && ids.includes(backendSelected);
+  selected = preferred && ids.includes(preferred) ? preferred : (backendValid ? backendSelected : null);
+
   // Auto-select the first server once any exist and nothing valid is selected.
   if ((!selected || !ids.includes(selected)) && servers.length) {
-    selectServer(servers[0].id);
+    desiredSelection = null;
+    desiredAcknowledge = true;
+    await selectServer(servers[0].id);
     return;
   }
-  // If the selected server just became registered (was loading), navigate to it.
-  if (selected && servers.some((s) => s.id === selected)) {
-    invoke("select_server", { id: selected }).catch(() => {});
+  const selectedRegistered = selected && servers.some((s) => s.id === selected);
+  const selectionNeedsOpen = selectedRegistered && (desired === selected || backendSelected !== selected);
+  // If a deferred target just became registered, navigate to it. Otherwise avoid
+  // re-selecting the already-active editor on routine server-list refreshes.
+  if (selectionNeedsOpen) {
+    const selectedOk = await selectServer(selected);
+    if (selectedOk && desired === selected && acknowledgeDesired && agentFor(selected)) focusSession(selected);
+    return;
   }
   render();
 }
 
 // Called from Rust (mux::select) so the rail highlight stays in sync.
 window.__fleetSyncSelection = async () => {
-  try { selected = await invoke("selected_server"); render(); } catch (e) { /* ignore */ }
+  try {
+    selected = await invoke("selected_server");
+    desiredSelection = null;
+    desiredAcknowledge = true;
+    render();
+  } catch (e) { /* ignore */ }
 };
+
+window.__fleetOpenPalette = () => openPalette();
+window.__fleetJumpNextUnread = () => jumpNextUnread();
+window.__fleetCycleUnread = () => cycleUnread();
 
 async function init() {
   await listen("servers-changed", () => refreshServers());
-  await listen("inbox", (e) => { inbox = e.payload || inbox; render(); });
+  await listen("inbox", (e) => { setInbox(e.payload || inbox); render(); });
   await listen("host-status", (e) => showHostStatus(e.payload));
   try {
-    inbox = await invoke("get_inbox");
+    setInbox(await invoke("get_inbox"));
   } catch (e) {
-    inbox = { tabs: [], waiting_count: 0, connected: false };
+    setInbox({ tabs: [], waiting_count: 0, waiting_total: 0, connected: false });
   }
   try {
     showHostStatus(await invoke("get_host_status"));
@@ -795,6 +1312,11 @@ init();
 setInterval(render, 1000); // tick the "waiting Nm" age
 
 if (paletteInput) {
+  const handlePaletteKey = (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+  };
+
   paletteInput.addEventListener("input", () => {
     paletteQuery = paletteInput.value;
     paletteIndex = 0;
@@ -802,16 +1324,16 @@ if (paletteInput) {
   });
   paletteInput.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") {
-      ev.preventDefault();
+      handlePaletteKey(ev);
       closePalette();
     } else if (ev.key === "ArrowDown") {
-      ev.preventDefault();
+      handlePaletteKey(ev);
       movePalette(1);
     } else if (ev.key === "ArrowUp") {
-      ev.preventDefault();
+      handlePaletteKey(ev);
       movePalette(-1);
     } else if (ev.key === "Enter") {
-      ev.preventDefault();
+      handlePaletteKey(ev);
       const choice = paletteCandidates().slice(0, 12)[paletteIndex];
       if (choice) choosePalette(choice.srv.id);
     }
@@ -826,19 +1348,32 @@ if (paletteEl) {
 
 document.addEventListener("keydown", (ev) => {
   const command = ev.metaKey || ev.ctrlKey;
-  if (command && ev.key.toLowerCase() === "k") {
+  const key = ev.key.toLowerCase();
+  if (paletteOpen) {
+    if (command && key === "k") {
+      ev.preventDefault();
+      closePalette();
+    } else if (ev.key === "Escape") {
+      ev.preventDefault();
+      closePalette();
+    } else if (command && (key === "j" || (ev.shiftKey && key === "n"))) {
+      ev.preventDefault();
+    }
+    return;
+  }
+
+  if (command && key === "k") {
     ev.preventDefault();
-    if (paletteOpen) closePalette();
-    else openPalette();
-  } else if (command && ev.key.toLowerCase() === "j") {
+    openPalette();
+  } else if (command && ev.shiftKey && key === "j") {
+    ev.preventDefault();
+    cycleUnread();
+  } else if (command && key === "j") {
     ev.preventDefault();
     jumpNextUnread();
-  } else if (command && ev.shiftKey && ev.key.toLowerCase() === "n") {
+  } else if (command && ev.shiftKey && key === "n") {
     ev.preventDefault();
     spawnServer();
-  } else if (ev.key === "Escape" && paletteOpen) {
-    ev.preventDefault();
-    closePalette();
   } else if (ev.key === "Escape" && statusOverride) {
     clearStatusOverride();
   }
