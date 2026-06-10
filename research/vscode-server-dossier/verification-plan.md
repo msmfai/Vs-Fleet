@@ -43,12 +43,14 @@ Procedure:
 3. Show/hide child webviews on selection without navigating already-loaded
    webviews.
 4. Repeat the baseline procedure.
+5. Leave one server inactive for more than six minutes, then switch back.
 
 Acceptance:
 
 - bridge generation remains stable for both servers through tab switches;
 - no `server deregistered (bridge dropped)` events during switches;
 - terminal output remains visible when switching back;
+- the more-than-six-minute hidden tab does not reload or lose terminal state;
 - screenshots show no black artifacts, blank panes, cropped editor, or missing rail;
 - memory slope per extra hidden server is recorded.
 
