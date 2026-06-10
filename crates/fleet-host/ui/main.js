@@ -471,6 +471,17 @@ function sessionActionButton(action, text, title, active, disabled, toggle = tru
   return btn;
 }
 
+function rowKeyboardShortcuts(model) {
+  const shortcuts = ["Enter", "Space", "ArrowDown", "ArrowUp", "Home", "End"];
+  if (sessionActionBusy(model.srv.id)) return shortcuts.join(" ");
+  if (model.agent && inbox.connected) shortcuts.push("M", "S");
+  if (canRetryServer(model.srv, model.pendingState)) shortcuts.push("R");
+  if (canCloseServerRow(model.srv) || canDismissAgent(model.agent, model.state)) {
+    shortcuts.push("Delete", "Backspace");
+  }
+  return shortcuts.join(" ");
+}
+
 // Registered servers + still-pending ones + Hub sessions whose editor bridge has
 // not registered yet. The rail is an inbox first; bridge lag must not hide state.
 function displayed() {
@@ -697,6 +708,7 @@ function render() {
       "aria-label",
       [title, state, preview, ...flags.map(stateFlagTitle)].filter(Boolean).join(", ")
     );
+    row.setAttribute("aria-keyshortcuts", rowKeyboardShortcuts(model));
     if (srv.agentOnly) row.title = bridgeState(srv);
     row.onclick = () => activateServer(srv.id);
     row.onkeydown = (ev) => handleRowKeydown(ev, row, srv.id);
@@ -1185,9 +1197,19 @@ async function selectServer(id) {
 
 function handleRowKeydown(ev, row, id) {
   if (ev.target && ev.target.closest && ev.target.closest("button")) return;
+  const plainKey = ev.metaKey || ev.ctrlKey || ev.altKey ? "" : ev.key.toLowerCase();
   if (ev.key === "Enter" || ev.key === " ") {
     ev.preventDefault();
     activateServer(id);
+  } else if (plainKey === "m") {
+    ev.preventDefault();
+    toggleMuteRow(id);
+  } else if (plainKey === "s") {
+    ev.preventDefault();
+    toggleSoloRow(id);
+  } else if (plainKey === "r") {
+    ev.preventDefault();
+    retryRow(id);
   } else if (ev.key === "Backspace" || ev.key === "Delete") {
     ev.preventDefault();
     removeRow(id);
@@ -1204,6 +1226,58 @@ function handleRowKeydown(ev, row, id) {
     ev.preventDefault();
     focusBoundary("last");
   }
+}
+
+function showRailInfo(message) {
+  showHostStatus({ level: "info", source: "rail", message });
+}
+
+function toggleMuteRow(id) {
+  if (sessionActionBusy(id)) {
+    showRailInfo("action in progress");
+    return;
+  }
+  const agent = agentFor(id);
+  if (!agent) {
+    showRailInfo("no agent state to mute");
+    return;
+  }
+  if (!inbox.connected) {
+    showRailInfo("hub disconnected");
+    return;
+  }
+  setSessionMuted(id, !agent.muted);
+}
+
+function toggleSoloRow(id) {
+  if (sessionActionBusy(id)) {
+    showRailInfo("action in progress");
+    return;
+  }
+  const agent = agentFor(id);
+  if (!agent) {
+    showRailInfo("no agent state to solo");
+    return;
+  }
+  if (!inbox.connected) {
+    showRailInfo("hub disconnected");
+    return;
+  }
+  setSessionSoloed(id, !agent.soloed);
+}
+
+function retryRow(id) {
+  if (sessionActionBusy(id) || spawning) {
+    showRailInfo("action in progress");
+    return;
+  }
+  const srv = displayed().find((item) => item.id === id);
+  const pendingState = srv && srv.pending ? pendingVisual(srv) : null;
+  if (!canRetryServer(srv, pendingState)) {
+    showRailInfo("nothing to retry");
+    return;
+  }
+  retryServer(id);
 }
 
 function removeRow(id) {
