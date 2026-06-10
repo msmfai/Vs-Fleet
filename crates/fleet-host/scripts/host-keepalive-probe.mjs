@@ -465,6 +465,11 @@ async function main() {
   if (!existsSync(reporterBin)) throw new Error(`missing fleet-reporter binary: ${reporterBin}`);
   if (!existsSync(bridgeVsix)) throw new Error(`missing fleet-bridge VSIX: ${bridgeVsix}`);
 
+  const muxDir = resolve(outDir, "mux");
+  const runtimeDir = resolve(outDir, "runtime");
+  mkdirSync(muxDir, { recursive: true });
+  mkdirSync(runtimeDir, { recursive: true });
+
   const logPath = resolve(outDir, "fleet-host.log");
   const logFd = openSync(logPath, "w");
   const startedAt = new Date().toISOString();
@@ -472,6 +477,8 @@ async function main() {
     ...process.env,
     FLEET_AUTOSPAWN: String(opts.autospawn),
     FLEET_EDITOR_KEEPALIVE: "1",
+    FLEET_MUX_DIR: muxDir,
+    FLEET_RUNTIME_DIR: runtimeDir,
     ...(opts.appBundle ? {} : { FLEET_REPORTER_BIN: reporterBin, FLEET_BRIDGE_VSIX: bridgeVsix }),
     ...(opts.clickSwitch ? {} : { FLEET_PROBE_CONTROL_PORT: String(opts.controlPort) }),
     RUST_LOG: process.env.RUST_LOG || "info",

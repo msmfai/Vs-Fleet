@@ -73,7 +73,7 @@ impl ServerSupervisor {
             children: Mutex::new(HashMap::new()),
             containers: Mutex::new(HashMap::new()),
             servers: Mutex::new(Vec::new()),
-            counter: AtomicU64::new(1),
+            counter: AtomicU64::new(initial_server_counter()),
             bridge_port,
             hub_url,
             bridge_token,
@@ -99,11 +99,10 @@ impl ServerSupervisor {
     /// Spawn a new VS Code web server (+ its reporter + claude shim) and record it.
     /// Returns its [`Server`]; Fleet adds it to the rail immediately.
     fn spawn_local(&self) -> std::io::Result<crate::mux::Server> {
-        let n = self.counter.fetch_add(1, Ordering::SeqCst);
-        let id = format!("server-{n}");
+        let base = fleet_mux_base();
+        let (_, id) = self.allocate_server_id(&base);
         let port = free_port()?;
 
-        let base = fleet_mux_base();
         let _ = std::fs::create_dir_all(&base);
         let process_cwd = fleet_spawn_cwd(&base);
         std::fs::create_dir_all(&process_cwd)?;
@@ -235,8 +234,8 @@ impl ServerSupervisor {
     /// NOTE: for the container to reach Fleet's bridge, Fleet must bind it on all
     /// interfaces — launch with `FLEET_BRIDGE_ADDR=0.0.0.0` (see `bridge.rs`).
     fn spawn_container(&self) -> std::io::Result<crate::mux::Server> {
-        let n = self.counter.fetch_add(1, Ordering::SeqCst);
-        let id = format!("server-{n}");
+        let base = fleet_mux_base();
+        let (_, id) = self.allocate_server_id(&base);
         let name = format!("fleet-{id}");
         let port = free_port()?;
 
@@ -320,8 +319,8 @@ impl ServerSupervisor {
     fn spawn_ssh(&self) -> std::io::Result<crate::mux::Server> {
         let target = std::env::var("FLEET_SSH_TARGET")
             .map_err(|_| std::io::Error::other("FLEET_SSH_TARGET not set (e.g. user@host)"))?;
-        let n = self.counter.fetch_add(1, Ordering::SeqCst);
-        let id = format!("server-{n}");
+        let base = fleet_mux_base();
+        let (n, id) = self.allocate_server_id(&base);
 
         // local_editor is free on THIS host; the remote ports are bound on the remote
         // by ssh's tunnels (ExitOnForwardFailure makes a collision fail loudly).
@@ -426,6 +425,23 @@ impl ServerSupervisor {
             .insert(id.clone(), vec![child]);
         self.servers.lock().unwrap().push(server.clone());
         Ok(server)
+    }
+
+    fn allocate_server_id(&self, base: &Path) -> (u64, String) {
+        loop {
+            let n = self.counter.fetch_add(1, Ordering::SeqCst);
+            let id = format!("server-{n}");
+            let known = self
+                .servers
+                .lock()
+                .map(|servers| servers.iter().any(|server| server.id == id))
+                .unwrap_or(false);
+            if known || server_artifacts_exist(base, &id) {
+                continue;
+            }
+            persist_next_server_counter(base, n + 1);
+            return (n, id);
+        }
     }
 
     /// Close (kill) a Fleet-spawned server — its code-server AND reporter (local
@@ -1204,6 +1220,78 @@ fn fleet_mux_base_from(override_dir: Option<PathBuf>, home: Option<PathBuf>) -> 
         .join("mux")
 }
 
+fn initial_server_counter() -> u64 {
+    initial_server_counter_from(&fleet_mux_base())
+}
+
+fn initial_server_counter_from(base: &Path) -> u64 {
+    let saved = read_next_server_counter(base).unwrap_or(1);
+    let artifact_next = next_server_number_from_artifacts(base).unwrap_or(1);
+    saved.max(artifact_next).max(1)
+}
+
+fn next_server_counter_path(base: &Path) -> PathBuf {
+    base.join("server-counter")
+}
+
+fn read_next_server_counter(base: &Path) -> Option<u64> {
+    std::fs::read_to_string(next_server_counter_path(base))
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .filter(|n| *n > 0)
+}
+
+fn persist_next_server_counter(base: &Path, next: u64) {
+    if let Err(e) = std::fs::create_dir_all(base).and_then(|_| {
+        std::fs::write(next_server_counter_path(base), format!("{next}\n"))
+    }) {
+        tracing::warn!(base = %base.display(), next, error = %e, "server counter could not be persisted");
+    }
+}
+
+fn next_server_number_from_artifacts(base: &Path) -> Option<u64> {
+    let entries = std::fs::read_dir(base).ok()?;
+    entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter_map(|name| server_number_from_artifact_name(&name))
+        .max()
+        .map(|n| n.saturating_add(1))
+}
+
+fn server_number_from_artifact_name(name: &str) -> Option<u64> {
+    for prefix in [
+        "ws-server-",
+        "cs-userdata-server-",
+        "shim-server-",
+        "reporter-server-",
+        "cs-server-",
+        "fleet-server-",
+    ] {
+        let Some(rest) = name.strip_prefix(prefix) else {
+            continue;
+        };
+        let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if !digits.is_empty() {
+            return digits.parse::<u64>().ok();
+        }
+    }
+    None
+}
+
+fn server_artifacts_exist(base: &Path, id: &str) -> bool {
+    [
+        base.join(format!("ws-{id}")),
+        base.join(format!("cs-userdata-{id}")),
+        base.join(format!("shim-{id}")),
+        base.join(format!("reporter-{id}.sock")),
+        base.join(format!("reporter-{id}.log")),
+        base.join(format!("cs-{id}.log")),
+    ]
+    .iter()
+    .any(|path| path.exists())
+}
+
 /// Working directory for local child processes Fleet spawns.
 ///
 /// Tauri apps launched by macOS can inherit a temp cwd under `/private/var/folders`.
@@ -1304,6 +1392,57 @@ mod tests {
             ),
             PathBuf::from("/custom/fleet")
         );
+    }
+
+    #[test]
+    fn server_number_parser_reads_fleet_artifact_names() {
+        assert_eq!(server_number_from_artifact_name("ws-server-7"), Some(7));
+        assert_eq!(
+            server_number_from_artifact_name("cs-userdata-server-12"),
+            Some(12)
+        );
+        assert_eq!(
+            server_number_from_artifact_name("reporter-server-42.sock"),
+            Some(42)
+        );
+        assert_eq!(
+            server_number_from_artifact_name("cs-server-99.log"),
+            Some(99)
+        );
+        assert_eq!(server_number_from_artifact_name("not-server-1"), None);
+    }
+
+    #[test]
+    fn initial_server_counter_uses_saved_counter_and_existing_artifacts() {
+        let dir = temp_test_dir("fleet-server-counter");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("ws-server-3")).unwrap();
+        std::fs::write(dir.join("reporter-server-8.log"), "").unwrap();
+
+        assert_eq!(initial_server_counter_from(&dir), 9);
+        persist_next_server_counter(&dir, 12);
+        assert_eq!(initial_server_counter_from(&dir), 12);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn server_id_allocator_skips_existing_artifacts_and_persists_next() {
+        let dir = temp_test_dir("fleet-server-allocator");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("ws-server-1")).unwrap();
+        std::fs::write(next_server_counter_path(&dir), "1\n").unwrap();
+
+        let supervisor =
+            ServerSupervisor::new(51778, "ws://127.0.0.1:51777".into(), "token".into());
+        supervisor.counter.store(initial_server_counter_from(&dir), Ordering::SeqCst);
+        let (n, id) = supervisor.allocate_server_id(&dir);
+
+        assert_eq!(n, 2);
+        assert_eq!(id, "server-2");
+        assert_eq!(read_next_server_counter(&dir), Some(3));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
