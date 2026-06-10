@@ -8,10 +8,10 @@ VS Code path.
 
 | Binary / artifact | What it is | Build |
 |---|---|---|
-| `fleet-hub` | The canonical state daemon (WS :51777 + unix socket, SQLite). | `cargo build -p fleet-hub` |
+| `fleet-hub` | Standalone canonical state daemon for headless/external-hub runs. The macOS app embeds this by default. | `cargo build -p fleet-hub` |
 | `fleet-reporter` | Per-window reporter; `--serve` receives agent hooks → Hub. | `cargo build -p fleet-reporter` |
 | `fleet` | CLI face (`fleet ls`). | `cargo build -p fleet-cli` |
-| `fleet-host` | The Tauri sidebar **window** (subscribes to the Hub, renders the inbox). | `cd crates/fleet-host && cargo build` |
+| `fleet-host` | The Tauri sidebar **window** (starts the local persistent Hub, subscribes, renders the inbox). | `cd crates/fleet-host && cargo build` |
 | `fleet-extension-0.1.0.vsix` | The VS Code extension. | `cd packages/extension && npm install && npx @vscode/vsce package --allow-missing-repository` |
 
 The two sockets, kept distinct (see `fleet_protocol::paths` / `packages/extension/src/paths.ts`):
@@ -21,19 +21,21 @@ The two sockets, kept distinct (see `fleet_protocol::paths` / `packages/extensio
 ## A) Headless bring-up (no VS Code)
 
 ```sh
-# 1. Hub
+# 1. Hub endpoint
+# Normal GUI path: Fleet.app starts the local persistent Hub itself.
+# Headless/no-GUI path: start the standalone Hub explicitly.
 target/debug/fleet-hub &
 
 # 2. A window's reporter (binds the reporter socket, registers with the Hub)
 export FLEET_REPORTER_SOCKET=/tmp/fleet/reporter-demo.sock
 target/debug/fleet-reporter --serve --session-id demo &
 
-# 3. The GUI window (subscribes to the Hub). Two ways:
+# 3. The GUI window (starts/subscribes to the local Hub). Two ways:
 #    (a) quick/dev — runs while the launching shell lives:
-crates/fleet-host/target/debug/fleet-host &      # FLEET_HUB_URL defaults to ws://127.0.0.1:51777
+crates/fleet-host/target/debug/fleet-host &
 #    (b) PERSISTENT — a real macOS .app (survives terminal close, LaunchServices):
 ( cd crates/fleet-host && ./bundle.sh debug && open ./Fleet.app )
-#        custom hub:  open crates/fleet-host/Fleet.app --args ws://host:port
+#        external hub:  open crates/fleet-host/Fleet.app --args ws://host:port
 
 # 4. Drive an agent. Either run real `claude` with the Fleet hooks…
 claude --settings <fleet-hooks.json>             # see packages/extension shim output
@@ -47,7 +49,8 @@ target/debug/fleet ls            # or just look at the fleet-host window
 
 ## B) The real VS Code path
 
-1. **Start the Hub** (and, for the GUI, `fleet-host`): see steps 1 & 3 above.
+1. **Open Fleet**: `Fleet.app` starts the local Hub itself. Use the standalone
+   `fleet-hub` binary only for headless or external-hub runs.
 2. **Put `fleet-reporter` where the extension can find it.** Either add
    `target/debug` to `PATH`, or set the VS Code setting
    `fleet.reporterBinPath` to the absolute path of `target/debug/fleet-reporter`.

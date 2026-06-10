@@ -54,6 +54,9 @@ pub struct HubConfig {
     /// Path to the durable SQLite event log (D3, S7). A restart replays this to
     /// restore all sessions/runs.
     pub db_path: PathBuf,
+    /// Whether to replay/write the durable SQLite event log. The standalone Hub
+    /// defaults this from `FLEET_PERSIST`; embedded clients can opt in directly.
+    pub persist: bool,
     /// Reap grace before a `dead` run is GC'd (D17: 1 h default).
     pub reap_grace: std::time::Duration,
     /// TTL before a session untouched this long is swept (S6 session-expiry GC).
@@ -101,6 +104,7 @@ impl Default for HubConfig {
             unix_path: dir.join("hub.sock"),
             lock_path: dir.join("hub.lock"),
             db_path: dir.join("hub.db"),
+            persist: std::env::var_os("FLEET_PERSIST").is_some(),
             // D17: 1 h reap grace before a `dead` run is GC'd.
             reap_grace: crate::persist::DEFAULT_REAP_GRACE,
             // Session expiry is far more lenient than dead-reaping: a live but
@@ -130,14 +134,14 @@ pub async fn run(config: HubConfig) -> anyhow::Result<()> {
     // reporters re-register on restart. So by DEFAULT the Hub keeps state only in
     // memory: a restart is a clean slate, repopulated by live pings. This avoids
     // resurrecting dead "ghost" sessions and stale same-id reclaim across restarts.
-    // Set `FLEET_PERSIST` to opt into the durable on-disk event log (D3/S7), which
-    // replays to restore every session/run before serving.
-    let state = if std::env::var_os("FLEET_PERSIST").is_some() {
+    // Persist mode opts into the durable on-disk event log (D3/S7), which replays
+    // to restore every session/run before serving.
+    let state = if config.persist {
         if let Some(parent) = config.db_path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
         let state = HubState::with_db(&config.db_path)?;
-        tracing::info!(db = %config.db_path.display(), "durable state restored (FLEET_PERSIST)");
+        tracing::info!(db = %config.db_path.display(), "durable state restored");
         state
     } else {
         tracing::info!("ephemeral state — live mirror, no restore across restart");
