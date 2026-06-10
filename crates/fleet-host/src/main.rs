@@ -1,13 +1,14 @@
 //! Fleet host face — the Tauri sidebar window (the primary v1 GUI).
 //!
-//! A real window that subscribes to the Hub over WebSocket, folds its event
-//! stream into the **real** `fleet-host-core` reducer, and renders the live
-//! inbox. The Hub URL comes from `FLEET_HUB_URL` (default `ws://127.0.0.1:51777`,
-//! the Hub's WS port) or the first CLI argument.
+//! A real window that starts Fleet's local push endpoint, subscribes to it over
+//! WebSocket, folds its event stream into the **real** `fleet-host-core` reducer,
+//! and renders the live inbox. An explicit first CLI argument or `FLEET_HUB_URL`
+//! makes the app connect to an external Hub instead.
 //!
 //! ## Shape
-//! - A background thread runs a single-threaded tokio runtime hosting the Hub
-//!   link ([`hub_client`]); Tauri keeps the main thread for the window event loop.
+//! - A background thread runs a single-threaded tokio runtime hosting the local
+//!   Hub, Hub link ([`hub_client`]), and bridge phone-home server; Tauri keeps
+//!   the main thread for the window event loop.
 //! - The link pushes each rendered inbox into Tauri **managed state** (read once
 //!   by the `get_inbox` command on webview load) and **emits** an `inbox` event
 //!   for every live update. The static frontend (no bundler — `withGlobalTauri`)
@@ -19,11 +20,19 @@ mod mux;
 mod render;
 mod spawn;
 
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use render::RenderedInbox;
 use tauri::Manager;
 use tracing_subscriber::EnvFilter;
+
+const DEFAULT_HUB_URL: &str = "ws://127.0.0.1:51777";
+
+fn default_hub_addr() -> SocketAddr {
+    SocketAddr::from(([127, 0, 0, 1], fleet_hub::DEFAULT_WS_PORT))
+}
 
 /// Fixed loopback port for the command-bridge WS server, so each code-server can
 /// be launched with `FLEET_BRIDGE_URL=ws://127.0.0.1:<this>` before Fleet starts.
@@ -41,11 +50,12 @@ fn main() {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
 
-    let ws_url = std::env::args()
+    let explicit_ws_url = std::env::args()
         .nth(1)
         .or_else(|| std::env::var("FLEET_HUB_URL").ok())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "ws://127.0.0.1:51777".to_string());
+        .filter(|s| !s.is_empty());
+    let start_local_hub = explicit_ws_url.is_none();
+    let ws_url = explicit_ws_url.unwrap_or_else(|| DEFAULT_HUB_URL.to_string());
 
     let shared: hub_client::Shared = Arc::new(Mutex::new(RenderedInbox::default()));
     let registry = bridge::BridgeRegistry::new();
@@ -98,14 +108,32 @@ fn main() {
             let shared = shared.clone();
             let ws_url = ws_url.clone();
             let registry = registry.clone();
-            // The Hub link + the command-bridge / phone-home server share one
-            // background runtime so Tauri owns the main thread for the event loop.
+            // The embedded Hub, Hub link, and command-bridge / phone-home server
+            // share one background runtime so Tauri owns the main thread.
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
                     .expect("build background runtime");
                 rt.block_on(async move {
+                    if start_local_hub {
+                        tokio::spawn(async {
+                            let mut config = fleet_hub::HubConfig::default();
+                            config.ws_addr = default_hub_addr();
+                            config.persist = true;
+                            match fleet_hub::run(config).await {
+                                Ok(()) => tracing::info!("embedded Fleet Hub stopped"),
+                                Err(e) if e.downcast_ref::<fleet_hub::LockError>().is_some() => {
+                                    tracing::info!(error = %e, "external Fleet Hub already running; using it")
+                                }
+                                Err(e) => tracing::error!(error = %e, "embedded Fleet Hub failed"),
+                            }
+                        });
+                        // Give the embedded listener a head start; the client also
+                        // reconnects, so this is only to avoid a visible first-frame
+                        // disconnected state on normal launches.
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                    }
                     if let Err(e) = bridge::serve(bridge_handle, registry, BRIDGE_PORT).await {
                         tracing::error!(error = %e, "bridge server failed to bind");
                     }

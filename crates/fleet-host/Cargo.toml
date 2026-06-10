@@ -20,6 +20,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 fleet-protocol = { path = "../fleet-protocol" }
 fleet-host-core = { path = "../fleet-host-core" }
+fleet-hub = { path = "../fleet-hub" }
 # `unstable` enables the multi-webview API (a window hosting both Fleet's rail UI
 # and the embedded code-server editor surface) — the core of the multiplexer.
 tauri = { version = "2", features = ["unstable"] }
