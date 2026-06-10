@@ -250,6 +250,10 @@ function canDismissAgent(agent, state) {
   return Boolean(agent && (state === "dead" || state === "error"));
 }
 
+function canForgetAgentOnly(srv, agent) {
+  return Boolean(srv && srv.agentOnly && agent);
+}
+
 function canRetryServer(srv, pendingState) {
   return Boolean(srv && srv.pending && isOwned(srv) && pendingState && pendingState.state === "error");
 }
@@ -478,8 +482,14 @@ function rowKeyboardShortcuts(model) {
   if (sessionActionBusy(model.srv.id)) return shortcuts.join(" ");
   if (model.agent && inbox.connected) shortcuts.push("M", "S");
   if (canRetryServer(model.srv, model.pendingState)) shortcuts.push("R");
-  if (canDismissAgent(model.agent, model.state)) shortcuts.push("D");
-  if (canCloseServerRow(model.srv) || canDismissAgent(model.agent, model.state)) {
+  if (canDismissAgent(model.agent, model.state) || canForgetAgentOnly(model.srv, model.agent)) {
+    shortcuts.push("D");
+  }
+  if (
+    canCloseServerRow(model.srv)
+    || canDismissAgent(model.agent, model.state)
+    || canForgetAgentOnly(model.srv, model.agent)
+  ) {
     shortcuts.push("Delete", "Backspace");
   }
   return shortcuts.join(" ");
@@ -532,6 +542,14 @@ function rowMenuItems(id) {
       shortcut: "D",
       disabled: busy || !inbox.connected,
       action: () => dismissRow(id),
+    });
+  } else if (canForgetAgentOnly(model.srv, model.agent)) {
+    items.push({
+      id: "forget-session",
+      label: "Forget Session",
+      shortcut: "D",
+      disabled: busy || !inbox.connected,
+      action: () => forgetAgentOnlyRow(id),
     });
   }
 
@@ -1486,6 +1504,24 @@ function dismissRow(id) {
   dismissSession(id);
 }
 
+function forgetAgentOnlyRow(id) {
+  if (sessionActionBusy(id)) {
+    showRailInfo("action in progress");
+    return;
+  }
+  const srv = displayed().find((item) => item.id === id);
+  const agent = agentFor(id);
+  if (!canForgetAgentOnly(srv, agent)) {
+    showRailInfo("nothing to forget");
+    return;
+  }
+  if (!inbox.connected) {
+    showRailInfo("hub disconnected");
+    return;
+  }
+  dismissSession(id);
+}
+
 function removeRow(id) {
   if (sessionActionBusy(id)) {
     showHostStatus({ level: "info", source: "rail", message: "action in progress" });
@@ -1497,6 +1533,8 @@ function removeRow(id) {
     closeServer(id);
   } else if (canDismissAgent(agent, agent && agent.state)) {
     dismissSession(id);
+  } else if (canForgetAgentOnly(srv, agent)) {
+    forgetAgentOnlyRow(id);
   } else {
     showHostStatus({ level: "info", source: "rail", message: "no server process to close" });
   }
