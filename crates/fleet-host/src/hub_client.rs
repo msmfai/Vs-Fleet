@@ -60,9 +60,15 @@ pub async fn run(
     let mut model = InboxModel::new();
     let mut seen_snapshot = false;
     loop {
-        if let Err(e) =
-            connect_once(&app, &shared, &ws_url, &mut command_rx, &mut model, &mut seen_snapshot)
-                .await
+        if let Err(e) = connect_once(
+            &app,
+            &shared,
+            &ws_url,
+            &mut command_rx,
+            &mut model,
+            &mut seen_snapshot,
+        )
+        .await
         {
             tracing::warn!(error = %e, url = %ws_url, "hub link error; retrying");
         }
