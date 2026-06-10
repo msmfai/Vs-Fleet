@@ -500,7 +500,10 @@ impl ServerSupervisor {
                 terminate_child_tree(child);
             }
             tracing::info!(%id, "closed spawned server");
-            let _ = self.restored_groups.lock().map(|mut groups| groups.remove(id));
+            let _ = self
+                .restored_groups
+                .lock()
+                .map(|mut groups| groups.remove(id));
             self.persist_spawn_manifest();
             true
         } else if let Some(groups) = self.restored_groups.lock().unwrap().remove(id) {
@@ -551,7 +554,11 @@ impl ServerSupervisor {
 
     fn persist_spawn_manifest(&self) {
         let base = fleet_mux_base();
-        let servers = self.servers.lock().map(|servers| servers.clone()).unwrap_or_default();
+        let servers = self
+            .servers
+            .lock()
+            .map(|servers| servers.clone())
+            .unwrap_or_default();
         let child_groups = self.children.lock().ok();
         let restored_groups = self.restored_groups.lock().ok();
         let containers = self.containers.lock().ok();
@@ -559,10 +566,16 @@ impl ServerSupervisor {
             .into_iter()
             .map(|server| {
                 let mut pids = Vec::new();
-                if let Some(children) = child_groups.as_ref().and_then(|groups| groups.get(&server.id)) {
+                if let Some(children) = child_groups
+                    .as_ref()
+                    .and_then(|groups| groups.get(&server.id))
+                {
                     pids.extend(children.iter().map(Child::id));
                 }
-                if let Some(restored) = restored_groups.as_ref().and_then(|groups| groups.get(&server.id)) {
+                if let Some(restored) = restored_groups
+                    .as_ref()
+                    .and_then(|groups| groups.get(&server.id))
+                {
                     pids.extend(restored.iter().copied());
                 }
                 pids.sort_unstable();
@@ -1412,9 +1425,9 @@ fn read_next_server_counter(base: &Path) -> Option<u64> {
 }
 
 fn persist_next_server_counter(base: &Path, next: u64) {
-    if let Err(e) = std::fs::create_dir_all(base).and_then(|_| {
-        std::fs::write(next_server_counter_path(base), format!("{next}\n"))
-    }) {
+    if let Err(e) = std::fs::create_dir_all(base)
+        .and_then(|_| std::fs::write(next_server_counter_path(base), format!("{next}\n")))
+    {
         tracing::warn!(base = %base.display(), next, error = %e, "server counter could not be persisted");
     }
 }
@@ -1605,7 +1618,9 @@ mod tests {
 
         let supervisor =
             ServerSupervisor::new(51778, "ws://127.0.0.1:51777".into(), "token".into());
-        supervisor.counter.store(initial_server_counter_from(&dir), Ordering::SeqCst);
+        supervisor
+            .counter
+            .store(initial_server_counter_from(&dir), Ordering::SeqCst);
         let (n, id) = supervisor.allocate_server_id(&dir);
 
         assert_eq!(n, 2);

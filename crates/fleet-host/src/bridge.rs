@@ -160,7 +160,9 @@ pub fn launch_token_from_path(path: &Path) -> String {
             tracing::warn!(path = %path.display(), "bridge token file is invalid; replacing it");
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => tracing::warn!(path = %path.display(), error = %e, "bridge token file unreadable; replacing it"),
+        Err(e) => {
+            tracing::warn!(path = %path.display(), error = %e, "bridge token file unreadable; replacing it")
+        }
     }
 
     let token = launch_token();

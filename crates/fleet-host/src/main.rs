@@ -103,7 +103,8 @@ fn main() {
     let shared: hub_client::Shared = Arc::new(Mutex::new(RenderedInbox::default()));
     let (hub_commands, hub_command_rx) = hub_client::command_channel();
     let registry = bridge::BridgeRegistry::new();
-    let bridge_token = bridge::launch_token_from_path(&embedded_hub_runtime_dir().join("bridge.token"));
+    let bridge_token =
+        bridge::launch_token_from_path(&embedded_hub_runtime_dir().join("bridge.token"));
 
     tauri::Builder::default()
         .manage(shared.clone())
