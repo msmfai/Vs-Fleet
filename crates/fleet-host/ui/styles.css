@@ -32,9 +32,10 @@ header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  /* Top inset clears the macOS traffic lights overlaid on the rail; this strip
-     is the window drag handle (the editor's top is VS Code's own toolbar). */
-  padding: 30px 13px 11px 13px;
+  gap: 8px;
+  /* The native macOS titlebar owns the traffic-light region; keep the rail
+     header compact inside the content area. */
+  padding: 12px 13px 11px 13px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
   position: sticky;
@@ -61,13 +62,24 @@ header {
 .srv:hover .close { opacity: 1; }
 .close:hover { color: var(--error); }
 
-.status { font-size: 10.5px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.status {
+  min-width: 0;
+  max-width: 148px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
 .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
 .status.connected::before { background: var(--done); }
 .status.waiting { color: var(--waiting); }
 .status.waiting::before { background: var(--waiting); animation: pulse 1.4s infinite; }
-.status.disconnected { color: var(--error); }
-.status.disconnected::before { background: var(--error); }
+.status.disconnected, .status.error { color: var(--error); }
+.status.disconnected::before, .status.error::before { background: var(--error); }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 
 main { padding: 6px; }

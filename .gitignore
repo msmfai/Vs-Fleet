@@ -19,6 +19,7 @@ pnpm-lock.yaml
 # Build artifacts
 dist/
 *.vsix
+crates/fleet-host/artifacts/manual/
 
 # OS
 .DS_Store

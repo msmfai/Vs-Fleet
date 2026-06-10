@@ -1,10 +1,13 @@
 # Fleet Host Artifacts
 
 This directory is the source-controlled home for host-side Fleet visual probes.
-Generated keepalive runs go under `keepalive/<timestamp>/` and include:
+Generated keepalive scratch runs go under ignored `keepalive/<timestamp>/`.
+Promoted review evidence goes under `keepalive-reviewed/<date>/` and includes:
 
 - `host-keepalive.json`: review-server-compatible report;
-- `screenshots/*.png`: full-screen captures tagged with PNG metadata;
+- `screenshots/*.png`: direct Fleet-window captures tagged with PNG metadata;
+- `visual-analysis.json`: classic CV geometry/band analysis for the captures;
+- `cv/*.top-mask.png`: top-window edge/dark-strip masks for visual debugging;
 - `fleet-host.log`: host stdout/stderr for bridge/editor lifecycle evidence;
 - `rss.json` and `rss.txt`: process RSS snapshot.
 
@@ -12,10 +15,18 @@ Browse a run with:
 
 ```sh
 node containers/fleet-env/eval/scripts/review-server.mjs \
-  --json crates/fleet-host/artifacts/keepalive/<run>/host-keepalive.json \
-  --dir crates/fleet-host/artifacts/keepalive/<run>
+  --json crates/fleet-host/artifacts/keepalive-reviewed/<date>/host-keepalive.json \
+  --dir crates/fleet-host/artifacts/keepalive-reviewed/<date>
 ```
 
-On macOS the probe uses `osascript`/System Events to locate and click the Fleet
-window. If it fails with `not allowed assistive access`, grant Accessibility
-permission to the terminal app running the probe, then rerun it.
+On macOS the probe captures screenshots by CoreGraphics window id
+(`screencapture -l <id>`), so the Fleet window does not need to be frontmost or
+uncovered for screenshot evidence. It still uses `osascript`/System Events to
+click rail rows during the switch test. If clicking fails with `not allowed
+assistive access`, grant Accessibility permission to the terminal app running the
+probe, then rerun it.
+
+Mac titlebar regression captures should note `FLEET_MACOS_TITLEBAR_STYLE`.
+Fleet defaults to `transparent` so child VS Code webviews do not render under the
+native titlebar. Set `FLEET_MACOS_TITLEBAR_STYLE=overlay` only to reproduce or
+compare the stale tab/titlebar strip behavior.

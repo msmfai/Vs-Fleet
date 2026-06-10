@@ -21,6 +21,10 @@ BRIDGE_VSIX="$HERE/../../packages/fleet-bridge/fleet-bridge-0.2.0.vsix"
 BRIDGE_PACKAGE="$HERE/../../packages/fleet-bridge/package-vsix.sh"
 BUILD_VERSION="$(date -u +%Y%m%d%H%M%S)"
 
+# Convert the source PNG to local build icons before compiling. The Rust host
+# embeds icons/128x128.png at compile time for the native window/app icon.
+"$HERE/scripts/refresh-icons.sh" --strict
+
 echo "building fleet-host ($PROFILE)..."
 if [ "$PROFILE" = "release" ]; then
   ( cd "$HERE" && cargo build --release )
@@ -52,12 +56,12 @@ else
   echo "warning: fleet-bridge VSIX not found at $BRIDGE_VSIX"
 fi
 
-# Convert the source PNG to local build icons. This is deliberately driven from
+# Copy the generated .icns into the app bundle. This is deliberately driven from
 # icons/icon.png so replacing that one file is enough.
 ICON_PRESENT=0
-"$HERE/scripts/refresh-icons.sh" --strict
 if [ -f "$HERE/icons/Fleet.icns" ]; then
   cp "$HERE/icons/Fleet.icns" "$APP/Contents/Resources/Fleet.icns"
+  sips -g pixelWidth -g pixelHeight "$APP/Contents/Resources/Fleet.icns" >/dev/null
   ICON_PRESENT=1
 fi
 
@@ -76,8 +80,7 @@ fi
   echo '  <key>NSHighResolutionCapable</key><true/>'
   echo '  <key>LSMinimumSystemVersion</key><string>10.15</string>'
   if [ "$ICON_PRESENT" -eq 1 ]; then
-    echo '  <key>CFBundleIconFile</key><string>Fleet</string>'
-    echo '  <key>CFBundleIconName</key><string>Fleet</string>'
+    echo '  <key>CFBundleIconFile</key><string>Fleet.icns</string>'
   fi
   echo '</dict>'
   echo '</plist>'

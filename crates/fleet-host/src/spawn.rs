@@ -18,7 +18,7 @@
 //!     lifecycle payload to that socket. So `claude` in the server's terminal
 //!     lights up its tab (working / waiting / idle) with zero user setup.
 //!
-//! Env knobs: `FLEET_EDITOR_BIN`, `FLEET_BRIDGE_VSIX`,
+//! Env knobs: `FLEET_EDITOR_BIN`, `FLEET_CODE_SERVER_BIN`, `FLEET_BRIDGE_VSIX`,
 //! `FLEET_REPORTER_BIN`, `FLEET_CLAUDE_BIN`, `FLEET_MUX_DIR`.
 //!
 //! ## Spawn modes
@@ -43,6 +43,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
+#[cfg(unix)]
+const SIGTERM: i32 = 15;
+#[cfg(unix)]
+const SIGKILL: i32 = 9;
 
 /// Tracks Fleet-spawned servers: their child processes (code-server + reporter,
 /// to close them) and their [`Server`] identity (the rail's source of truth for
@@ -149,6 +157,7 @@ impl ServerSupervisor {
         let editor = editor_bin(&tool_path);
         write_spawned_server_settings(&user_data)?;
         install_fleet_bridge(&editor, &user_data)?;
+        let server_bin = local_code_server_bin(&editor).unwrap_or_else(|| editor.clone());
         let url = format!("http://127.0.0.1:{port}/?folder={}", folder.display());
         let (cs_out, cs_err) = log_files(&format!("cs-{id}"));
 
@@ -158,14 +167,7 @@ impl ServerSupervisor {
             None => tool_path.clone(),
         };
 
-        // The SAME serve-web flags + Fleet phone-home env the SSH path uses, so a
-        // local and a remote server are launched identically (only the location differs).
-        let args = serve_web_args(
-            "127.0.0.1",
-            port,
-            &user_data.to_string_lossy(),
-            &folder.to_string_lossy(),
-        );
+        let args = local_server_args(&server_bin, "127.0.0.1", port, &user_data, &folder);
         let env = fleet_env(
             &reporter_socket.to_string_lossy(),
             &id,
@@ -174,7 +176,7 @@ impl ServerSupervisor {
             &self.bridge_token,
             &base.to_string_lossy(),
         );
-        let mut cmd = Command::new(&editor);
+        let mut cmd = Command::new(&server_bin);
         cmd.args(&args)
             .env("PATH", path)
             .env("TMPDIR", &tmp_dir)
@@ -182,10 +184,10 @@ impl ServerSupervisor {
         for (k, v) in &env {
             cmd.env(k, v);
         }
-        let child = cmd.stdout(cs_out).stderr(cs_err).spawn()?;
+        let child = spawn_fleet_child(cmd.stdout(cs_out).stderr(cs_err))?;
         children.push(child);
 
-        tracing::info!(%id, port, "spawned VS Code serve-web + reporter");
+        tracing::info!(%id, port, server_bin = %server_bin.display(), "spawned VS Code web server + reporter");
         let server = crate::mux::Server {
             id: id.clone(),
             label: id.clone(),
@@ -206,21 +208,21 @@ impl ServerSupervisor {
     ) -> std::io::Result<Child> {
         let bin = reporter_bin();
         let (out, err) = log_files(&format!("reporter-{id}"));
-        Command::new(bin)
-            .args([
-                "--serve",
-                "--ws",
-                &self.hub_url,
-                "--socket",
-                &socket.to_string_lossy(),
-                "--session-id",
-                id,
-            ])
-            .env("PATH", path)
-            .current_dir(cwd)
-            .stdout(out)
-            .stderr(err)
-            .spawn()
+        let mut cmd = Command::new(bin);
+        cmd.args([
+            "--serve",
+            "--ws",
+            &self.hub_url,
+            "--socket",
+            &socket.to_string_lossy(),
+            "--session-id",
+            id,
+        ])
+        .env("PATH", path)
+        .current_dir(cwd)
+        .stdout(out)
+        .stderr(err);
+        spawn_fleet_child(&mut cmd)
     }
 
     /// Spawn a new server as a **container** (`docker run` the `fleet-env` image) and
@@ -388,26 +390,26 @@ impl ServerSupervisor {
         );
 
         let (out, err) = log_files(&format!("ssh-{id}"));
-        let child = Command::new("ssh")
-            .args([
-                "-o",
-                "ExitOnForwardFailure=yes",
-                "-o",
-                "ServerAliveInterval=15",
-                "-o",
-                "ServerAliveCountMax=3",
-                "-L",
-                &format!("{local_editor}:127.0.0.1:{r_cs}"),
-                "-R",
-                &format!("{r_hub}:127.0.0.1:{local_hub}"),
-                "-R",
-                &format!("{r_bridge}:127.0.0.1:{local_bridge}"),
-                &target,
-                &remote_cmd,
-            ])
-            .stdout(out)
-            .stderr(err)
-            .spawn()?;
+        let mut cmd = Command::new("ssh");
+        cmd.args([
+            "-o",
+            "ExitOnForwardFailure=yes",
+            "-o",
+            "ServerAliveInterval=15",
+            "-o",
+            "ServerAliveCountMax=3",
+            "-L",
+            &format!("{local_editor}:127.0.0.1:{r_cs}"),
+            "-R",
+            &format!("{r_hub}:127.0.0.1:{local_hub}"),
+            "-R",
+            &format!("{r_bridge}:127.0.0.1:{local_bridge}"),
+            &target,
+            &remote_cmd,
+        ])
+        .stdout(out)
+        .stderr(err);
+        let child = spawn_fleet_child(&mut cmd)?;
 
         tracing::info!(%id, %target, local_editor, r_cs, "deployed code-server over ssh");
         let server = crate::mux::Server {
@@ -443,9 +445,8 @@ impl ServerSupervisor {
 
         // Local-mode server: kill its child processes.
         if let Some(children) = self.children.lock().unwrap().remove(id) {
-            for mut child in children {
-                let _ = child.kill();
-                let _ = child.wait();
+            for child in children {
+                terminate_child_tree(child);
             }
             tracing::info!(%id, "closed spawned server");
             true
@@ -453,10 +454,10 @@ impl ServerSupervisor {
             false
         }
     }
-}
 
-impl Drop for ServerSupervisor {
-    fn drop(&mut self) {
+    pub fn shutdown_all(&self) {
+        self.servers.lock().unwrap().clear();
+
         if let Ok(mut containers) = self.containers.lock() {
             let docker = docker_bin();
             for (_id, name) in containers.drain() {
@@ -470,13 +471,84 @@ impl Drop for ServerSupervisor {
 
         if let Ok(mut children) = self.children.lock() {
             for (_id, group) in children.drain() {
-                for mut child in group {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                for child in group {
+                    terminate_child_tree(child);
                 }
             }
         }
     }
+}
+
+impl Drop for ServerSupervisor {
+    fn drop(&mut self) {
+        self.shutdown_all();
+    }
+}
+
+fn spawn_fleet_child(cmd: &mut Command) -> std::io::Result<Child> {
+    #[cfg(unix)]
+    {
+        cmd.process_group(0);
+    }
+    cmd.spawn()
+}
+
+fn terminate_child_tree(mut child: Child) {
+    #[cfg(unix)]
+    {
+        terminate_unix_child_tree(&mut child);
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+#[cfg(unix)]
+fn terminate_unix_child_tree(child: &mut Child) {
+    if let Some(group_pid) = process_group_signal_pid(child.id()) {
+        let _ = signal_process_group(group_pid, SIGTERM);
+        let _ = wait_child_for(child, std::time::Duration::from_millis(300));
+        let _ = signal_process_group(group_pid, SIGKILL);
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[cfg(unix)]
+fn wait_child_for(child: &mut Child, timeout: std::time::Duration) -> bool {
+    let started = std::time::Instant::now();
+    while started.elapsed() < timeout {
+        if matches!(child.try_wait(), Ok(Some(_))) {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    false
+}
+
+#[cfg(unix)]
+fn process_group_signal_pid(child_pid: u32) -> Option<i32> {
+    let pid = i32::try_from(child_pid).ok()?;
+    Some(-pid)
+}
+
+#[cfg(unix)]
+fn signal_process_group(group_pid: i32, signal: i32) -> std::io::Result<()> {
+    let rc = unsafe { libc_kill(group_pid, signal) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(unix)]
+extern "C" {
+    #[link_name = "kill"]
+    fn libc_kill(pid: i32, sig: i32) -> i32;
 }
 
 /// Which launch path `spawn()` takes. `FLEET_SPAWN_MODE=container` opts into Docker,
@@ -523,6 +595,64 @@ fn editor_bin(path: &OsStr) -> PathBuf {
             .find(|p| p.is_file())
         })
         .unwrap_or_else(|| PathBuf::from("code"))
+}
+
+fn local_code_server_bin(editor: &Path) -> Option<PathBuf> {
+    if is_code_server_bin(editor) {
+        return Some(editor.to_path_buf());
+    }
+    if let Ok(bin) = std::env::var("FLEET_CODE_SERVER_BIN") {
+        if !bin.trim().is_empty() {
+            return Some(PathBuf::from(bin));
+        }
+    }
+    let from_home = code_server_bin_from_home(std::env::var_os("HOME").map(PathBuf::from));
+    if from_home.is_some() {
+        return from_home;
+    }
+
+    // Best effort for first run: ask the official `code serve-web` wrapper to
+    // materialize its downloaded server bundle, then look again.
+    let _ = Command::new(editor)
+        .args(["serve-web", "--help"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    code_server_bin_from_home(std::env::var_os("HOME").map(PathBuf::from))
+}
+
+fn is_code_server_bin(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name == "code-server")
+}
+
+fn code_server_bin_from_home(home: Option<PathBuf>) -> Option<PathBuf> {
+    let home = home?;
+    let mut candidates = Vec::new();
+    for root in [
+        home.join(".vscode").join("cli").join("serve-web"),
+        home.join(".vscode-insiders").join("cli").join("serve-web"),
+    ] {
+        let Ok(entries) = std::fs::read_dir(root) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let bin = entry.path().join("bin").join("code-server");
+            if bin.is_file() {
+                let modified = bin
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+                    .unwrap_or_default();
+                candidates.push((modified, bin));
+            }
+        }
+    }
+    candidates.sort_by_key(|(modified, _)| *modified);
+    candidates.pop().map(|(_, bin)| bin)
 }
 
 fn reporter_bin() -> PathBuf {
@@ -729,6 +859,22 @@ fn write_spawned_server_settings(server_data: &Path) -> std::io::Result<()> {
         "terminal.integrated.gpuAcceleration".into(),
         serde_json::Value::String("off".into()),
     );
+    obj.insert(
+        "window.commandCenter".into(),
+        serde_json::Value::Bool(false),
+    );
+    obj.insert(
+        "workbench.layoutControl.enabled".into(),
+        serde_json::Value::Bool(false),
+    );
+    obj.insert(
+        "workbench.navigationControl.enabled".into(),
+        serde_json::Value::Bool(false),
+    );
+    obj.insert(
+        "security.workspace.trust.enabled".into(),
+        serde_json::Value::Bool(false),
+    );
 
     if let Some(parent) = settings_path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -738,7 +884,7 @@ fn write_spawned_server_settings(server_data: &Path) -> std::io::Result<()> {
 }
 
 fn spawned_server_settings_path(server_data: &Path) -> PathBuf {
-    server_data.join("User").join("settings.json")
+    server_data.join("data").join("User").join("settings.json")
 }
 
 fn read_json_object_or_empty(path: &Path) -> serde_json::Value {
@@ -917,11 +1063,34 @@ fn free_port() -> std::io::Result<u16> {
     Ok(l.local_addr()?.port())
 }
 
-/// The `code serve-web` invocation Fleet launches — Microsoft's OFFICIAL VS Code web
-/// server. Chosen over code-server for the full MS Marketplace + clean aarch64-darwin
-/// packaging; fine for personal / own-hardware use (see NORTH_STAR + REQUIREMENTS for the
-/// licensing line — it stops being clean only when hosting editors for OTHERS). Identical
-/// for local and remote spawns, so a server behaves the same wherever it runs.
+fn local_server_args(
+    server_bin: &Path,
+    host: &str,
+    port: u16,
+    server_data: &Path,
+    default_folder: &Path,
+) -> Vec<String> {
+    if is_code_server_bin(server_bin) {
+        code_server_args(
+            host,
+            port,
+            &server_data.to_string_lossy(),
+            &default_folder.to_string_lossy(),
+        )
+    } else {
+        serve_web_args(
+            host,
+            port,
+            &server_data.to_string_lossy(),
+            &default_folder.to_string_lossy(),
+        )
+    }
+}
+
+/// The `code serve-web` invocation Fleet can launch through the user's Code CLI.
+/// It remains the bootstrap/install path for Microsoft's official VS Code Web
+/// server bundle, but the wrapper rejects some server-main flags that the
+/// downloaded `bin/code-server` entrypoint accepts.
 /// `--without-connection-token` mirrors code-server's `--auth none`: Fleet binds loopback
 /// (local) or tunnels (ssh), so no token is needed. The workspace folder is opened via the
 /// URL `?folder=` rather than a positional arg.
@@ -934,6 +1103,26 @@ fn serve_web_args(host: &str, port: u16, server_data: &str, default_folder: &str
         port.to_string(),
         "--without-connection-token".into(),
         "--accept-server-license-terms".into(),
+        "--server-data-dir".into(),
+        server_data.into(),
+        "--default-folder".into(),
+        default_folder.into(),
+    ]
+}
+
+/// Direct invocation of the official VS Code Web server bundle downloaded by
+/// `code serve-web`. This accepts the hidden `--disable-workspace-trust` flag
+/// that `serve-web`'s public CLI parser rejects, and the web workbench maps it
+/// to `enableWorkspaceTrust: false` in its generated configuration.
+fn code_server_args(host: &str, port: u16, server_data: &str, default_folder: &str) -> Vec<String> {
+    vec![
+        "--host".into(),
+        host.into(),
+        "--port".into(),
+        port.to_string(),
+        "--without-connection-token".into(),
+        "--accept-server-license-terms".into(),
+        "--disable-workspace-trust".into(),
         "--server-data-dir".into(),
         server_data.into(),
         "--default-folder".into(),
@@ -1187,12 +1376,12 @@ mod tests {
     fn spawned_server_settings_live_under_server_data_user_dir() {
         assert_eq!(
             spawned_server_settings_path(Path::new("/tmp/fleet-server-data")),
-            PathBuf::from("/tmp/fleet-server-data/User/settings.json")
+            PathBuf::from("/tmp/fleet-server-data/data/User/settings.json")
         );
     }
 
     #[test]
-    fn write_spawned_server_settings_creates_gpu_off_setting() {
+    fn write_spawned_server_settings_creates_fleet_owned_ui_settings() {
         let dir = temp_test_dir("fleet-spawn-settings-create");
         let _ = std::fs::remove_dir_all(&dir);
 
@@ -1202,6 +1391,19 @@ mod tests {
         assert_eq!(
             settings["terminal.integrated.gpuAcceleration"],
             serde_json::Value::String("off".into())
+        );
+        assert_eq!(settings["window.commandCenter"], serde_json::json!(false));
+        assert_eq!(
+            settings["workbench.layoutControl.enabled"],
+            serde_json::json!(false)
+        );
+        assert_eq!(
+            settings["workbench.navigationControl.enabled"],
+            serde_json::json!(false)
+        );
+        assert_eq!(
+            settings["security.workspace.trust.enabled"],
+            serde_json::json!(false)
         );
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -1230,6 +1432,19 @@ mod tests {
             settings["terminal.integrated.gpuAcceleration"],
             serde_json::Value::String("off".into())
         );
+        assert_eq!(settings["window.commandCenter"], serde_json::json!(false));
+        assert_eq!(
+            settings["workbench.layoutControl.enabled"],
+            serde_json::json!(false)
+        );
+        assert_eq!(
+            settings["workbench.navigationControl.enabled"],
+            serde_json::json!(false)
+        );
+        assert_eq!(
+            settings["security.workspace.trust.enabled"],
+            serde_json::json!(false)
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1249,6 +1464,229 @@ mod tests {
         assert_eq!(map["FLEET_BRIDGE_TOKEN"], "token-1");
         assert_eq!(map["FLEET_BRIDGE_LOG_DIR"], "/Users/example/.fleet/mux");
         assert_eq!(map["FLEET_BRIDGE_URL"], "ws://127.0.0.1:51778");
+    }
+
+    #[test]
+    fn serve_web_args_avoid_desktop_only_workspace_trust_flag() {
+        let args = serve_web_args("127.0.0.1", 12345, "/tmp/fleet-data", "/tmp/fleet-ws");
+
+        assert!(!args.iter().any(|arg| arg == "--disable-workspace-trust"));
+        assert!(args
+            .iter()
+            .any(|arg| arg == "--accept-server-license-terms"));
+        assert_eq!(
+            args.windows(2)
+                .find(|pair| pair[0] == "--server-data-dir")
+                .map(|pair| pair[1].as_str()),
+            Some("/tmp/fleet-data")
+        );
+        assert_eq!(
+            args.windows(2)
+                .find(|pair| pair[0] == "--default-folder")
+                .map(|pair| pair[1].as_str()),
+            Some("/tmp/fleet-ws")
+        );
+    }
+
+    #[test]
+    fn code_server_args_disable_workspace_trust_for_web_config() {
+        let args = code_server_args("127.0.0.1", 12345, "/tmp/fleet-data", "/tmp/fleet-ws");
+
+        assert!(!args.iter().any(|arg| arg == "serve-web"));
+        assert!(args.iter().any(|arg| arg == "--disable-workspace-trust"));
+        assert!(args
+            .iter()
+            .any(|arg| arg == "--accept-server-license-terms"));
+        assert_eq!(
+            args.windows(2)
+                .find(|pair| pair[0] == "--server-data-dir")
+                .map(|pair| pair[1].as_str()),
+            Some("/tmp/fleet-data")
+        );
+        assert_eq!(
+            args.windows(2)
+                .find(|pair| pair[0] == "--default-folder")
+                .map(|pair| pair[1].as_str()),
+            Some("/tmp/fleet-ws")
+        );
+    }
+
+    #[test]
+    fn local_server_args_use_direct_code_server_when_available() {
+        let args = local_server_args(
+            Path::new("/tmp/code-server"),
+            "127.0.0.1",
+            12345,
+            Path::new("/tmp/fleet-data"),
+            Path::new("/tmp/fleet-ws"),
+        );
+
+        assert!(!args.iter().any(|arg| arg == "serve-web"));
+        assert!(args.iter().any(|arg| arg == "--disable-workspace-trust"));
+    }
+
+    #[test]
+    fn local_server_args_fall_back_to_code_serve_web_for_code_cli() {
+        let args = local_server_args(
+            Path::new("/tmp/code"),
+            "127.0.0.1",
+            12345,
+            Path::new("/tmp/fleet-data"),
+            Path::new("/tmp/fleet-ws"),
+        );
+
+        assert_eq!(args.first().map(String::as_str), Some("serve-web"));
+        assert!(!args.iter().any(|arg| arg == "--disable-workspace-trust"));
+    }
+
+    #[test]
+    fn local_server_args_use_serve_web_for_code_tunnel_wrapper() {
+        let args = local_server_args(
+            Path::new(
+                "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code-tunnel",
+            ),
+            "127.0.0.1",
+            12345,
+            Path::new("/tmp/fleet-data"),
+            Path::new("/tmp/fleet-ws"),
+        );
+
+        assert_eq!(args.first().map(String::as_str), Some("serve-web"));
+        assert!(!args.iter().any(|arg| arg == "--disable-workspace-trust"));
+        assert_eq!(
+            args.windows(2)
+                .find(|pair| pair[0] == "--server-data-dir")
+                .map(|pair| pair[1].as_str()),
+            Some("/tmp/fleet-data")
+        );
+        assert_eq!(
+            args.windows(2)
+                .find(|pair| pair[0] == "--default-folder")
+                .map(|pair| pair[1].as_str()),
+            Some("/tmp/fleet-ws")
+        );
+    }
+
+    #[test]
+    fn code_server_bin_from_home_finds_downloaded_serve_web_bundle() {
+        let home = temp_test_dir("fleet-code-server-home");
+        let _ = std::fs::remove_dir_all(&home);
+        let bin = home
+            .join(".vscode")
+            .join("cli")
+            .join("serve-web")
+            .join("commit-1")
+            .join("bin")
+            .join("code-server");
+        std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
+        std::fs::write(&bin, "").unwrap();
+
+        assert_eq!(code_server_bin_from_home(Some(home.clone())), Some(bin));
+
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn terminate_child_tree_kills_background_descendants() {
+        let dir = temp_test_dir("fleet-child-tree-kill");
+        let pid_file = dir.join("background.pid");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c")
+            .arg(
+                r#"
+bg=""
+cleanup() {
+  if [ -n "$bg" ]; then
+    kill "$bg" 2>/dev/null
+    wait "$bg" 2>/dev/null
+  fi
+  exit 0
+}
+trap cleanup TERM INT
+sleep 30 &
+bg=$!
+printf '%s\n' "$bg" > "$1"
+wait "$bg"
+"#,
+            )
+            .arg("fleet-child-tree-kill")
+            .arg(&pid_file)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let child = spawn_fleet_child(&mut cmd).unwrap();
+
+        let background_pid = read_pid_file_for(&pid_file, std::time::Duration::from_secs(2));
+        assert!(
+            process_exists(background_pid),
+            "background child should be alive before termination"
+        );
+
+        terminate_child_tree(child);
+
+        let gone = eventually(std::time::Duration::from_secs(2), || {
+            !process_exists(background_pid)
+        });
+        assert!(gone, "background child should exit with its process group");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn shutdown_all_clears_servers_and_kills_descendants() {
+        let dir = temp_test_dir("fleet-shutdown-all-kill");
+        let pid_file = dir.join("background.pid");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c")
+            .arg(
+                r#"
+sleep 30 &
+printf '%s\n' "$!" > "$1"
+wait
+"#,
+            )
+            .arg("fleet-shutdown-all-kill")
+            .arg(&pid_file)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let child = spawn_fleet_child(&mut cmd).unwrap();
+        let background_pid = read_pid_file_for(&pid_file, std::time::Duration::from_secs(2));
+
+        let supervisor =
+            ServerSupervisor::new(51778, "ws://127.0.0.1:51777".into(), "token".into());
+        supervisor.servers.lock().unwrap().push(crate::mux::Server {
+            id: "server-test".into(),
+            label: "server-test".into(),
+            url: "http://127.0.0.1:1/".into(),
+        });
+        supervisor
+            .children
+            .lock()
+            .unwrap()
+            .insert("server-test".into(), vec![child]);
+
+        supervisor.shutdown_all();
+
+        assert!(supervisor.servers().is_empty());
+        let gone = eventually(std::time::Duration::from_secs(2), || {
+            !process_exists(background_pid)
+        });
+        assert!(gone, "shutdown_all should terminate managed descendants");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn process_group_signal_pid_negates_child_pid() {
+        assert_eq!(process_group_signal_pid(42), Some(-42));
     }
 
     #[cfg(unix)]
@@ -1376,5 +1814,39 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
         std::fs::write(path, content).unwrap();
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[cfg(unix)]
+    fn read_pid_file_for(path: &Path, timeout: std::time::Duration) -> u32 {
+        let started = std::time::Instant::now();
+        while started.elapsed() < timeout {
+            if let Ok(text) = std::fs::read_to_string(path) {
+                if let Ok(pid) = text.trim().parse() {
+                    return pid;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        panic!("timed out waiting for pid file {}", path.display());
+    }
+
+    #[cfg(unix)]
+    fn process_exists(pid: u32) -> bool {
+        let Ok(pid) = i32::try_from(pid) else {
+            return false;
+        };
+        unsafe { libc_kill(pid, 0) == 0 }
+    }
+
+    #[cfg(unix)]
+    fn eventually(timeout: std::time::Duration, mut pred: impl FnMut() -> bool) -> bool {
+        let started = std::time::Instant::now();
+        while started.elapsed() < timeout {
+            if pred() {
+                return true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        pred()
     }
 }

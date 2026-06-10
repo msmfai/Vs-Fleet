@@ -1,0 +1,41 @@
+{
+  "run": {
+    "startedAt": "2026-06-10T11:50:29Z",
+    "image": "fleet-host-local",
+    "command": "RUST_LOG=info FLEET_AUTOSPAWN=1 crates/fleet-host/Fleet.app/Contents/MacOS/fleet-host"
+  },
+  "results": [
+    {
+      "scenario": "host-titlebar",
+      "scenarioTitle": "Fleet macOS titlebar layering",
+      "behaviour": "mux.titlebar.overlayRepro",
+      "title": "Overlay repro: VS Code paints under the native titlebar",
+      "pass": true,
+      "detail": "Explicit FLEET_MACOS_TITLEBAR_STYLE=overlay allows the child VS Code webview to occupy the titlebar strip. This is the mode that moved the phantom strip when the editor webview crop was changed.",
+      "rationale": "Keep this capture as the known-bad comparison for stale tab/titlebar fragments caused by AppKit/WebKit child-view layering.",
+      "evidence": {
+        "titlebarStyle": "overlay",
+        "windowCapture": "screencapture -x -l 4864 /private/tmp/fleet-titlebar-overlay.png"
+      },
+      "screenshots": [
+        "overlay-repro.png"
+      ]
+    },
+    {
+      "scenario": "host-titlebar",
+      "scenarioTitle": "Fleet macOS titlebar layering",
+      "behaviour": "mux.titlebar.defaultTransparent",
+      "title": "Default fixed path: transparent titlebar keeps VS Code below native chrome",
+      "pass": true,
+      "detail": "The rebuilt app logs titlebar_style=Transparent and the direct Fleet-window capture shows VS Code starting below the native titlebar, with no content-under-titlebar strip.",
+      "rationale": "Fleet defaults to Tauri TitleBarStyle::Transparent on macOS because Tauri documents Overlay as content-over-titlebar behavior with caveats; Fleet does not need the VS Code webview under AppKit chrome.",
+      "evidence": {
+        "titlebarStyle": "transparent",
+        "windowCapture": "screencapture -x -l 5045 /private/tmp/fleet-titlebar-default-transparent.png"
+      },
+      "screenshots": [
+        "default-transparent.png"
+      ]
+    }
+  ]
+}
