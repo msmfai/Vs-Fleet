@@ -35,19 +35,13 @@ else
   echo "warning: fleet-bridge VSIX not found at $BRIDGE_VSIX"
 fi
 
-# Convert the PNG icon to .icns (best-effort; the app still runs without it).
+# Convert the source PNG to local build icons. This is deliberately driven from
+# icons/icon.png so replacing that one file is enough.
 ICON_LINE=""
-if command -v sips >/dev/null && command -v iconutil >/dev/null && [ -f "$HERE/icons/icon.png" ]; then
-  ICONSET="$(mktemp -d)/Fleet.iconset"
-  mkdir -p "$ICONSET"
-  for s in 16 32 128 256 512; do
-    sips -z "$s" "$s" "$HERE/icons/icon.png" --out "$ICONSET/icon_${s}x${s}.png" >/dev/null 2>&1 || true
-    d=$(( s * 2 ))
-    sips -z "$d" "$d" "$HERE/icons/icon.png" --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null 2>&1 || true
-  done
-  if iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/Fleet.icns" 2>/dev/null; then
-    ICON_LINE="  <key>CFBundleIconFile</key><string>Fleet</string>"
-  fi
+"$HERE/scripts/refresh-icons.sh" --strict
+if [ -f "$HERE/icons/Fleet.icns" ]; then
+  cp "$HERE/icons/Fleet.icns" "$APP/Contents/Resources/Fleet.icns"
+  ICON_LINE="  <key>CFBundleIconFile</key><string>Fleet.icns</string>"
 fi
 
 {
