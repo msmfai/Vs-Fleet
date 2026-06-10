@@ -25,8 +25,8 @@
 //! - A run delta targeting an unknown session is a no-op that returns no events
 //!   (the reporter must register the session first).
 
-use fleet_protocol::{rollup, AgentRun, Event, Session};
-use std::collections::HashMap;
+use fleet_protocol::{rollup, AgentRun, Event, Session, State};
+use std::collections::{HashMap, HashSet};
 
 /// The Hub's authoritative state and the engine that mutates it.
 ///
@@ -88,13 +88,78 @@ impl MergeEngine {
         };
     }
 
+    fn any_soloed(&self) -> bool {
+        self.sessions.values().any(|session| session.soloed)
+    }
+
+    fn should_notify_session(session: &Session, any_soloed: bool) -> bool {
+        session.rollup_state == State::Waiting && !session.muted && (!any_soloed || session.soloed)
+    }
+
+    fn update_unread_for_notify_transition(
+        session: &mut Session,
+        old_notify: bool,
+        new_notify: bool,
+    ) -> bool {
+        if !old_notify && new_notify && !session.unread {
+            session.unread = true;
+            true
+        } else if old_notify && !new_notify && session.unread {
+            session.unread = false;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn notify_map(&self) -> HashMap<String, bool> {
+        let any_soloed = self.any_soloed();
+        self.sessions
+            .iter()
+            .map(|(id, session)| (id.clone(), Self::should_notify_session(session, any_soloed)))
+            .collect()
+    }
+
+    fn reconcile_unread_from(&mut self, old_notify: &HashMap<String, bool>) -> HashSet<String> {
+        let any_soloed = self.any_soloed();
+        let mut changed = HashSet::new();
+        for id in self.order.clone() {
+            let old = old_notify.get(&id).copied().unwrap_or(false);
+            let Some(session) = self.sessions.get_mut(&id) else {
+                continue;
+            };
+            let new = Self::should_notify_session(session, any_soloed);
+            if Self::update_unread_for_notify_transition(session, old, new) {
+                changed.insert(id);
+            }
+        }
+        changed
+    }
+
+    fn updated_events_for(&self, changed_ids: HashSet<String>) -> Vec<Event> {
+        self.order
+            .iter()
+            .filter(|id| changed_ids.contains(*id))
+            .filter_map(|id| self.sessions.get(id).cloned())
+            .map(Event::session_updated)
+            .collect()
+    }
+
     /// Insert or replace a whole session (reporter `session.upsert`).
     ///
     /// On upsert the session's rollups are recomputed from whatever runs it
     /// carries, so a reporter that ships a session + runs in one object still
     /// gets a correct rollup. Returns the outbound event (added vs updated).
     pub fn upsert_session(&mut self, mut session: Session) -> Event {
+        let any_soloed_before = self.any_soloed();
+        let old_notify = self
+            .sessions
+            .get(&session.session_id)
+            .map(|existing| Self::should_notify_session(existing, any_soloed_before))
+            .unwrap_or(false);
         Self::recompute_rollups(&mut session);
+        let new_notify = Self::should_notify_session(&session, any_soloed_before);
+        Self::update_unread_for_notify_transition(&mut session, old_notify, new_notify);
         let id = session.session_id.clone();
         if self.sessions.contains_key(&id) {
             self.sessions.insert(id.clone(), session.clone());
@@ -107,14 +172,28 @@ impl MergeEngine {
     }
 
     /// Remove a session by id (reporter `session.remove`). Returns the removal
-    /// event, or `None` if the session was not present (idempotent).
-    pub fn remove_session(&mut self, session_id: &str) -> Option<Event> {
-        if self.sessions.remove(session_id).is_some() {
-            self.order.retain(|id| id != session_id);
-            Some(Event::session_removed(session_id.to_string()))
-        } else {
-            None
+    /// event plus any remaining sessions whose unread state changed because the
+    /// removal changed the mute/solo notification set. Empty if absent.
+    pub fn remove_session_events(&mut self, session_id: &str) -> Vec<Event> {
+        if !self.sessions.contains_key(session_id) {
+            return Vec::new();
         }
+
+        let old_notify = self.notify_map();
+        self.sessions.remove(session_id);
+        self.order.retain(|id| id != session_id);
+
+        let mut events = vec![Event::session_removed(session_id.to_string())];
+        let changed_ids = self.reconcile_unread_from(&old_notify);
+        events.extend(self.updated_events_for(changed_ids));
+        events
+    }
+
+    /// Backward-compatible convenience for callers that only care whether the
+    /// target existed. State reconciliation still happens; additional update
+    /// events are intentionally discarded by this narrow helper.
+    pub fn remove_session(&mut self, session_id: &str) -> Option<Event> {
+        self.remove_session_events(session_id).into_iter().next()
     }
 
     /// Insert or replace a run within a session (reporter `run.upsert`).
@@ -124,9 +203,11 @@ impl MergeEngine {
     /// faces that track session-level rollups stay correct. Returns an empty
     /// vec if the target session is unknown (no-op).
     pub fn upsert_run(&mut self, session_id: &str, run: AgentRun) -> Vec<Event> {
+        let any_soloed = self.any_soloed();
         let Some(session) = self.sessions.get_mut(session_id) else {
             return Vec::new();
         };
+        let old_notify = Self::should_notify_session(session, any_soloed);
         let run_event =
             if let Some(existing) = session.runs.iter_mut().find(|r| r.run_id == run.run_id) {
                 *existing = run.clone();
@@ -136,6 +217,8 @@ impl MergeEngine {
                 Event::run_added(session_id.to_string(), run)
             };
         Self::recompute_rollups(session);
+        let new_notify = Self::should_notify_session(session, any_soloed);
+        Self::update_unread_for_notify_transition(session, old_notify, new_notify);
         let session_clone = session.clone();
         vec![run_event, Event::session_updated(session_clone)]
     }
@@ -145,15 +228,19 @@ impl MergeEngine {
     /// Recomputes the rollup and returns the run-removal event plus a
     /// `session.updated`. Returns an empty vec if the session or run was absent.
     pub fn remove_run(&mut self, session_id: &str, run_id: &str) -> Vec<Event> {
+        let any_soloed = self.any_soloed();
         let Some(session) = self.sessions.get_mut(session_id) else {
             return Vec::new();
         };
+        let old_notify = Self::should_notify_session(session, any_soloed);
         let before = session.runs.len();
         session.runs.retain(|r| r.run_id != run_id);
         if session.runs.len() == before {
             return Vec::new(); // run wasn't there
         }
         Self::recompute_rollups(session);
+        let new_notify = Self::should_notify_session(session, any_soloed);
+        Self::update_unread_for_notify_transition(session, old_notify, new_notify);
         let session_clone = session.clone();
         vec![
             Event::run_removed(session_id.to_string(), run_id.to_string()),
@@ -185,36 +272,56 @@ impl MergeEngine {
     }
 
     /// Set `muted = true` on a session. If the session was soloed, muting it
-    /// also clears `soloed` so the inbox leaves solo mode. Returns
-    /// `Some(session.updated)` if the session was found and either flag changed;
-    /// `None` if absent or already muted and not soloed.
+    /// also clears `soloed` so the inbox leaves solo mode. Returns every
+    /// `session.updated` caused by flag or unread changes. Empty if absent or
+    /// already muted and not soloed.
     ///
     /// Muting silences pings for the session without removing it from the inbox
     /// (README §15.4 / PLAN S25). State is still visible; only notifications are
     /// suppressed.
-    pub fn apply_mute(&mut self, session_id: &str) -> Option<Event> {
-        let sess = self.sessions.get_mut(session_id)?;
+    pub fn apply_mute(&mut self, session_id: &str) -> Vec<Event> {
+        if !self.sessions.contains_key(session_id) {
+            return Vec::new();
+        }
+        let old_notify = self.notify_map();
+        let mut changed_ids = HashSet::new();
+
+        let Some(sess) = self.sessions.get_mut(session_id) else {
+            return Vec::new();
+        };
         if sess.muted && !sess.soloed {
-            return None; // already muted, no change
+            return Vec::new(); // already muted, no change
         }
         sess.muted = true;
         sess.soloed = false;
-        let cloned = sess.clone();
-        Some(Event::session_updated(cloned))
+        changed_ids.insert(session_id.to_string());
+
+        changed_ids.extend(self.reconcile_unread_from(&old_notify));
+        self.updated_events_for(changed_ids)
     }
 
-    /// Set `muted = false` on a session. Returns `Some(session.updated)` if the
-    /// session was found and either mute or solo state changed; `None` if absent
-    /// or already unmuted and not soloed.
-    pub fn apply_unmute(&mut self, session_id: &str) -> Option<Event> {
-        let sess = self.sessions.get_mut(session_id)?;
+    /// Set `muted = false` on a session. Returns every `session.updated` caused
+    /// by flag or unread changes. Empty if absent or already unmuted and not
+    /// soloed.
+    pub fn apply_unmute(&mut self, session_id: &str) -> Vec<Event> {
+        if !self.sessions.contains_key(session_id) {
+            return Vec::new();
+        }
+        let old_notify = self.notify_map();
+        let mut changed_ids = HashSet::new();
+
+        let Some(sess) = self.sessions.get_mut(session_id) else {
+            return Vec::new();
+        };
         if !sess.muted && !sess.soloed {
-            return None; // already unmuted, no change
+            return Vec::new(); // already unmuted, no change
         }
         sess.muted = false;
         sess.soloed = false;
-        let cloned = sess.clone();
-        Some(Event::session_updated(cloned))
+        changed_ids.insert(session_id.to_string());
+
+        changed_ids.extend(self.reconcile_unread_from(&old_notify));
+        self.updated_events_for(changed_ids)
     }
 
     /// Solo a session: set `soloed = true` on `session_id` and `soloed = false`
@@ -233,7 +340,8 @@ impl MergeEngine {
             return Vec::new();
         }
 
-        let mut events = Vec::new();
+        let old_notify = self.notify_map();
+        let mut changed_ids = HashSet::new();
 
         // First pass: clear the solo flag on every other session.
         for id in &self.order {
@@ -241,7 +349,7 @@ impl MergeEngine {
                 if let Some(s) = self.sessions.get_mut(id.as_str()) {
                     if s.soloed {
                         s.soloed = false;
-                        events.push(Event::session_updated(s.clone()));
+                        changed_ids.insert(id.clone());
                     }
                 }
             }
@@ -252,11 +360,24 @@ impl MergeEngine {
             if !s.soloed || s.muted {
                 s.soloed = true;
                 s.muted = false;
-                events.push(Event::session_updated(s.clone()));
+                changed_ids.insert(session_id.to_string());
             }
         }
 
-        events
+        changed_ids.extend(self.reconcile_unread_from(&old_notify));
+        self.updated_events_for(changed_ids)
+    }
+
+    /// Mark a focused session as read. This is the Hub-side effect of
+    /// `Command::focus`: focusing is an acknowledgement of the unread ping, but
+    /// it must not fabricate progress by changing the session state.
+    pub fn apply_focus(&mut self, session_id: &str) -> Option<Event> {
+        let sess = self.sessions.get_mut(session_id)?;
+        if !sess.unread {
+            return None;
+        }
+        sess.unread = false;
+        Some(Event::session_updated(sess.clone()))
     }
 }
 
@@ -328,6 +449,35 @@ mod tests {
     }
 
     #[test]
+    fn removing_soloed_session_rearms_other_waiting_unread() {
+        let mut e = MergeEngine::new();
+        e.upsert_session(sess("solo"));
+        e.upsert_session(sess("other"));
+        e.upsert_run(
+            "solo",
+            run_with("r1", State::Waiting, Some(Urgency::Approval)),
+        );
+        e.upsert_run(
+            "other",
+            run_with("r2", State::Waiting, Some(Urgency::Question)),
+        );
+        e.apply_focus("solo");
+        e.apply_focus("other");
+        e.apply_solo("solo");
+
+        let evs = e.remove_session_events("solo");
+
+        assert!(e.session("solo").is_none());
+        assert!(e.session("other").unwrap().unread);
+        let names: Vec<_> = evs.iter().map(Event::type_name).collect();
+        assert_eq!(names, vec!["session.removed", "session.updated"]);
+        match &evs[1] {
+            Event::SessionUpdated { session, .. } => assert_eq!(session.session_id, "other"),
+            other => panic!("expected session.updated, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn run_upsert_recomputes_rollup() {
         let mut e = MergeEngine::new();
         e.upsert_session(sess("s1"));
@@ -361,6 +511,70 @@ mod tests {
         assert_eq!(s.runs.len(), 1, "update is in place, not append");
         assert_eq!(s.rollup_state, State::Working);
         assert_eq!(s.rollup_urgency, None);
+    }
+
+    #[test]
+    fn waiting_transition_marks_session_unread() {
+        let mut e = MergeEngine::new();
+        e.upsert_session(sess("s1"));
+
+        e.upsert_run(
+            "s1",
+            run_with("r1", State::Waiting, Some(Urgency::Approval)),
+        );
+
+        assert!(e.session("s1").unwrap().unread);
+    }
+
+    #[test]
+    fn waiting_resolution_clears_session_unread() {
+        let mut e = MergeEngine::new();
+        e.upsert_session(sess("s1"));
+        e.upsert_run(
+            "s1",
+            run_with("r1", State::Waiting, Some(Urgency::Approval)),
+        );
+        assert!(e.session("s1").unwrap().unread);
+
+        e.upsert_run("s1", run_with("r1", State::Working, None));
+
+        assert!(!e.session("s1").unwrap().unread);
+    }
+
+    #[test]
+    fn focused_waiting_session_is_not_rearmed_by_same_waiting_update() {
+        let mut e = MergeEngine::new();
+        e.upsert_session(sess("s1"));
+        e.upsert_run(
+            "s1",
+            run_with("r1", State::Waiting, Some(Urgency::Approval)),
+        );
+        e.apply_focus("s1");
+        assert!(!e.session("s1").unwrap().unread);
+
+        e.upsert_run(
+            "s1",
+            run_with("r1", State::Waiting, Some(Urgency::Approval)),
+        );
+
+        assert!(!e.session("s1").unwrap().unread);
+    }
+
+    #[test]
+    fn mute_clears_waiting_unread_and_unmute_rearms_it() {
+        let mut e = MergeEngine::new();
+        e.upsert_session(sess("s1"));
+        e.upsert_run(
+            "s1",
+            run_with("r1", State::Waiting, Some(Urgency::Question)),
+        );
+        assert!(e.session("s1").unwrap().unread);
+
+        e.apply_mute("s1");
+        assert!(!e.session("s1").unwrap().unread);
+
+        e.apply_unmute("s1");
+        assert!(e.session("s1").unwrap().unread);
     }
 
     #[test]
@@ -422,8 +636,9 @@ mod tests {
         let mut e = MergeEngine::new();
         e.upsert_session(sess("s1"));
         assert!(!e.session("s1").unwrap().muted);
-        let ev = e.apply_mute("s1").expect("mute on present session");
-        assert_eq!(ev.type_name(), "session.updated");
+        let evs = e.apply_mute("s1");
+        assert_eq!(evs.len(), 1);
+        assert_eq!(evs[0].type_name(), "session.updated");
         assert!(e.session("s1").unwrap().muted);
     }
 
@@ -433,14 +648,37 @@ mod tests {
         e.upsert_session(sess("s1"));
         e.apply_mute("s1");
         // Second mute is a no-op.
-        assert!(e.apply_mute("s1").is_none(), "second mute must be a no-op");
+        assert!(e.apply_mute("s1").is_empty(), "second mute must be a no-op");
         assert!(e.session("s1").unwrap().muted);
     }
 
     #[test]
     fn mute_on_absent_session_is_none() {
         let mut e = MergeEngine::new();
-        assert!(e.apply_mute("ghost").is_none());
+        assert!(e.apply_mute("ghost").is_empty());
+    }
+
+    #[test]
+    fn focus_clears_unread_and_keeps_state() {
+        let mut e = MergeEngine::new();
+        let mut s = sess("s1");
+        s.unread = true;
+        s.rollup_state = State::Waiting;
+        e.upsert_session(s);
+
+        let ev = e.apply_focus("s1").expect("focus on unread session");
+        assert_eq!(ev.type_name(), "session.updated");
+        let s = e.session("s1").unwrap();
+        assert!(!s.unread);
+        assert_eq!(s.rollup_state, State::Waiting);
+    }
+
+    #[test]
+    fn focus_is_idempotent_for_read_or_absent_session() {
+        let mut e = MergeEngine::new();
+        e.upsert_session(sess("s1"));
+        assert!(e.apply_focus("s1").is_none());
+        assert!(e.apply_focus("ghost").is_none());
     }
 
     #[test]
@@ -448,8 +686,9 @@ mod tests {
         let mut e = MergeEngine::new();
         e.upsert_session(sess("s1"));
         e.apply_mute("s1");
-        let ev = e.apply_unmute("s1").expect("unmute on muted session");
-        assert_eq!(ev.type_name(), "session.updated");
+        let evs = e.apply_unmute("s1");
+        assert_eq!(evs.len(), 1);
+        assert_eq!(evs[0].type_name(), "session.updated");
         assert!(!e.session("s1").unwrap().muted);
     }
 
@@ -459,7 +698,7 @@ mod tests {
         e.upsert_session(sess("s1"));
         // Already unmuted; second unmute is a no-op.
         assert!(
-            e.apply_unmute("s1").is_none(),
+            e.apply_unmute("s1").is_empty(),
             "unmute of already-unmuted must be no-op"
         );
     }
@@ -484,8 +723,9 @@ mod tests {
         e.apply_solo("s1");
         assert!(e.session("s1").unwrap().soloed);
 
-        let ev = e.apply_mute("s1").expect("mute must clear solo");
-        assert_eq!(ev.type_name(), "session.updated");
+        let evs = e.apply_mute("s1");
+        assert_eq!(evs.len(), 1);
+        assert_eq!(evs[0].type_name(), "session.updated");
         let s = e.session("s1").unwrap();
         assert!(s.muted);
         assert!(!s.soloed);
@@ -499,11 +739,50 @@ mod tests {
         assert!(e.session("s1").unwrap().soloed);
         assert!(!e.session("s1").unwrap().muted);
 
-        let ev = e.apply_unmute("s1").expect("unmute must clear solo");
-        assert_eq!(ev.type_name(), "session.updated");
+        let evs = e.apply_unmute("s1");
+        assert_eq!(evs.len(), 1);
+        assert_eq!(evs[0].type_name(), "session.updated");
         let s = e.session("s1").unwrap();
         assert!(!s.muted);
         assert!(!s.soloed);
+    }
+
+    #[test]
+    fn muting_soloed_waiting_session_rearms_other_waiting_unread() {
+        let mut e = MergeEngine::new();
+        e.upsert_session(sess("s1"));
+        e.upsert_session(sess("s2"));
+        e.upsert_run(
+            "s1",
+            run_with("r1", State::Waiting, Some(Urgency::Approval)),
+        );
+        e.upsert_run(
+            "s2",
+            run_with("r2", State::Waiting, Some(Urgency::Question)),
+        );
+        e.apply_focus("s1");
+        e.apply_focus("s2");
+        assert!(!e.session("s1").unwrap().unread);
+        assert!(!e.session("s2").unwrap().unread);
+
+        e.apply_solo("s1");
+        assert!(!e.session("s1").unwrap().unread);
+        assert!(!e.session("s2").unwrap().unread);
+
+        let evs = e.apply_mute("s1");
+
+        assert!(e.session("s1").unwrap().muted);
+        assert!(!e.session("s1").unwrap().soloed);
+        assert!(!e.session("s1").unwrap().unread);
+        assert!(e.session("s2").unwrap().unread);
+        let ids: Vec<_> = evs
+            .iter()
+            .filter_map(|ev| match ev {
+                Event::SessionUpdated { session, .. } => Some(session.session_id.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ids, vec!["s1", "s2"]);
     }
 
     #[test]

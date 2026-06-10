@@ -184,9 +184,7 @@ impl EventLog {
 fn apply_to_engine(engine: &mut MergeEngine, ev: PersistEvent) -> Vec<Event> {
     match ev {
         PersistEvent::SessionUpsert { session } => vec![engine.upsert_session(*session)],
-        PersistEvent::SessionRemove { session_id } => {
-            engine.remove_session(&session_id).into_iter().collect()
-        }
+        PersistEvent::SessionRemove { session_id } => engine.remove_session_events(&session_id),
         PersistEvent::RunUpsert { session_id, run } => engine.upsert_run(&session_id, *run),
         PersistEvent::RunRemove { session_id, run_id } => engine.remove_run(&session_id, &run_id),
     }
@@ -267,34 +265,41 @@ impl StateStore {
         self.engine.snapshot()
     }
 
-    /// Persist + apply a session upsert. Returns the broadcast event.
-    pub fn apply_session_upsert(&mut self, session: Session) -> Result<Event, PersistError> {
+    /// Persist + apply a reporter session upsert. Returns the broadcast event.
+    pub fn apply_session_upsert(&mut self, mut session: Session) -> Result<Event, PersistError> {
+        self.preserve_hub_owned_fields(&mut session);
         self.log.append(&PersistEvent::SessionUpsert {
             session: Box::new(session.clone()),
         })?;
         Ok(self.engine.upsert_session(session))
     }
 
-    /// Persist + apply a session removal. Returns the event, or `None` if absent.
-    pub fn apply_session_remove(
-        &mut self,
-        session_id: &str,
-    ) -> Result<Option<Event>, PersistError> {
+    fn preserve_hub_owned_fields(&self, session: &mut Session) {
+        let Some(existing) = self.engine.session(&session.session_id) else {
+            return;
+        };
+        session.muted = existing.muted;
+        session.soloed = existing.soloed;
+        session.unread = existing.unread;
+    }
+
+    /// Persist + apply a session removal. Returns the broadcast events, empty if absent.
+    pub fn apply_session_remove(&mut self, session_id: &str) -> Result<Vec<Event>, PersistError> {
         // Only log a removal that actually changes state, so the log stays a
         // faithful history (idempotent no-ops are not persisted).
         if self.engine.session(session_id).is_none() {
-            return Ok(None);
+            return Ok(Vec::new());
         }
         self.log.append(&PersistEvent::SessionRemove {
             session_id: session_id.to_string(),
         })?;
-        let ev = self.engine.remove_session(session_id);
+        let evs = self.engine.remove_session_events(session_id);
         // Invariant 3: drop the session's reclaim bookkeeping (its buffered-delta
         // dedup queue) atomically with the state entry. After this, a later
         // genuinely-fresh delta for one of these durable ids is admitted from
         // scratch rather than wrongly rejected as a stale duplicate.
         self.drop_session_reclaim(session_id);
-        Ok(ev)
+        Ok(evs)
     }
 
     /// Persist + apply a run upsert. Returns the broadcast events (possibly empty
@@ -389,39 +394,22 @@ impl StateStore {
         }
     }
 
-    /// Set `muted = true` on a session, persisting the updated session state.
+    /// Set `muted = true` on a session, persisting every updated session state.
     ///
-    /// Returns `Some(session.updated)` if the session was found and the flag
-    /// changed; `None` if absent or already muted. The updated session is
-    /// appended as a `session.upsert` so the flag survives a Hub restart.
-    pub fn apply_mute(&mut self, session_id: &str) -> Option<Event> {
-        // Apply the change in memory first to get the updated session.
-        let ev = self.engine.apply_mute(session_id)?;
-        // Persist the updated session state.
-        if let Some(sess) = self.engine.session(session_id) {
-            if let Err(e) = self.log.append(&PersistEvent::SessionUpsert {
-                session: Box::new(sess.clone()),
-            }) {
-                tracing::error!(error = %e, "persist mute failed; flag not durable");
-            }
-        }
-        Some(ev)
+    /// Returns the broadcast events. Empty if absent or already muted.
+    pub fn apply_mute(&mut self, session_id: &str) -> Vec<Event> {
+        let events = self.engine.apply_mute(session_id);
+        self.persist_sessions_from_events(&events, "mute");
+        events
     }
 
-    /// Set `muted = false` on a session, persisting the updated state.
+    /// Set `muted = false` on a session, persisting every updated session state.
     ///
-    /// Returns `Some(session.updated)` if found and the flag changed; `None` if
-    /// absent or already unmuted.
-    pub fn apply_unmute(&mut self, session_id: &str) -> Option<Event> {
-        let ev = self.engine.apply_unmute(session_id)?;
-        if let Some(sess) = self.engine.session(session_id) {
-            if let Err(e) = self.log.append(&PersistEvent::SessionUpsert {
-                session: Box::new(sess.clone()),
-            }) {
-                tracing::error!(error = %e, "persist unmute failed; flag not durable");
-            }
-        }
-        Some(ev)
+    /// Returns the broadcast events. Empty if absent or already unmuted.
+    pub fn apply_unmute(&mut self, session_id: &str) -> Vec<Event> {
+        let events = self.engine.apply_unmute(session_id);
+        self.persist_sessions_from_events(&events, "unmute");
+        events
     }
 
     /// Solo a session (set `soloed = true` on it, clear the flag on all others),
@@ -430,12 +418,11 @@ impl StateStore {
     /// Returns the broadcast events. Empty if `session_id` is not found.
     pub fn apply_solo(&mut self, session_id: &str) -> Vec<Event> {
         let events = self.engine.apply_solo(session_id);
-        if events.is_empty() {
-            return events;
-        }
-        // Persist every session whose soloed flag changed (i.e. those we emitted
-        // events for). We snapshot the current state of those sessions.
-        // Collect the session ids from the events to persist them.
+        self.persist_sessions_from_events(&events, "solo");
+        events
+    }
+
+    fn persist_sessions_from_events(&mut self, events: &[Event], context: &str) {
         let changed_ids: Vec<String> = events
             .iter()
             .filter_map(|ev| match ev {
@@ -448,11 +435,24 @@ impl StateStore {
                 if let Err(e) = self.log.append(&PersistEvent::SessionUpsert {
                     session: Box::new(sess.clone()),
                 }) {
-                    tracing::error!(error = %e, "persist solo failed for session {id}; flag not durable");
+                    tracing::error!(error = %e, "persist {context} failed for session {id}; session state not durable");
                 }
             }
         }
-        events
+    }
+
+    /// Mark a focused session as read, persisting the updated session so unread
+    /// badges do not return after a Hub restart.
+    pub fn apply_focus(&mut self, session_id: &str) -> Option<Event> {
+        let ev = self.engine.apply_focus(session_id)?;
+        if let Some(sess) = self.engine.session(session_id) {
+            if let Err(e) = self.log.append(&PersistEvent::SessionUpsert {
+                session: Box::new(sess.clone()),
+            }) {
+                tracing::error!(error = %e, "persist focus failed; unread flag not durable");
+            }
+        }
+        Some(ev)
     }
 
     /// Persist + apply a run removal. Returns the broadcast events (empty if the
@@ -551,9 +551,7 @@ impl StateStore {
             .collect();
         let mut out = Vec::new();
         for sid in victims {
-            if let Some(ev) = self.apply_session_remove(&sid)? {
-                out.push(ev);
-            }
+            out.extend(self.apply_session_remove(&sid)?);
         }
         Ok(out)
     }
@@ -828,7 +826,7 @@ mod tests {
                 .unwrap();
             // Remove one run, then the redundant session removal of a ghost (no-op).
             store.apply_run_remove("s2", "r2").unwrap();
-            assert!(store.apply_session_remove("ghost").unwrap().is_none());
+            assert!(store.apply_session_remove("ghost").unwrap().is_empty());
         }
 
         // Second Hub lifetime: reopen → state must be exactly as left.
@@ -861,6 +859,157 @@ mod tests {
         let first = StateStore::open(&path).unwrap().snapshot();
         let second = StateStore::open(&path).unwrap().snapshot();
         assert_eq!(first, second, "reopening must be deterministic");
+    }
+
+    #[test]
+    fn reporter_session_upsert_preserves_existing_unread_state() {
+        let mut s = StateStore::open_in_memory().unwrap();
+        let mut session = sess("s1", "2026-06-08T00:00:00Z");
+        session
+            .runs
+            .push(run("r1", State::Waiting, "2026-06-08T00:00:00Z"));
+        s.apply_session_upsert(session.clone()).unwrap();
+        assert!(s.snapshot()[0].unread);
+
+        session.unread = false;
+        s.apply_session_upsert(session.clone()).unwrap();
+        assert!(
+            s.snapshot()[0].unread,
+            "reporter refresh must not clear unread"
+        );
+
+        s.apply_focus("s1").expect("focus clears unread");
+        session.unread = true;
+        s.apply_session_upsert(session).unwrap();
+        assert!(
+            !s.snapshot()[0].unread,
+            "reporter refresh must not re-arm a focused waiting session"
+        );
+    }
+
+    #[test]
+    fn reporter_session_upsert_preserves_existing_mute_and_solo_state() {
+        let mut s = StateStore::open_in_memory().unwrap();
+        s.apply_session_upsert(sess("muted", "2026-06-08T00:00:00Z"))
+            .unwrap();
+        s.apply_mute("muted");
+        let mut muted_refresh = sess("muted", "2026-06-08T00:01:00Z");
+        muted_refresh.muted = false;
+        s.apply_session_upsert(muted_refresh).unwrap();
+        let snap = s.snapshot();
+        let muted = snap
+            .iter()
+            .find(|session| session.session_id == "muted")
+            .unwrap();
+        assert!(muted.muted, "reporter refresh must not unmute");
+
+        s.apply_session_upsert(sess("soloed", "2026-06-08T00:00:00Z"))
+            .unwrap();
+        s.apply_solo("soloed");
+        let mut solo_refresh = sess("soloed", "2026-06-08T00:01:00Z");
+        solo_refresh.soloed = false;
+        s.apply_session_upsert(solo_refresh).unwrap();
+        let snap = s.snapshot();
+        let soloed = snap
+            .iter()
+            .find(|session| session.session_id == "soloed")
+            .unwrap();
+        assert!(soloed.soloed, "reporter refresh must not clear solo");
+    }
+
+    #[test]
+    fn reporter_preserved_fields_survive_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("events.db");
+        {
+            let mut s = StateStore::open(&path).unwrap();
+
+            let mut waiting = sess("waiting", "2026-06-08T00:00:00Z");
+            waiting
+                .runs
+                .push(run("r1", State::Waiting, "2026-06-08T00:00:00Z"));
+            s.apply_session_upsert(waiting.clone()).unwrap();
+            s.apply_focus("waiting").expect("focus clears unread");
+            waiting.unread = true;
+            s.apply_session_upsert(waiting).unwrap();
+
+            s.apply_session_upsert(sess("muted", "2026-06-08T00:00:00Z"))
+                .unwrap();
+            s.apply_mute("muted");
+            let mut muted_refresh = sess("muted", "2026-06-08T00:01:00Z");
+            muted_refresh.muted = false;
+            s.apply_session_upsert(muted_refresh).unwrap();
+        }
+
+        let snap = StateStore::open(&path).unwrap().snapshot();
+        let waiting = snap
+            .iter()
+            .find(|session| session.session_id == "waiting")
+            .unwrap();
+        assert!(
+            !waiting.unread,
+            "focused unread state must survive reporter refresh and restart"
+        );
+        let muted = snap
+            .iter()
+            .find(|session| session.session_id == "muted")
+            .unwrap();
+        assert!(
+            muted.muted,
+            "muted state must survive reporter refresh and restart"
+        );
+    }
+
+    #[test]
+    fn focus_clear_unread_survives_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("events.db");
+        {
+            let mut s = StateStore::open(&path).unwrap();
+            let mut session = sess("s1", "2026-06-08T00:00:00Z");
+            session.unread = true;
+            s.apply_session_upsert(session).unwrap();
+            let ev = s.apply_focus("s1").expect("focus clears unread");
+            assert_eq!(ev.type_name(), "session.updated");
+        }
+
+        let snap = StateStore::open(&path).unwrap().snapshot();
+        assert_eq!(snap.len(), 1);
+        assert!(!snap[0].unread, "focus/read state must be durable");
+    }
+
+    #[test]
+    fn removing_soloed_session_rearms_other_waiting_unread_after_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("events.db");
+        {
+            let mut s = StateStore::open(&path).unwrap();
+            s.apply_session_upsert(sess("solo", "2026-06-08T00:00:00Z"))
+                .unwrap();
+            s.apply_session_upsert(sess("other", "2026-06-08T00:00:00Z"))
+                .unwrap();
+            s.apply_run_upsert("solo", run("r1", State::Waiting, "2026-06-08T00:01:00Z"))
+                .unwrap();
+            s.apply_run_upsert("other", run("r2", State::Waiting, "2026-06-08T00:01:00Z"))
+                .unwrap();
+            s.apply_focus("solo").unwrap();
+            s.apply_focus("other").unwrap();
+            s.apply_solo("solo");
+
+            let evs = s.apply_session_remove("solo").unwrap();
+            assert_eq!(
+                evs.iter().map(Event::type_name).collect::<Vec<_>>(),
+                vec!["session.removed", "session.updated"]
+            );
+        }
+
+        let snap = StateStore::open(&path).unwrap().snapshot();
+        assert_eq!(snap.len(), 1);
+        assert_eq!(snap[0].session_id, "other");
+        assert!(
+            snap[0].unread,
+            "removing a solo must re-arm remaining waiting sessions durably"
+        );
     }
 
     // ---- crash-mid-write recovery (truncated / partial tail) ------------------
@@ -1087,7 +1236,7 @@ mod tests {
         // Removing an absent run / session / run on unknown session: all no-ops.
         assert!(store.apply_run_remove("s1", "ghost").unwrap().is_empty());
         assert!(store.apply_run_remove("ghost", "r").unwrap().is_empty());
-        assert!(store.apply_session_remove("ghost").unwrap().is_none());
+        assert!(store.apply_session_remove("ghost").unwrap().is_empty());
         assert!(store
             .apply_run_upsert("ghost", run("r", State::Idle, "2026-06-08T00:00:00Z"))
             .unwrap()

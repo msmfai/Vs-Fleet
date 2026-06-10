@@ -94,9 +94,8 @@ impl HubState {
                 Some(Event::snapshot(store.snapshot()))
             }
             ClientMessage::Command { command } => {
-                // S25: mute/unmute/solo are now fully implemented. Other commands
-                // (focus, dismiss, set_tags) are accepted and logged but not yet
-                // acted on — they land in later slices.
+                // Commands are accepted asynchronously: mutations are broadcast
+                // as normal deltas rather than returned as immediate replies.
                 self.apply_command(command).await;
                 None
             }
@@ -107,10 +106,11 @@ impl HubState {
             ClientMessage::SessionRemove { session_id } => {
                 let mut store = self.store.lock().await;
                 match store.apply_session_remove(&session_id) {
-                    Ok(Some(ev)) => {
-                        let _ = self.tx.send(ev);
+                    Ok(evs) => {
+                        for ev in evs {
+                            let _ = self.tx.send(ev);
+                        }
                     }
-                    Ok(None) => {}
                     Err(e) => tracing::error!(error = %e, "persist session.remove failed; dropped"),
                 }
                 None
@@ -144,15 +144,33 @@ impl HubState {
     async fn apply_command(&self, command: fleet_protocol::Command) {
         use fleet_protocol::{Command, Target};
         match command {
+            Command::Focus { target, .. } => {
+                let mut store = self.store.lock().await;
+                let session_id = match target {
+                    Target::Session { session_id } => Some(session_id),
+                    Target::Run { run_id } => store.snapshot().into_iter().find_map(|session| {
+                        session
+                            .runs
+                            .iter()
+                            .any(|run| run.run_id == run_id)
+                            .then_some(session.session_id)
+                    }),
+                };
+                if let Some(session_id) = session_id {
+                    if let Some(ev) = store.apply_focus(&session_id) {
+                        let _ = self.tx.send(ev);
+                    }
+                }
+            }
             Command::Mute { session_id, .. } => {
                 let mut store = self.store.lock().await;
-                if let Some(ev) = store.apply_mute(&session_id) {
+                for ev in store.apply_mute(&session_id) {
                     let _ = self.tx.send(ev);
                 }
             }
             Command::Unmute { session_id, .. } => {
                 let mut store = self.store.lock().await;
-                if let Some(ev) = store.apply_unmute(&session_id) {
+                for ev in store.apply_unmute(&session_id) {
                     let _ = self.tx.send(ev);
                 }
             }
@@ -167,10 +185,11 @@ impl HubState {
                 match target {
                     Target::Session { session_id } => match store.apply_session_remove(&session_id)
                     {
-                        Ok(Some(ev)) => {
-                            let _ = self.tx.send(ev);
+                        Ok(evs) => {
+                            for ev in evs {
+                                let _ = self.tx.send(ev);
+                            }
                         }
-                        Ok(None) => {}
                         Err(e) => tracing::error!(
                             error = %e,
                             session_id,
@@ -551,6 +570,77 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn focus_session_clears_unread_and_broadcasts() {
+        let state = HubState::new();
+        let mut session = sess("s1");
+        session.unread = true;
+        session.rollup_state = State::Waiting;
+        state.apply(ClientMessage::SessionUpsert { session }).await;
+        let mut rx = state.subscribe();
+
+        state
+            .apply(ClientMessage::Command {
+                command: fleet_protocol::Command::focus(fleet_protocol::Target::session("s1")),
+            })
+            .await;
+
+        let ev = rx.recv().await.unwrap();
+        assert_eq!(ev.type_name(), "session.updated");
+        match ev {
+            Event::SessionUpdated { session, .. } => {
+                assert!(!session.unread, "focus must clear unread");
+                assert_eq!(session.rollup_state, State::Waiting);
+            }
+            other => panic!("expected session.updated, got {other:?}"),
+        }
+
+        let snap = state.apply(ClientMessage::Subscribe).await.unwrap();
+        match snap {
+            Event::Snapshot { sessions, .. } => assert!(!sessions[0].unread),
+            other => panic!("expected snapshot, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn focus_run_clears_owning_session_unread() {
+        let state = HubState::new();
+        let mut session = sess("s1");
+        session.unread = true;
+        state.apply(ClientMessage::SessionUpsert { session }).await;
+        state
+            .apply(ClientMessage::RunUpsert {
+                session_id: "s1".into(),
+                run: AgentRun::new(
+                    "r1",
+                    AgentKind::Codex,
+                    "n",
+                    "/",
+                    State::Waiting,
+                    Confidence::High,
+                    "2026-06-08T00:00:00Z",
+                ),
+                stamp: None,
+            })
+            .await;
+        let mut rx = state.subscribe();
+
+        state
+            .apply(ClientMessage::Command {
+                command: fleet_protocol::Command::focus(fleet_protocol::Target::run("r1")),
+            })
+            .await;
+
+        let ev = rx.recv().await.unwrap();
+        match ev {
+            Event::SessionUpdated { session, .. } => {
+                assert_eq!(session.session_id, "s1");
+                assert!(!session.unread);
+            }
+            other => panic!("expected session.updated, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
     async fn dismiss_session_removes_it_and_broadcasts() {
         let state = HubState::new();
         state
@@ -577,6 +667,63 @@ mod tests {
         match snap {
             Event::Snapshot { sessions, .. } => assert!(sessions.is_empty()),
             other => panic!("expected snapshot, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn dismiss_soloed_session_broadcasts_rearmed_waiting_session() {
+        let state = HubState::new();
+        for id in ["solo", "other"] {
+            state
+                .apply(ClientMessage::SessionUpsert { session: sess(id) })
+                .await;
+        }
+        for (session_id, run_id) in [("solo", "r1"), ("other", "r2")] {
+            state
+                .apply(ClientMessage::RunUpsert {
+                    session_id: session_id.into(),
+                    run: AgentRun::new(
+                        run_id,
+                        AgentKind::Codex,
+                        "n",
+                        "/",
+                        State::Waiting,
+                        Confidence::High,
+                        "2026-06-08T00:00:00Z",
+                    ),
+                    stamp: None,
+                })
+                .await;
+            state
+                .apply(ClientMessage::Command {
+                    command: fleet_protocol::Command::focus(fleet_protocol::Target::session(
+                        session_id,
+                    )),
+                })
+                .await;
+        }
+        state
+            .apply(ClientMessage::Command {
+                command: fleet_protocol::Command::solo("solo"),
+            })
+            .await;
+        let mut rx = state.subscribe();
+
+        state
+            .apply(ClientMessage::Command {
+                command: fleet_protocol::Command::dismiss(fleet_protocol::Target::session("solo")),
+            })
+            .await;
+
+        let removed = rx.recv().await.unwrap();
+        let updated = rx.recv().await.unwrap();
+        assert!(matches!(removed, Event::SessionRemoved { .. }));
+        match updated {
+            Event::SessionUpdated { session, .. } => {
+                assert_eq!(session.session_id, "other");
+                assert!(session.unread, "remaining waiting session must be re-armed");
+            }
+            other => panic!("expected session.updated, got {other:?}"),
         }
     }
 

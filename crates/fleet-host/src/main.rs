@@ -56,6 +56,20 @@ fn embedded_hub_runtime_dir_from(override_dir: Option<PathBuf>, home: Option<Pat
 /// be launched with `FLEET_BRIDGE_URL=ws://127.0.0.1:<this>` before Fleet starts.
 const BRIDGE_PORT: u16 = 51778;
 
+fn run_rail_action(app: &tauri::AppHandle, function_name: &str) {
+    let Some(rail) = app.get_webview(mux::RAIL) else {
+        mux::emit_host_status(app, "error", "menu", "rail unavailable");
+        return;
+    };
+    let _ = rail.set_focus();
+    let script = format!(
+        "if (window.{function_name}) {{ window.{function_name}(); }} else {{ throw new Error('rail action unavailable'); }}"
+    );
+    if let Err(e) = rail.eval(&script) {
+        mux::emit_host_status(app, "error", "menu", format!("rail action failed: {e}"));
+    }
+}
+
 /// The webview's initial pull of current inbox state (live updates arrive via the
 /// `inbox` event). App-defined command — not gated by the v2 capability ACL.
 #[tauri::command]
@@ -90,6 +104,7 @@ fn main() {
             ws_url.clone(),
             bridge_token.clone(),
         ))
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             get_inbox,
             mux::get_servers,
@@ -101,7 +116,8 @@ fn main() {
             mux::clear_host_status_if_current,
             hub_client::set_session_muted,
             hub_client::set_session_soloed,
-            hub_client::dismiss_session
+            hub_client::dismiss_session,
+            hub_client::focus_session
         ])
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
@@ -131,6 +147,12 @@ fn main() {
                 } else {
                     mux::emit_host_status(app, "error", "menu", "server supervisor unavailable");
                 }
+            } else if id == "rail:palette" {
+                run_rail_action(app, "__fleetOpenPalette");
+            } else if id == "rail:jump-unread" {
+                run_rail_action(app, "__fleetJumpNextUnread");
+            } else if id == "rail:cycle-unread" {
+                run_rail_action(app, "__fleetCycleUnread");
             } else if let Some(server_id) = id.strip_prefix("server:") {
                 if server_id != "none" {
                     mux::select(app, server_id.to_string());

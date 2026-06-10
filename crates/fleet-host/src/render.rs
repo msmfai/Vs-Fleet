@@ -4,15 +4,21 @@
 
 use serde::Serialize;
 
-use fleet_host_core::{sort::sort_tabs, AgentIcon, InboxView, SessionTab, TabState};
+use fleet_host_core::{
+    mute::{ping_suppressed, should_notify},
+    sort::sort_tabs,
+    AgentIcon, InboxView, SessionTab, TabState,
+};
 use fleet_protocol::{Confidence, LocationGlyph, Urgency};
 
 /// The whole inbox as the frontend consumes it.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct RenderedInbox {
     pub tabs: Vec<RenderedTab>,
-    /// How many tabs are demanding attention (waiting) — drives the title badge.
+    /// How many waiting tabs are allowed to ping — drives the title/app badge.
     pub waiting_count: usize,
+    /// How many tabs are waiting regardless of mute/solo suppression.
+    pub waiting_total: usize,
     /// Whether the Hub link is currently up (false ⇒ the window shows a banner).
     pub connected: bool,
 }
@@ -32,6 +38,10 @@ pub struct RenderedTab {
     pub state_glyph: String,
     /// `true` only for `waiting` — the one attention-demanding state.
     pub attention: bool,
+    /// `true` when this waiting tab should raise badges/notifications.
+    pub pinging: bool,
+    /// `true` when this waiting tab is silenced by mute/solo.
+    pub ping_suppressed: bool,
     pub urgency: Option<Urgency>,
     /// Worst confidence among waiting runs (reported truthfully, never upgraded).
     pub confidence: Option<Confidence>,
@@ -56,7 +66,10 @@ fn state_label(s: TabState) -> &'static str {
     }
 }
 
-fn render_tab(t: &SessionTab) -> RenderedTab {
+fn render_tab(t: &SessionTab, tabs: &[SessionTab]) -> RenderedTab {
+    let attention = t.state.is_attention();
+    let pinging = should_notify(t, tabs);
+    let suppressed = attention && ping_suppressed(t, tabs);
     RenderedTab {
         session_id: t.session_id.clone(),
         location: t.glyph.clone(),
@@ -64,7 +77,9 @@ fn render_tab(t: &SessionTab) -> RenderedTab {
         title: t.title.clone(),
         state: state_label(t.state).to_string(),
         state_glyph: t.state.glyph().to_string(),
-        attention: t.state.is_attention(),
+        attention,
+        pinging,
+        ping_suppressed: suppressed,
         urgency: t.urgency,
         confidence: t.confidence,
         waiting_since: t.waiting_since.clone(),
@@ -86,11 +101,13 @@ fn agent_label(a: AgentIcon) -> &'static str {
 pub fn render_at(view: &InboxView, connected: bool, now: Option<&str>) -> RenderedInbox {
     let mut tabs = view.tabs.clone();
     sort_tabs(&mut tabs, now);
-    let tabs: Vec<RenderedTab> = tabs.iter().map(render_tab).collect();
-    let waiting_count = tabs.iter().filter(|t| t.attention).count();
+    let waiting_count = tabs.iter().filter(|t| should_notify(t, &tabs)).count();
+    let waiting_total = tabs.iter().filter(|t| t.state.is_attention()).count();
+    let tabs: Vec<RenderedTab> = tabs.iter().map(|tab| render_tab(tab, &tabs)).collect();
     RenderedInbox {
         tabs,
         waiting_count,
+        waiting_total,
         connected,
     }
 }
@@ -172,6 +189,24 @@ mod tests {
         }
     }
 
+    fn waiting_rendered_tab(id: &str, muted: bool, soloed: bool) -> SessionTab {
+        SessionTab {
+            session_id: id.into(),
+            glyph: LocationGlyph::Laptop,
+            agent_icon: AgentIcon::Claude,
+            title: id.into(),
+            state: TabState::Waiting,
+            urgency: Some(Urgency::Approval),
+            confidence: Some(Confidence::High),
+            waiting_since: None,
+            muted,
+            soloed,
+            unread: true,
+            run_count: 1,
+            last_message: None,
+        }
+    }
+
     #[test]
     fn renders_a_waiting_session_with_attention_and_glyph() {
         let mut model = InboxModel::new();
@@ -187,8 +222,11 @@ mod tests {
         assert_eq!(t.state, "waiting");
         assert_eq!(t.state_glyph, "⏸");
         assert!(t.attention);
+        assert!(t.pinging);
+        assert!(!t.ping_suppressed);
         assert_eq!(t.agent, "claude");
         assert_eq!(r.waiting_count, 1);
+        assert_eq!(r.waiting_total, 1);
         assert!(r.connected);
     }
 
@@ -213,7 +251,59 @@ mod tests {
         let r = render(&model.view(), true);
         assert_eq!(r.tabs[0].state, "working");
         assert!(!r.tabs[0].attention);
+        assert!(!r.tabs[0].pinging);
+        assert!(!r.tabs[0].ping_suppressed);
         assert_eq!(r.waiting_count, 0);
+        assert_eq!(r.waiting_total, 0);
+    }
+
+    #[test]
+    fn muted_waiting_tab_is_visible_but_does_not_ping() {
+        let view = InboxView {
+            tabs: vec![
+                waiting_rendered_tab("loud", false, false),
+                waiting_rendered_tab("muted", true, false),
+            ],
+        };
+
+        let r = render_at(&view, true, Some("2026-06-08T12:00:00Z"));
+        assert_eq!(r.waiting_total, 2);
+        assert_eq!(r.waiting_count, 1);
+
+        let muted = r.tabs.iter().find(|tab| tab.session_id == "muted").unwrap();
+        assert_eq!(muted.state, "waiting");
+        assert!(muted.attention);
+        assert!(!muted.pinging);
+        assert!(muted.ping_suppressed);
+    }
+
+    #[test]
+    fn solo_suppresses_other_waiting_tabs_from_badge_count() {
+        let view = InboxView {
+            tabs: vec![
+                waiting_rendered_tab("soloed", false, true),
+                waiting_rendered_tab("suppressed", false, false),
+            ],
+        };
+
+        let r = render_at(&view, true, Some("2026-06-08T12:00:00Z"));
+        assert_eq!(r.waiting_total, 2);
+        assert_eq!(r.waiting_count, 1);
+
+        let soloed = r
+            .tabs
+            .iter()
+            .find(|tab| tab.session_id == "soloed")
+            .unwrap();
+        let suppressed = r
+            .tabs
+            .iter()
+            .find(|tab| tab.session_id == "suppressed")
+            .unwrap();
+        assert!(soloed.pinging);
+        assert!(!soloed.ping_suppressed);
+        assert!(!suppressed.pinging);
+        assert!(suppressed.ping_suppressed);
     }
 
     #[test]
@@ -227,6 +317,7 @@ mod tests {
         let json = serde_json::to_string(&render(&model.view(), true)).unwrap();
         assert!(json.contains("\"title\":\"main\""));
         assert!(json.contains("\"state\":\"working\""));
+        assert!(json.contains("\"pinging\":false"));
         assert!(json.contains("\"connected\":true"));
     }
 
