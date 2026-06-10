@@ -18,6 +18,7 @@ let pending = [];          // [{id, label}] spawned but not yet registered
 let selected = null;
 let inbox = { tabs: [], waiting_count: 0, connected: false };
 let statusOverride = null;
+let statusTimer = null;
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -48,13 +49,15 @@ function displayed() {
 }
 
 function render() {
-  statusEl.textContent = statusOverride || (
+  const overrideMessage = statusOverride && statusOverride.message;
+  statusEl.textContent = overrideMessage || (
     inbox.connected
       ? inbox.waiting_count > 0 ? `${inbox.waiting_count} waiting` : "connected"
       : "disconnected"
   );
+  statusEl.title = overrideMessage || "";
   statusEl.className = "status " + (
-    statusOverride ? "disconnected" : inbox.connected ? (inbox.waiting_count ? "waiting" : "connected") : "disconnected"
+    overrideMessage ? (statusOverride.level || "error") : inbox.connected ? (inbox.waiting_count ? "waiting" : "connected") : "disconnected"
   );
 
   const list = displayed();
@@ -100,6 +103,29 @@ function render() {
   }
 }
 
+function showHostStatus(payload) {
+  if (statusTimer) clearTimeout(statusTimer);
+  if (!payload || !payload.message) {
+    statusOverride = null;
+    render();
+    return;
+  }
+  statusOverride = {
+    level: payload.level || "error",
+    source: payload.source || "host",
+    message: payload.message,
+  };
+  render();
+  const message = statusOverride.message;
+  statusTimer = setTimeout(() => {
+    if (statusOverride && statusOverride.message === message) {
+      statusOverride = null;
+      render();
+      invoke("clear_host_status_if_current", { message }).catch(() => {});
+    }
+  }, 8000);
+}
+
 async function spawnServer() {
   statusOverride = null;
   render();
@@ -108,9 +134,7 @@ async function spawnServer() {
     pending.push({ id, label: id });
     selectServer(id); // shows the loading page + selects the pending tab
   } catch (e) {
-    statusOverride = `spawn failed: ${String(e)}`;
-    render();
-    setTimeout(() => { statusOverride = null; render(); }, 8000);
+    showHostStatus({ level: "error", source: "rail", message: `spawn failed: ${String(e)}` });
   }
 }
 
@@ -157,10 +181,16 @@ window.__fleetSyncSelection = async () => {
 async function init() {
   await listen("servers-changed", () => refreshServers());
   await listen("inbox", (e) => { inbox = e.payload || inbox; render(); });
+  await listen("host-status", (e) => showHostStatus(e.payload));
   try {
     inbox = await invoke("get_inbox");
   } catch (e) {
     inbox = { tabs: [], waiting_count: 0, connected: false };
+  }
+  try {
+    showHostStatus(await invoke("get_host_status"));
+  } catch (e) {
+    // ignore
   }
   await refreshServers();
   render();

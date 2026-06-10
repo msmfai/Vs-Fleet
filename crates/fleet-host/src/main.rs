@@ -20,7 +20,8 @@ mod mux;
 mod render;
 mod spawn;
 
-use std::net::SocketAddr;
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -93,16 +94,24 @@ fn main() {
             mux::selected_server,
             mux::select_server,
             mux::spawn_server,
-            mux::close_server
+            mux::close_server,
+            mux::get_host_status,
+            mux::clear_host_status_if_current
         ])
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
             if id == "spawn:new" {
                 if let Some(sup) = app.try_state::<spawn::ServerSupervisor>() {
-                    if let Ok(server) = sup.spawn() {
-                        let _ = app.emit(bridge::SERVERS_CHANGED, ());
-                        mux::select_spawned(app.clone(), server.id);
+                    match sup.spawn() {
+                        Ok(server) => {
+                            mux::clear_host_status(app);
+                            let _ = app.emit(bridge::SERVERS_CHANGED, ());
+                            mux::select_spawned(app.clone(), server.id);
+                        }
+                        Err(e) => mux::emit_spawn_error(app, "menu", &e.to_string()),
                     }
+                } else {
+                    mux::emit_spawn_error(app, "menu", "server supervisor unavailable");
                 }
             } else if id == "spawn:close-current" {
                 if let (Some(sup), Some(mux)) = (
@@ -133,6 +142,10 @@ fn main() {
                 app.set_activation_policy(tauri::ActivationPolicy::Regular);
                 app.set_dock_visibility(true);
             }
+
+            #[cfg(unix)]
+            install_termination_cleanup(app.handle().clone());
+            start_probe_control(app.handle().clone());
 
             let handle = app.handle().clone();
             let bridge_handle = app.handle().clone();
@@ -192,17 +205,177 @@ fn main() {
             {
                 if let Some(sup) = app.try_state::<spawn::ServerSupervisor>() {
                     for _ in 0..n {
-                        if let Ok(server) = sup.spawn() {
-                            let _ = app.emit(bridge::SERVERS_CHANGED, ());
-                            mux::select_spawned(app.handle().clone(), server.id);
+                        match sup.spawn() {
+                            Ok(server) => {
+                                mux::clear_host_status(app.handle());
+                                let _ = app.emit(bridge::SERVERS_CHANGED, ());
+                                mux::select_spawned(app.handle().clone(), server.id);
+                            }
+                            Err(e) => {
+                                mux::emit_spawn_error(app.handle(), "startup", &e.to_string());
+                            }
                         }
                     }
+                } else {
+                    mux::emit_spawn_error(app.handle(), "startup", "server supervisor unavailable");
                 }
             }
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running Fleet host");
+}
+
+fn probe_control_port() -> Option<u16> {
+    let raw = std::env::var("FLEET_PROBE_CONTROL_PORT").ok();
+    probe_control_port_from_value(raw.as_deref())
+}
+
+fn probe_control_port_from_value(value: Option<&str>) -> Option<u16> {
+    value
+        .and_then(|raw| raw.trim().parse::<u16>().ok())
+        .filter(|port| *port > 0)
+}
+
+fn start_probe_control(app: tauri::AppHandle) {
+    let Some(port) = probe_control_port() else {
+        return;
+    };
+    std::thread::Builder::new()
+        .name("fleet-probe-control".into())
+        .spawn(move || {
+            let listener = match TcpListener::bind(("127.0.0.1", port)) {
+                Ok(listener) => listener,
+                Err(e) => {
+                    tracing::warn!(port, error = %e, "probe control failed to bind");
+                    return;
+                }
+            };
+            tracing::info!(port, "probe control listening");
+            for stream in listener.incoming() {
+                match stream {
+                    Ok(stream) => handle_probe_control(app.clone(), stream),
+                    Err(e) => tracing::warn!(error = %e, "probe control accept failed"),
+                }
+            }
+        })
+        .expect("spawn probe control thread");
+}
+
+fn handle_probe_control(app: tauri::AppHandle, mut stream: TcpStream) {
+    let mut buf = [0_u8; 2048];
+    let Ok(n) = stream.read(&mut buf) else {
+        return;
+    };
+    let req = String::from_utf8_lossy(&buf[..n]);
+    let Some(path) = req
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+    else {
+        let _ = write_probe_response(&mut stream, 400, "bad request");
+        return;
+    };
+
+    if path == "/healthz" {
+        let _ = write_probe_json(&mut stream, 200, r#"{"ok":true}"#);
+    } else if path == "/selected" {
+        let selected = app
+            .try_state::<mux::MuxState>()
+            .and_then(|state| state.selected.lock().ok().and_then(|g| g.clone()));
+        let body = serde_json::json!({ "selected": selected }).to_string();
+        let _ = write_probe_json(&mut stream, 200, &body);
+    } else if let Some(id) = path.strip_prefix("/select/") {
+        let id = id.split(['?', '#']).next().unwrap_or(id).to_string();
+        mux::select(&app, id.clone());
+        let body = serde_json::json!({ "selected": id }).to_string();
+        let _ = write_probe_json(&mut stream, 200, &body);
+    } else if let Some(id) = path.strip_prefix("/close/") {
+        let id = id.split(['?', '#']).next().unwrap_or(id).to_string();
+        let closed = app
+            .try_state::<spawn::ServerSupervisor>()
+            .map(|sup| mux::close_server_by_id(&app, &sup, &id))
+            .unwrap_or(false);
+        let body = serde_json::json!({ "closed": closed, "server": id }).to_string();
+        let _ = write_probe_json(&mut stream, 200, &body);
+    } else {
+        let _ = write_probe_response(&mut stream, 404, "not found");
+    }
+}
+
+fn write_probe_json(stream: &mut TcpStream, status: u16, body: &str) -> std::io::Result<()> {
+    write_probe_response_with_type(stream, status, "application/json; charset=utf-8", body)
+}
+
+fn write_probe_response(stream: &mut TcpStream, status: u16, body: &str) -> std::io::Result<()> {
+    write_probe_response_with_type(stream, status, "text/plain; charset=utf-8", body)
+}
+
+fn write_probe_response_with_type(
+    stream: &mut TcpStream,
+    status: u16,
+    content_type: &str,
+    body: &str,
+) -> std::io::Result<()> {
+    let reason = match status {
+        200 => "OK",
+        400 => "Bad Request",
+        404 => "Not Found",
+        _ => "Error",
+    };
+    write!(
+        stream,
+        "HTTP/1.1 {status} {reason}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    )
+}
+
+#[cfg(unix)]
+fn install_termination_cleanup(app: tauri::AppHandle) {
+    std::thread::Builder::new()
+        .name("fleet-termination-cleanup".into())
+        .spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("build signal runtime");
+            rt.block_on(async move {
+                let mut sigterm =
+                    match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                    {
+                        Ok(signal) => signal,
+                        Err(e) => {
+                            tracing::warn!(error = %e, "SIGTERM cleanup handler unavailable");
+                            return;
+                        }
+                    };
+                let mut sigint =
+                    match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+                    {
+                        Ok(signal) => signal,
+                        Err(e) => {
+                            tracing::warn!(error = %e, "SIGINT cleanup handler unavailable");
+                            return;
+                        }
+                    };
+
+                let signal_name = tokio::select! {
+                    _ = sigterm.recv() => "SIGTERM",
+                    _ = sigint.recv() => "SIGINT",
+                };
+
+                tracing::info!(
+                    signal = signal_name,
+                    "termination signal received; cleaning up spawned servers"
+                );
+                if let Some(supervisor) = app.try_state::<spawn::ServerSupervisor>() {
+                    supervisor.shutdown_all();
+                }
+                app.exit(0);
+                std::process::exit(0);
+            });
+        })
+        .expect("spawn termination cleanup thread");
 }
 
 #[cfg(test)]
@@ -222,5 +395,14 @@ mod tests {
             ),
             PathBuf::from("/custom/fleet-run")
         );
+    }
+
+    #[test]
+    fn probe_control_port_requires_positive_integer() {
+        assert_eq!(probe_control_port_from_value(None), None);
+        assert_eq!(probe_control_port_from_value(Some("")), None);
+        assert_eq!(probe_control_port_from_value(Some("0")), None);
+        assert_eq!(probe_control_port_from_value(Some("not-a-port")), None);
+        assert_eq!(probe_control_port_from_value(Some("51776")), Some(51776));
     }
 }

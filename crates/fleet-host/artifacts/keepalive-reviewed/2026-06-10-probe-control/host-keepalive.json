@@ -1,0 +1,148 @@
+{
+  "run": {
+    "startedAt": "2026-06-10T13:21:17.004Z",
+    "image": "fleet-host-local",
+    "command": "/nix/store/kxh0486km1qyc5xs63y0ps8d30psp7pg-nodejs-slim-22.22.3/bin/node /Users/marinmoran/gitlab/smfmarin/cluster-infra/vs-fleet/main/crates/fleet-host/scripts/host-keepalive-probe.mjs --no-build --settle-ms 30000 --switch-delay-ms 3500"
+  },
+  "results": [
+    {
+      "scenario": "host-keepalive",
+      "scenarioTitle": "Fleet host with two autospawned local serve-web servers",
+      "behaviour": "mux.keepaliveSwitch",
+      "title": "Host mux: switching keeps persistent editor clients visible",
+      "pass": true,
+      "detail": "registered=2, editors=2, deregistered=0, rss=1404.5 MiB",
+      "rationale": "\nWHAT: Launches the real Fleet Tauri host with two autospawned VS Code serve-web\nservers, then switches between the first and second rail rows while capturing\ndirect screenshots of the Fleet window itself, including the rail and embedded\neditor pane.\n\nWHY THIS IS THE EXPECTED OUTCOME: Fleet's cmux-like contract is that tab switching\npreserves loaded VS Code clients. The host log should show two persistent editor\nsurfaces created, no persistent-editor creation failures, and no bridge\nderegistration during switching. The screenshots provide human-visible evidence\nthat the rail and editor remain present rather than disappearing, cropping, or\nturning black. They are captured by CoreGraphics window id, so the evidence does\nnot depend on Fleet being frontmost or uncovered.\n\nWHY IT MATTERS: The container eval suite proves individual VS Code workbenches and\nbridge commands, but it does not boot the desktop multiplexer. This probe covers\nthe missing host lane: Tauri child-webview creation, visibility switching, window\ntiling, and full-window screenshots for review.",
+      "evidence": {
+        "pid": 90708,
+        "window": {
+          "id": 6390,
+          "owner": "fleet-host",
+          "name": "Fleet",
+          "pid": 90708,
+          "layer": 0,
+          "onscreen": true,
+          "x": 620,
+          "y": 160,
+          "width": 1320,
+          "height": 892
+        },
+        "logPath": "fleet-host.log",
+        "rssMiB": 1404.5,
+        "registeredCount": 2,
+        "deregisteredCount": 0,
+        "editorCreatedCount": 2,
+        "editorCreateFailures": 0,
+        "persistentNavigations": 6,
+        "hubConnectedCount": 1,
+        "hubLinkErrors": 0,
+        "inboxConnectedCount": 13,
+        "inboxDisconnectedCount": 0,
+        "latestInboxConnected": true,
+        "server1SelectionCount": 3,
+        "server2SelectionCount": 5,
+        "switchMode": "probe-control",
+        "controlPort": 51776,
+        "captures": [
+          {
+            "file": "screenshots/01-initial-selected.png",
+            "window": {
+              "id": 6390,
+              "owner": "fleet-host",
+              "name": "Fleet",
+              "pid": 90708,
+              "layer": 0,
+              "onscreen": true,
+              "x": 620,
+              "y": 160,
+              "width": 1320,
+              "height": 892
+            },
+            "command": "screencapture -x -l 6390 /Users/marinmoran/gitlab/smfmarin/cluster-infra/vs-fleet/main/crates/fleet-host/artifacts/keepalive/2026-06-10T132116Z/screenshots/01-initial-selected.png",
+            "attempts": 1
+          },
+          {
+            "file": "screenshots/02-server-1-selected.png",
+            "window": {
+              "id": 6390,
+              "owner": "fleet-host",
+              "name": "Fleet",
+              "pid": 90708,
+              "layer": 0,
+              "onscreen": true,
+              "x": 620,
+              "y": 160,
+              "width": 1320,
+              "height": 892
+            },
+            "command": "screencapture -x -l 6390 /Users/marinmoran/gitlab/smfmarin/cluster-infra/vs-fleet/main/crates/fleet-host/artifacts/keepalive/2026-06-10T132116Z/screenshots/02-server-1-selected.png",
+            "attempts": 1
+          },
+          {
+            "file": "screenshots/03-server-2-selected.png",
+            "window": {
+              "id": 6390,
+              "owner": "fleet-host",
+              "name": "Fleet",
+              "pid": 90708,
+              "layer": 0,
+              "onscreen": true,
+              "x": 620,
+              "y": 160,
+              "width": 1320,
+              "height": 892
+            },
+            "command": "screencapture -x -l 6390 /Users/marinmoran/gitlab/smfmarin/cluster-infra/vs-fleet/main/crates/fleet-host/artifacts/keepalive/2026-06-10T132116Z/screenshots/03-server-2-selected.png",
+            "attempts": 1
+          },
+          {
+            "file": "screenshots/04-server-1-returned.png",
+            "window": {
+              "id": 6390,
+              "owner": "fleet-host",
+              "name": "Fleet",
+              "pid": 90708,
+              "layer": 0,
+              "onscreen": true,
+              "x": 620,
+              "y": 160,
+              "width": 1320,
+              "height": 892
+            },
+            "command": "screencapture -x -l 6390 /Users/marinmoran/gitlab/smfmarin/cluster-infra/vs-fleet/main/crates/fleet-host/artifacts/keepalive/2026-06-10T132116Z/screenshots/04-server-1-returned.png",
+            "attempts": 1
+          }
+        ],
+        "visualAnalysis": {
+          "path": "visual-analysis.json",
+          "screenshotCount": 4,
+          "summary": {
+            "decodedCount": 4,
+            "allDecoded": true,
+            "flags": {},
+            "railStatus": {
+              "connected": 4
+            },
+            "maxRailSplitDeltaPx": 0,
+            "titlebarHeightPx": {
+              "min": 33,
+              "max": 33
+            }
+          },
+          "masks": [
+            "cv/01-initial-selected.top-mask.png",
+            "cv/02-server-1-selected.top-mask.png",
+            "cv/03-server-2-selected.top-mask.png",
+            "cv/04-server-1-returned.top-mask.png"
+          ]
+        }
+      },
+      "screenshots": [
+        "screenshots/01-initial-selected.png",
+        "screenshots/02-server-1-selected.png",
+        "screenshots/03-server-2-selected.png",
+        "screenshots/04-server-1-returned.png"
+      ]
+    }
+  ]
+}

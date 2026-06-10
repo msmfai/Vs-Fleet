@@ -25,7 +25,7 @@ which is why `+` (new server) failed with no feedback.
 | Built | How | Note |
 |---|---|---|
 | **fleet-host** (the app) | `crates/fleet-host` (Tauri) | The multiplexer window. |
-| **fleet-reporter** | `cargo build -p fleet-reporter` | Per-server agent-state → Hub. **The app must bundle it or find it on PATH** — currently it can't locate it, so the reporter fails (fix pending: bundle / next-to-exe discovery). |
+| **fleet-reporter** | `cargo build -p fleet-reporter` | Per-server agent-state → Hub. The app bundle includes it for packaged/debug launches, and Fleet also resolves a next-to-exe or PATH copy. |
 | **fleet-hub** | `cargo build -p fleet-hub` | The agent-state Hub. |
 | **fleet-bridge** (`.vsix`) | the bridge build | code-server extension: observe/act + rail registration. |
 
@@ -67,5 +67,6 @@ which is why `+` (new server) failed with no feedback.
   inherited PATH first, then adds common macOS/Homebrew/Nix/Home Manager CLI
   locations so `code`, `docker`, `claude`, and cmux-style wrappers are still
   discoverable without launching Fleet from a shell.
-- **Surface spawn errors** — the rail's `spawnServer` swallows errors; a failed `+` shows
-  nothing. Show the reason instead.
+- ✅ **Surface spawn errors** — spawn failures from the rail button, app menu, and
+  startup autospawn path emit a `host-status` event and persist the latest error
+  long enough for the rail to show the reason in its status pill.

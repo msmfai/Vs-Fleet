@@ -3,15 +3,17 @@
 //
 // This exercises the actual Tauri host window, not only the container/code-server
 // eval lane: launch Fleet with two autospawned servers, click between rail rows,
-// capture full-screen screenshots, record RSS/log evidence, and write a report
+// capture Fleet-window screenshots, record RSS/log evidence, and write a report
 // compatible with containers/fleet-env/eval/scripts/review-server.mjs.
 
-import { spawn, spawnSync, execFileSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { writeScreenshotMetadata } from "../../../containers/fleet-env/eval/lib/reviewContext.mjs";
+import { analyzeWindowShots, attachVisualAnalysis } from "./analyze-window-shots.mjs";
+import { captureMacWindow, findFleetWindow } from "./macos-window-shot.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const HOST_DIR = resolve(__dirname, "..");
@@ -24,23 +26,27 @@ const DEFAULT_OUT = resolve(
 );
 
 const sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+const FLEET_WINDOW_OWNERS = ["Fleet", "fleet-host"];
 
 const RATIONALE = `
 WHAT: Launches the real Fleet Tauri host with two autospawned VS Code serve-web
 servers, then switches between the first and second rail rows while capturing
-full-screen screenshots that include the Fleet rail and embedded editor pane.
+direct screenshots of the Fleet window itself, including the rail and embedded
+editor pane.
 
 WHY THIS IS THE EXPECTED OUTCOME: Fleet's cmux-like contract is that tab switching
 preserves loaded VS Code clients. The host log should show two persistent editor
 surfaces created, no persistent-editor creation failures, and no bridge
 deregistration during switching. The screenshots provide human-visible evidence
 that the rail and editor remain present rather than disappearing, cropping, or
-turning black.
+turning black. They are captured by CoreGraphics window id, so the evidence does
+not depend on Fleet being frontmost or uncovered.
 
 WHY IT MATTERS: The container eval suite proves individual VS Code workbenches and
 bridge commands, but it does not boot the desktop multiplexer. This probe covers
 the missing host lane: Tauri child-webview creation, visibility switching, window
-tiling, and full-window screenshots for review.`;
+tiling, close cleanup for a managed server, and full-window screenshots for
+review.`;
 
 function parseArgs(argv) {
   const out = {
@@ -49,6 +55,10 @@ function parseArgs(argv) {
     autospawn: 2,
     settleMs: 30000,
     switchDelayMs: 3500,
+    controlPort: 51776,
+    clickSwitch: false,
+    closeCheck: true,
+    appBundle: false,
     keep: false,
     allowBusyPorts: false,
     allowExistingManaged: false,
@@ -62,6 +72,10 @@ function parseArgs(argv) {
     else if (arg === "--autospawn" || arg === "--autosspawn") out.autospawn = Number(next());
     else if (arg === "--settle-ms") out.settleMs = Number(next());
     else if (arg === "--switch-delay-ms") out.switchDelayMs = Number(next());
+    else if (arg === "--control-port") out.controlPort = Number(next());
+    else if (arg === "--click-switch") out.clickSwitch = true;
+    else if (arg === "--skip-close-check") out.closeCheck = false;
+    else if (arg === "--app-bundle") out.appBundle = true;
     else if (arg === "--keep") out.keep = true;
     else if (arg === "--allow-busy-ports") out.allowBusyPorts = true;
     else if (arg === "--allow-existing-managed") out.allowExistingManaged = true;
@@ -75,6 +89,7 @@ function parseArgs(argv) {
   if (!Number.isFinite(out.autospawn) || out.autospawn < 2) {
     throw new Error("--autospawn must be at least 2");
   }
+  if (out.clickSwitch) out.closeCheck = false;
   return out;
 }
 
@@ -88,6 +103,10 @@ Options:
   --autospawn N          Number of servers Fleet should spawn. Default: 2.
   --settle-ms MS         Wait after launch before first screenshot. Default: 30000.
   --switch-delay-ms MS   Wait after each rail click before screenshot. Default: 3500.
+  --control-port PORT    Loopback probe-control port. Default: 51776.
+  --click-switch         Switch with System Events clicks instead of probe control.
+  --skip-close-check     Do not close server-2 and assert its managed processes exit.
+  --app-bundle           Launch crates/fleet-host/Fleet.app/Contents/MacOS/fleet-host.
   --keep                 Leave Fleet running for manual debugging.
   --allow-busy-ports     Do not preflight fixed Fleet ports 51777/51778.
   --allow-existing-managed
@@ -132,46 +151,74 @@ function portInUse(port) {
 function existingManagedProcesses() {
   return output("ps", ["-axo", "pid,ppid,command"])
     .split(/\r?\n/)
-    .filter((line) => /fleet-reporter --serve|code serve-web/.test(line))
+    .filter((line) => /fleet-reporter --serve|code serve-web|bin\/code-server|server-main\.js/.test(line))
     .filter((line) => /fleet-mux|\/\.fleet\/mux/.test(line));
 }
 
-function fleetWindowBounds() {
-  const script = `
-set procNames to {"Fleet", "fleet-host"}
-tell application "System Events"
-  repeat with procName in procNames
-    if exists process procName then
-      tell process procName
-        set frontmost to true
-        if (count of windows) > 0 then
-          set p to position of window 1
-          set s to size of window 1
-          return (procName as text) & "," & (item 1 of p) & "," & (item 2 of p) & "," & (item 1 of s) & "," & (item 2 of s)
-        end if
-      end tell
-    end if
-  end repeat
-end tell
-error "Fleet window not found"
-`;
-  const raw = execFileSync("osascript", ["-e", script], { encoding: "utf8" }).trim();
-  const [processName, x, y, width, height] = raw.split(",");
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function managedProcessesForServer(id) {
+  const escaped = escapeRegExp(id);
+  const pattern = new RegExp(`reporter-${escaped}\\.sock|cs-userdata-${escaped}|ws-${escaped}`);
+  return existingManagedProcesses().filter((line) => pattern.test(line));
+}
+
+async function waitForServerProcessesGone(id, ms) {
+  const deadline = Date.now() + ms;
+  let lines = managedProcessesForServer(id);
+  while (lines.length && Date.now() < deadline) {
+    await sleep(250);
+    lines = managedProcessesForServer(id);
+  }
+  return lines;
+}
+
+function normalizeFleetWindow(window) {
+  if (window && "x" in window && "width" in window) {
+    return {
+      id: Number(window.id),
+      owner: window.owner,
+      name: window.name,
+      pid: Number(window.pid),
+      layer: Number(window.layer),
+      onscreen: Boolean(window.onscreen),
+      x: Number(window.x || 0),
+      y: Number(window.y || 0),
+      width: Number(window.width || 0),
+      height: Number(window.height || 0),
+    };
+  }
+  const bounds = window.bounds || {};
   return {
-    processName,
-    x: Number(x),
-    y: Number(y),
-    width: Number(width),
-    height: Number(height),
+    id: Number(window.id),
+    owner: window.owner,
+    name: window.name,
+    pid: Number(window.pid),
+    layer: Number(window.layer),
+    onscreen: Number(window.onscreen) === 1,
+    x: Number(bounds.X || 0),
+    y: Number(bounds.Y || 0),
+    width: Number(bounds.Width || 0),
+    height: Number(bounds.Height || 0),
   };
 }
 
-async function waitForWindow(ms) {
+function fleetWindowBounds(toolDir) {
+  return normalizeFleetWindow(findFleetWindow({
+    owner: FLEET_WINDOW_OWNERS,
+    toolDir,
+    minArea: 500000,
+  }));
+}
+
+async function waitForWindow(ms, toolDir) {
   const deadline = Date.now() + ms;
   let last = null;
   while (Date.now() < deadline) {
     try {
-      return fleetWindowBounds();
+      return fleetWindowBounds(toolDir);
     } catch (err) {
       last = err;
       await sleep(1000);
@@ -180,13 +227,82 @@ async function waitForWindow(ms) {
   throw new Error(`Fleet window did not appear: ${last?.message || last}`);
 }
 
-function clickAt(x, y) {
-  const script = `tell application "System Events" to click at {${Math.round(x)}, ${Math.round(y)}}`;
-  execFileSync("osascript", ["-e", script], { stdio: "pipe" });
+async function clickAt(pid, x, y) {
+  const script = `
+with timeout of 5 seconds
+tell application "System Events"
+  set frontmost of (first process whose unix id is ${Number(pid)}) to true
+  click at {${Math.round(x)}, ${Math.round(y)}}
+end tell
+end timeout`;
+  let last = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      execFileSync("osascript", ["-e", script], { stdio: "pipe", timeout: 7000 });
+      return;
+    } catch (err) {
+      last = err;
+      await sleep(500);
+    }
+  }
+  throw last;
 }
 
-function capture(path) {
-  run("screencapture", ["-x", path], { capture: true });
+async function controlRequest(port, path) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}${path}`, { signal: controller.signal });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`probe control ${path} failed: ${res.status} ${text}`);
+    return text ? JSON.parse(text) : {};
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function waitForControl(port, ms) {
+  const deadline = Date.now() + ms;
+  let last = null;
+  while (Date.now() < deadline) {
+    try {
+      return await controlRequest(port, "/healthz");
+    } catch (err) {
+      last = err;
+      await sleep(500);
+    }
+  }
+  throw new Error(`Fleet probe control did not become ready on port ${port}: ${last?.message || last}`);
+}
+
+async function selectViaControl(port, id) {
+  return controlRequest(port, `/select/${encodeURIComponent(id)}`);
+}
+
+async function closeViaControl(port, id) {
+  return controlRequest(port, `/close/${encodeURIComponent(id)}`);
+}
+
+async function capture(path, window, toolDir) {
+  let candidate = window;
+  let last = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt > 0) {
+      await sleep(500);
+      candidate = fleetWindowBounds(toolDir);
+    }
+    try {
+      const result = captureMacWindow({ out: path, window: candidate });
+      return {
+        ...result,
+        window: normalizeFleetWindow(result.window),
+        attempts: attempt + 1,
+      };
+    } catch (err) {
+      last = err;
+    }
+  }
+  throw last;
 }
 
 function logText(path) {
@@ -201,17 +317,58 @@ function countMatches(text, pattern) {
   return (text.match(pattern) || []).length;
 }
 
-function rssSnapshot() {
+function latestInboxConnected(text) {
+  let latest = null;
+  const re = /inbox → window: .*connected=(true|false)/g;
+  for (const match of text.matchAll(re)) {
+    latest = match[1] === "true";
+  }
+  return latest;
+}
+
+function parsePsRows() {
   const ps = output("ps", ["-axo", "pid,ppid,rss,command"]);
-  const lines = ps
+  return ps
     .split(/\r?\n/)
-    .filter((line) => /fleet-host|fleet-reporter|code serve-web|Code Helper|WebKit/i.test(line));
+    .map((line) => {
+      const parts = line.trim().split(/\s+/, 4);
+      const pid = Number(parts[0]);
+      const ppid = Number(parts[1]);
+      const rss = Number(parts[2]);
+      return {
+        pid,
+        ppid,
+        rss,
+        line,
+      };
+    })
+    .filter((row) => Number.isInteger(row.pid) && Number.isInteger(row.ppid));
+}
+
+function rssSnapshot(rootPid) {
+  const rows = parsePsRows();
+  const descendants = new Set([rootPid]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const row of rows) {
+      if (!descendants.has(row.pid) && descendants.has(row.ppid)) {
+        descendants.add(row.pid);
+        changed = true;
+      }
+    }
+  }
+
+  const lines = rows
+    .filter((row) => descendants.has(row.pid))
+    .map((row) => row.line);
   const rssKiB = lines.reduce((sum, line) => {
     const parts = line.trim().split(/\s+/);
     const rss = Number(parts[2]);
     return sum + (Number.isFinite(rss) ? rss : 0);
   }, 0);
   return {
+    rootPid,
     rssKiB,
     rssMiB: Number((rssKiB / 1024).toFixed(1)),
     lines,
@@ -238,6 +395,23 @@ async function terminate(child) {
   child.kill("SIGKILL");
 }
 
+function cleanupManagedProcessGroups() {
+  const pids = existingManagedProcesses()
+    .map((line) => Number(line.trim().split(/\s+/)[0]))
+    .filter((pid) => Number.isInteger(pid) && pid > 1);
+  for (const pid of pids) {
+    try {
+      process.kill(-pid, "SIGTERM");
+    } catch {}
+  }
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+  for (const pid of pids) {
+    try {
+      process.kill(-pid, "SIGKILL");
+    } catch {}
+  }
+}
+
 async function main() {
   if (process.platform !== "darwin") {
     throw new Error("host keepalive probe currently requires macOS for Tauri window screenshots");
@@ -246,10 +420,12 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const outDir = opts.out;
   const shotDir = resolve(outDir, "screenshots");
+  const toolDir = resolve(ROOT, "target", "fleet-window-tools");
   mkdirSync(shotDir, { recursive: true });
 
   if (!opts.allowBusyPorts) {
-    const busy = [51777, 51778].filter(portInUse);
+    const preflightPorts = opts.clickSwitch ? [51777, 51778] : [51777, 51778, opts.controlPort];
+    const busy = preflightPorts.filter(portInUse);
     if (busy.length) {
       throw new Error(`Fleet fixed port(s) already in use: ${busy.join(", ")}. Close Fleet or rerun with --allow-busy-ports.`);
     }
@@ -267,13 +443,24 @@ async function main() {
   }
 
   if (opts.build) {
-    run("cargo", ["build"], { cwd: HOST_DIR });
-    run("cargo", ["build", "-p", "fleet-reporter"], { cwd: ROOT });
+    if (opts.appBundle) {
+      run("./bundle.sh", ["debug"], { cwd: HOST_DIR });
+    } else {
+      run("cargo", ["build"], { cwd: HOST_DIR });
+      run("cargo", ["build", "-p", "fleet-reporter"], { cwd: ROOT });
+    }
   }
 
-  const hostBin = resolve(HOST_DIR, "target/debug/fleet-host");
-  const reporterBin = resolve(ROOT, "target/debug/fleet-reporter");
-  const bridgeVsix = resolve(ROOT, "packages/fleet-bridge/fleet-bridge-0.2.0.vsix");
+  const appBundle = resolve(HOST_DIR, "Fleet.app");
+  const hostBin = opts.appBundle
+    ? resolve(appBundle, "Contents/MacOS/fleet-host")
+    : resolve(HOST_DIR, "target/debug/fleet-host");
+  const reporterBin = opts.appBundle
+    ? resolve(appBundle, "Contents/MacOS/fleet-reporter")
+    : resolve(ROOT, "target/debug/fleet-reporter");
+  const bridgeVsix = opts.appBundle
+    ? resolve(appBundle, "Contents/Resources/fleet-bridge.vsix")
+    : resolve(ROOT, "packages/fleet-bridge/fleet-bridge-0.2.0.vsix");
   if (!existsSync(hostBin)) throw new Error(`missing fleet-host binary: ${hostBin}`);
   if (!existsSync(reporterBin)) throw new Error(`missing fleet-reporter binary: ${reporterBin}`);
   if (!existsSync(bridgeVsix)) throw new Error(`missing fleet-bridge VSIX: ${bridgeVsix}`);
@@ -281,55 +468,79 @@ async function main() {
   const logPath = resolve(outDir, "fleet-host.log");
   const logFd = openSync(logPath, "w");
   const startedAt = new Date().toISOString();
+  const childEnv = {
+    ...process.env,
+    FLEET_AUTOSPAWN: String(opts.autospawn),
+    FLEET_EDITOR_KEEPALIVE: "1",
+    ...(opts.appBundle ? {} : { FLEET_REPORTER_BIN: reporterBin, FLEET_BRIDGE_VSIX: bridgeVsix }),
+    ...(opts.clickSwitch ? {} : { FLEET_PROBE_CONTROL_PORT: String(opts.controlPort) }),
+    RUST_LOG: process.env.RUST_LOG || "info",
+  };
   const child = spawn(hostBin, [], {
-    cwd: HOST_DIR,
-    env: {
-      ...process.env,
-      FLEET_AUTOSPAWN: String(opts.autospawn),
-      FLEET_EDITOR_KEEPALIVE: "1",
-      FLEET_REPORTER_BIN: reporterBin,
-      FLEET_BRIDGE_VSIX: bridgeVsix,
-      RUST_LOG: process.env.RUST_LOG || "info",
-    },
+    cwd: opts.appBundle ? resolve(appBundle, "Contents/MacOS") : HOST_DIR,
+    env: childEnv,
     stdio: ["ignore", logFd, logFd],
   });
 
   let report;
+  const screenshots = [];
+  const captures = [];
   try {
     child.on("exit", (code, signal) => {
       console.error(`[probe] fleet-host exited code=${code} signal=${signal}`);
     });
 
-    const screenshots = [];
+    let window = null;
     const take = async (file) => {
       const abs = resolve(shotDir, file);
-      capture(abs);
-      screenshots.push(relative(outDir, abs));
+      const shot = await capture(abs, window, toolDir);
+      window = shot.window;
+      const rel = relative(outDir, abs);
+      screenshots.push(rel);
+      captures.push({
+        file: rel,
+        window: shot.window,
+        command: shot.command,
+        attempts: shot.attempts,
+      });
       await sleep(250);
     };
 
-    const window = await waitForWindow(20000);
+    window = await waitForWindow(20000, toolDir);
+    if (!opts.clickSwitch) await waitForControl(opts.controlPort, 10000);
     await waitForLog(logPath, /server registered \(phone-home\)/g, 2, opts.settleMs);
     await sleep(Math.max(0, opts.settleMs - 2000));
     await take("01-initial-selected.png");
 
-    const rowX = window.x + 80;
-    const row1Y = window.y + 88;
-    const row2Y = window.y + 132;
+    const rowX = window.x + 82;
+    const row1Y = window.y + 114;
+    const row2Y = window.y + 174;
+    const switchTo = opts.clickSwitch
+      ? async (id, _rowY) => clickAt(child.pid, rowX, _rowY)
+      : async (id) => selectViaControl(opts.controlPort, id);
 
-    clickAt(rowX, row1Y);
+    await switchTo("server-1", row1Y);
     await sleep(opts.switchDelayMs);
     await take("02-server-1-selected.png");
 
-    clickAt(rowX, row2Y);
+    await switchTo("server-2", row2Y);
     await sleep(opts.switchDelayMs);
     await take("03-server-2-selected.png");
 
-    clickAt(rowX, row1Y);
+    await switchTo("server-1", row1Y);
     await sleep(opts.switchDelayMs);
     await take("04-server-1-returned.png");
 
-    const rss = rssSnapshot();
+    let closeResult = null;
+    let closedServer2Processes = [];
+    if (opts.closeCheck) {
+      closeResult = await closeViaControl(opts.controlPort, "server-2");
+      await sleep(1000);
+      closedServer2Processes = await waitForServerProcessesGone("server-2", 7000);
+      await take("05-server-2-closed.png");
+    }
+
+    const rss = rssSnapshot(child.pid);
     writeFileSync(resolve(outDir, "rss.json"), JSON.stringify(rss, null, 2));
     writeFileSync(resolve(outDir, "rss.txt"), `${rss.lines.join("\n")}\n`);
 
@@ -344,6 +555,24 @@ async function main() {
       editorCreatedCount: countMatches(log, /created persistent editor surface/g),
       editorCreateFailures: countMatches(log, /persistent editor surface creation failed/g),
       persistentNavigations: countMatches(log, /navigating persistent editor surface/g),
+      closeRequestedCount: countMatches(log, /close server requested/g),
+      closeResult,
+      closedServer2Processes,
+      hubConnectedCount: countMatches(log, /host face connected to Hub; subscribed/g),
+      hubLinkErrors: countMatches(log, /hub link error; retrying/g),
+      inboxConnectedCount: countMatches(log, /inbox → window: .*connected=true/g),
+      inboxDisconnectedCount: countMatches(log, /inbox → window: .*connected=false/g),
+      latestInboxConnected: latestInboxConnected(log),
+      server1SelectionCount: countMatches(log, /selected server server_id=server-1/g),
+      server2SelectionCount: countMatches(log, /selected server server_id=server-2/g),
+      switchMode: opts.clickSwitch ? "click" : "probe-control",
+      closeCheck: opts.closeCheck,
+      controlPort: opts.clickSwitch ? null : opts.controlPort,
+      launchMode: opts.appBundle ? "app-bundle" : "debug-binary",
+      hostBin,
+      reporterBin,
+      bridgeVsix,
+      captures,
     };
 
     const pass =
@@ -351,7 +580,14 @@ async function main() {
       evidence.editorCreatedCount >= 2 &&
       evidence.editorCreateFailures === 0 &&
       evidence.deregisteredCount === 0 &&
-      screenshots.length === 4;
+      evidence.hubConnectedCount >= 1 &&
+      evidence.inboxConnectedCount >= 1 &&
+      evidence.latestInboxConnected === true &&
+      evidence.server1SelectionCount >= 2 &&
+      evidence.server2SelectionCount >= 2 &&
+      (!opts.closeCheck ||
+        (evidence.closeResult?.closed === true && evidence.closedServer2Processes.length === 0)) &&
+      screenshots.length === (opts.closeCheck ? 5 : 4);
 
     report = {
       run: {
@@ -367,7 +603,7 @@ async function main() {
           title: "Host mux: switching keeps persistent editor clients visible",
           pass,
           detail: pass
-            ? `registered=${evidence.registeredCount}, editors=${evidence.editorCreatedCount}, deregistered=${evidence.deregisteredCount}, rss=${rss.rssMiB} MiB`
+            ? `registered=${evidence.registeredCount}, editors=${evidence.editorCreatedCount}, deregistered=${evidence.deregisteredCount}, closed=${evidence.closeResult?.closed ?? "skipped"}, rss=${rss.rssMiB} MiB`
             : `probe failed: ${JSON.stringify(evidence)}`,
           rationale: RATIONALE,
           evidence,
@@ -395,15 +631,34 @@ async function main() {
           evidence: {
             pid: child.pid,
             logPath: relative(outDir, logPath),
+            captures,
           },
-          screenshots: [],
+          screenshots,
         },
       ],
     };
     process.exitCode = 1;
   } finally {
     if (!opts.keep) await terminate(child);
+    if (!opts.keep) cleanupManagedProcessGroups();
     closeSync(logFd);
+  }
+
+  try {
+    const visual = analyzeWindowShots({ baseDir: outDir, report, writeMasks: true });
+    attachVisualAnalysis(report, visual, { baseDir: outDir });
+    const row = report.results?.[0];
+    const flags = visual.summary?.flags || {};
+    const flagCount = Object.values(flags).reduce((sum, count) => sum + Number(count || 0), 0);
+    if (row && flagCount > 0) {
+      row.pass = false;
+      row.detail = `${row.detail}; visual flags=${JSON.stringify(flags)}`;
+      process.exitCode = 1;
+    }
+  } catch (err) {
+    const row = report.results?.[0];
+    row.evidence = row.evidence || {};
+    row.evidence.visualAnalysisError = err?.stack || String(err);
   }
 
   const jsonPath = resolve(outDir, "host-keepalive.json");

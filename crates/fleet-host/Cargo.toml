@@ -26,7 +26,7 @@ fleet-hub = { path = "../fleet-hub" }
 tauri = { version = "2", features = ["unstable"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net", "sync"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net", "sync", "signal"] }
 tokio-tungstenite = "0.23"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 anyhow = "1"

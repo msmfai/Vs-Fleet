@@ -12,6 +12,8 @@
 use std::{collections::HashMap, sync::Mutex};
 
 use serde::{Deserialize, Serialize};
+#[cfg(target_os = "macos")]
+use tauri::TitleBarStyle;
 use tauri::{
     utils::config::BackgroundThrottlingPolicy, webview::WebviewBuilder, App, AppHandle, Emitter,
     LogicalPosition, LogicalSize, Manager, State, WindowEvent,
@@ -23,6 +25,8 @@ const RAIL_W: f64 = 248.0;
 pub const WINDOW: &str = "main";
 /// The rail webview's label.
 pub const RAIL: &str = "rail";
+/// Event emitted whenever the host has a user-visible status override.
+pub const HOST_STATUS: &str = "host-status";
 
 /// One VS Code server workspace (a code-server the rail can switch to).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +37,13 @@ pub struct Server {
     pub label: String,
     /// The code-server URL Fleet embeds.
     pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HostStatus {
+    pub level: String,
+    pub source: String,
+    pub message: String,
 }
 
 /// One persistent editor webview owned by a server id.
@@ -48,6 +59,7 @@ struct EditorEntry {
 #[derive(Default)]
 pub struct MuxState {
     pub selected: Mutex<Option<String>>,
+    pub status: Mutex<Option<HostStatus>>,
     /// Legacy singleton loaded URL, used only when `FLEET_EDITOR_KEEPALIVE=0`.
     loaded: Mutex<Option<String>>,
     /// Persistent editor webviews keyed by Fleet server id.
@@ -72,6 +84,23 @@ fn keepalive_env_enabled(value: Option<&str>) -> bool {
         value.map(|v| v.trim().to_ascii_lowercase()),
         Some(v) if matches!(v.as_str(), "0" | "false" | "off" | "no")
     )
+}
+
+#[cfg(target_os = "macos")]
+fn macos_title_bar_style() -> TitleBarStyle {
+    macos_title_bar_style_from_env_value(
+        std::env::var("FLEET_MACOS_TITLEBAR_STYLE").ok().as_deref(),
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn macos_title_bar_style_from_env_value(value: Option<&str>) -> TitleBarStyle {
+    match value.map(|v| v.trim().to_ascii_lowercase()) {
+        Some(v) if v == "overlay" => TitleBarStyle::Overlay,
+        Some(v) if v == "transparent" => TitleBarStyle::Transparent,
+        Some(v) if v == "visible" => TitleBarStyle::Visible,
+        _ => TitleBarStyle::Transparent,
+    }
 }
 
 fn editor_label_for(id: &str) -> String {
@@ -137,15 +166,14 @@ pub fn build_window(app: &mut App) -> tauri::Result<()> {
         .inner_size(width, height)
         .min_inner_size(760.0, 480.0)
         .icon(tauri::include_image!("icons/128x128.png"))?;
-    // macOS: overlay the title bar so the top strip passes through to the
-    // embedded VS Code's own toolbar (menus / command center / tabs) instead of
-    // covering it with an empty native title bar. The traffic lights float over
-    // the rail (top-left), which insets its header to clear them.
+    // macOS: keep content out from under the native titlebar. Overlay lets the
+    // child VS Code webview paint behind AppKit chrome, which can leave stale
+    // tab/titlebar fragments when WebKit layers move.
     #[cfg(target_os = "macos")]
     {
-        builder = builder
-            .title_bar_style(tauri::TitleBarStyle::Overlay)
-            .hidden_title(true);
+        let titlebar_style = macos_title_bar_style();
+        tracing::info!(?titlebar_style, "configured macOS titlebar style");
+        builder = builder.title_bar_style(titlebar_style).hidden_title(true);
     }
     let window = builder.build()?;
 
@@ -247,16 +275,69 @@ pub fn spawn_server(
     app: AppHandle,
     sup: State<'_, crate::spawn::ServerSupervisor>,
 ) -> Result<String, String> {
-    let server = sup.spawn().map_err(|e| e.to_string())?;
-    let _ = app.emit(crate::bridge::SERVERS_CHANGED, ());
-    select_spawned(app, server.id.clone());
-    Ok(server.id)
+    match sup.spawn() {
+        Ok(server) => {
+            clear_host_status(&app);
+            let _ = app.emit(crate::bridge::SERVERS_CHANGED, ());
+            select_spawned(app, server.id.clone());
+            Ok(server.id)
+        }
+        Err(e) => {
+            let message = e.to_string();
+            emit_spawn_error(&app, "rail", &message);
+            Err(message)
+        }
+    }
 }
 
 /// Tauri command: close server `id` (kills the process Fleet spawned).
 #[tauri::command]
 pub fn close_server(app: AppHandle, sup: State<'_, crate::spawn::ServerSupervisor>, id: String) {
-    close_server_by_id(&app, &sup, &id);
+    let _ = close_server_by_id(&app, &sup, &id);
+}
+
+#[tauri::command]
+pub fn get_host_status(state: State<'_, MuxState>) -> Option<HostStatus> {
+    state.status.lock().ok().and_then(|status| status.clone())
+}
+
+#[tauri::command]
+pub fn clear_host_status_if_current(state: State<'_, MuxState>, message: String) {
+    if let Ok(mut status) = state.status.lock() {
+        if status.as_ref().is_some_and(|s| s.message == message) {
+            *status = None;
+        }
+    }
+}
+
+pub fn emit_spawn_error(app: &AppHandle, source: &str, error: &str) {
+    tracing::warn!(source, error, "spawn failed");
+    set_host_status(
+        app,
+        HostStatus {
+            level: "error".into(),
+            source: source.into(),
+            message: format!("spawn failed: {error}"),
+        },
+    );
+}
+
+pub fn clear_host_status(app: &AppHandle) {
+    if let Some(state) = app.try_state::<MuxState>() {
+        if let Ok(mut status) = state.status.lock() {
+            *status = None;
+        }
+    }
+    let _ = app.emit(HOST_STATUS, Option::<HostStatus>::None);
+}
+
+fn set_host_status(app: &AppHandle, status: HostStatus) {
+    if let Some(state) = app.try_state::<MuxState>() {
+        if let Ok(mut stored) = state.status.lock() {
+            *stored = Some(status.clone());
+        }
+    }
+    let _ = app.emit(HOST_STATUS, Some(status));
 }
 
 /// Switch the editor surface to server `id` (shared by the rail and the menu).
@@ -273,6 +354,7 @@ fn select_impl(app: &AppHandle, id: String, force_navigate: bool) {
     if let Ok(mut sel) = state.selected.lock() {
         *sel = Some(id.clone());
     }
+    tracing::info!(server_id = %id, force = force_navigate, "selected server");
 
     if keepalive_enabled() {
         select_persistent(app, &state, &id, force_navigate);
@@ -361,9 +443,9 @@ fn ensure_persistent_editor(
     let label = editor_label_for(id);
     if app.get_webview(&label).is_none() {
         let win = app.get_window(WINDOW)?;
-        let (pos, size) = editor_pane(app).unwrap_or((
-            LogicalPosition::new(RAIL_W, 0.0),
-            LogicalSize::new(960.0, 720.0),
+        let (pos, size) = editor_parking_pane(app).unwrap_or((
+            LogicalPosition::new(RAIL_W, 784.0),
+            LogicalSize::new(1.0, 1.0),
         ));
         let blank = "about:blank".parse().expect("about:blank is a valid url");
         match win.add_child(
@@ -471,7 +553,7 @@ fn navigate_persistent_editor(
     }
 }
 
-pub fn close_server_by_id(app: &AppHandle, sup: &crate::spawn::ServerSupervisor, id: &str) {
+pub fn close_server_by_id(app: &AppHandle, sup: &crate::spawn::ServerSupervisor, id: &str) -> bool {
     let was_selected = app
         .try_state::<MuxState>()
         .and_then(|state| state.selected.lock().ok().and_then(|g| g.clone()))
@@ -509,6 +591,7 @@ pub fn close_server_by_id(app: &AppHandle, sup: &crate::spawn::ServerSupervisor,
     }
 
     tracing::info!(server_id = %id, closed, "close server requested");
+    closed
 }
 
 fn close_editor(app: &AppHandle, id: &str) {
@@ -826,31 +909,48 @@ fn retile(app: &AppHandle) {
 
     let pos = LogicalPosition::new(RAIL_W, 0.0);
     let pane = LogicalSize::new((w - RAIL_W).max(120.0), h);
+    let park_pos = LogicalPosition::new(RAIL_W, h + 64.0);
+    let park_size = LogicalSize::new(1.0, 1.0);
 
     if keepalive_enabled() {
         let Some(state) = app.try_state::<MuxState>() else {
             return;
         };
         let selected = state.selected.lock().ok().and_then(|g| g.clone());
-        let mut active_visible = false;
+        let mut active_label = None;
+        let mut inactive_labels = Vec::new();
         if let Ok(editors) = state.editors.lock() {
             for (id, entry) in editors.iter() {
                 if selected.as_deref() == Some(id.as_str()) {
-                    if let Some(wv) = app.get_webview(&entry.label) {
-                        let _ = wv.set_position(pos);
-                        let _ = wv.set_size(pane);
-                        let _ = wv.show();
-                        active_visible = true;
-                    }
-                } else if let Some(wv) = app.get_webview(&entry.label) {
-                    let _ = wv.hide();
+                    active_label = Some(entry.label.clone());
+                } else {
+                    inactive_labels.push(entry.label.clone());
                 }
             }
         }
+
+        for label in inactive_labels {
+            if let Some(wv) = app.get_webview(&label) {
+                let _ = wv.set_position(park_pos);
+                let _ = wv.set_size(park_size);
+                let _ = wv.hide();
+            }
+        }
+
         if let Some(wv) = app.get_webview(EDITOR) {
-            if active_visible {
+            if active_label.is_some() {
+                let _ = wv.set_position(park_pos);
+                let _ = wv.set_size(park_size);
                 let _ = wv.hide();
             } else {
+                let _ = wv.set_position(pos);
+                let _ = wv.set_size(pane);
+                let _ = wv.show();
+            }
+        }
+
+        if let Some(label) = active_label {
+            if let Some(wv) = app.get_webview(&label) {
                 let _ = wv.set_position(pos);
                 let _ = wv.set_size(pane);
                 let _ = wv.show();
@@ -863,21 +963,26 @@ fn retile(app: &AppHandle) {
     }
 }
 
-fn editor_pane(app: &AppHandle) -> Option<(LogicalPosition<f64>, LogicalSize<f64>)> {
+fn editor_parking_pane(app: &AppHandle) -> Option<(LogicalPosition<f64>, LogicalSize<f64>)> {
     let win = app.get_window(WINDOW)?;
     let size = win.inner_size().ok()?;
     let sf = win.scale_factor().ok()?;
-    let w = size.width as f64 / sf;
     let h = size.height as f64 / sf;
     Some((
-        LogicalPosition::new(RAIL_W, 0.0),
-        LogicalSize::new((w - RAIL_W).max(120.0), h),
+        LogicalPosition::new(RAIL_W, h + 64.0),
+        LogicalSize::new(1.0, 1.0),
     ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::{editor_label_for, keepalive_env_enabled};
+
+    #[cfg(target_os = "macos")]
+    use super::macos_title_bar_style_from_env_value;
+
+    #[cfg(target_os = "macos")]
+    use tauri::TitleBarStyle;
 
     #[test]
     fn keepalive_defaults_on_with_common_disable_values() {
@@ -896,6 +1001,36 @@ mod tests {
         assert_eq!(
             editor_label_for("host/ws 1@prod"),
             "editor:host~2fws~201~40prod"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_titlebar_style_defaults_to_transparent() {
+        assert_eq!(
+            macos_title_bar_style_from_env_value(None),
+            TitleBarStyle::Transparent
+        );
+        assert_eq!(
+            macos_title_bar_style_from_env_value(Some("unknown")),
+            TitleBarStyle::Transparent
+        );
+        assert_eq!(
+            macos_title_bar_style_from_env_value(Some(" transparent ")),
+            TitleBarStyle::Transparent
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_titlebar_style_accepts_diagnostic_variants() {
+        assert_eq!(
+            macos_title_bar_style_from_env_value(Some("OVERLAY")),
+            TitleBarStyle::Overlay
+        );
+        assert_eq!(
+            macos_title_bar_style_from_env_value(Some("visible")),
+            TitleBarStyle::Visible
         );
     }
 }

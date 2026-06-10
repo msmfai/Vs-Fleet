@@ -1,0 +1,58 @@
+2026-06-10T15:55:50.594693Z  INFO fleet_host: probe control listening port=51776
+2026-06-10T15:55:50.594900Z  INFO fleet_host::mux: configured macOS titlebar style titlebar_style=Transparent
+2026-06-10T15:55:50.595593Z  INFO fleet_hub: single-instance lock acquired lock=/Users/marinmoran/.fleet/run/hub.lock
+2026-06-10T15:55:50.595614Z  INFO fleet_hub: ephemeral state — live mirror, no restore across restart
+2026-06-10T15:55:50.596522Z  INFO fleet_hub::server: ws listener bound local=127.0.0.1:51777
+2026-06-10T15:55:50.596548Z  INFO fleet_hub: Fleet Hub up (WebSocket) ws_local=127.0.0.1:51777
+2026-06-10T15:55:50.596657Z  INFO fleet_hub::server: unix listener bound path=/Users/marinmoran/.fleet/run/hub.sock
+2026-06-10T15:55:50.596665Z  INFO fleet_hub: Fleet Hub up (unix socket) path=/Users/marinmoran/.fleet/run/hub.sock
+2026-06-10T15:55:50.689851Z  INFO fleet_host::mux: multiplexer window built (awaiting registrations) keepalive=true
+2026-06-10T15:55:50.696978Z  INFO fleet_host::bridge: command-bridge / phone-home WS server listening port=51778
+2026-06-10T15:55:50.697593Z  INFO fleet_host::hub_client: host face connected to Hub; subscribed url=ws://127.0.0.1:51777
+2026-06-10T15:55:50.697823Z  INFO fleet_host::hub_client: inbox → window: [] connected=true tabs=0 waiting=0
+2026-06-10T15:55:50.699135Z  INFO fleet_host::hub_client: inbox → window: [marinmoran=idle] connected=true tabs=1 waiting=0
+2026-06-10T15:55:50.699213Z  INFO fleet_host::hub_client: inbox → window: [marinmoran=idle] connected=true tabs=1 waiting=0
+2026-06-10T15:55:50.924813Z  INFO fleet_host::spawn: installed fleet-bridge extension extensions_dir=/Users/marinmoran/.fleet/mux/cs-userdata-server-1/extensions refreshed=true
+2026-06-10T15:55:50.925599Z  INFO fleet_host::spawn: spawned VS Code web server + reporter id=server-1 port=58882 server_bin=/Users/marinmoran/.vscode/cli/serve-web/1b50d58d73426c9171299ec4037d01365d995b78/bin/code-server
+2026-06-10T15:55:50.925664Z  INFO fleet_host::mux: selected server server_id=server-1 force=true
+2026-06-10T15:55:50.930888Z  INFO fleet_host::mux: created persistent editor surface mode="persistent" server_id=server-1 editor_label=editor:server-1
+2026-06-10T15:55:50.931001Z  INFO fleet_host::mux: navigating persistent editor surface mode="persistent" server_id=server-1 editor_label=editor:server-1 url=http://127.0.0.1:58882/?folder=/Users/marinmoran/.fleet/mux/ws-server-1 force=true
+2026-06-10T15:55:50.949689Z  INFO fleet_host::hub_client: inbox → window: [marinmoran=idle, marinmoran=idle] connected=true tabs=2 waiting=0
+2026-06-10T15:55:50.949759Z  INFO fleet_host::hub_client: inbox → window: [marinmoran=idle, marinmoran=idle] connected=true tabs=2 waiting=0
+2026-06-10T15:55:51.174072Z  INFO fleet_host::spawn: installed fleet-bridge extension extensions_dir=/Users/marinmoran/.fleet/mux/cs-userdata-server-2/extensions refreshed=true
+2026-06-10T15:55:51.174566Z  INFO fleet_host::spawn: spawned VS Code web server + reporter id=server-2 port=58885 server_bin=/Users/marinmoran/.vscode/cli/serve-web/1b50d58d73426c9171299ec4037d01365d995b78/bin/code-server
+2026-06-10T15:55:51.174616Z  INFO fleet_host::mux: selected server server_id=server-2 force=true
+2026-06-10T15:55:51.179958Z  INFO fleet_host::mux: created persistent editor surface mode="persistent" server_id=server-2 editor_label=editor:server-2
+2026-06-10T15:55:51.180015Z  INFO fleet_host::mux: navigating persistent editor surface mode="persistent" server_id=server-2 editor_label=editor:server-2 url=http://127.0.0.1:58885/?folder=/Users/marinmoran/.fleet/mux/ws-server-2 force=true
+2026-06-10T15:55:51.362838Z  INFO fleet_host::mux: selected server server_id=server-2 force=false
+2026-06-10T15:55:51.701230Z  INFO fleet_host::mux: navigating persistent editor surface mode="persistent" server_id=server-1 editor_label=editor:server-1 url=http://127.0.0.1:58882/?folder=/Users/marinmoran/.fleet/mux/ws-server-1 force=true
+2026-06-10T15:55:51.950160Z  INFO fleet_host::mux: navigating persistent editor surface mode="persistent" server_id=server-2 editor_label=editor:server-2 url=http://127.0.0.1:58885/?folder=/Users/marinmoran/.fleet/mux/ws-server-2 force=true
+2026-06-10T15:55:53.206434Z  INFO fleet_host::mux: navigating persistent editor surface mode="persistent" server_id=server-1 editor_label=editor:server-1 url=http://127.0.0.1:58882/?folder=/Users/marinmoran/.fleet/mux/ws-server-1 force=true
+2026-06-10T15:55:53.451205Z  INFO fleet_host::mux: navigating persistent editor surface mode="persistent" server_id=server-2 editor_label=editor:server-2 url=http://127.0.0.1:58885/?folder=/Users/marinmoran/.fleet/mux/ws-server-2 force=true
+2026-06-10T15:55:54.438990Z  INFO fleet_host::bridge: server registered (phone-home) server_id=server-2 generation=0
+2026-06-10T15:55:54.440704Z  INFO fleet_host::mux: selected server server_id=server-2 force=false
+2026-06-10T15:55:54.460246Z  INFO fleet_host::bridge: server registered (phone-home) server_id=server-1 generation=1
+2026-06-10T15:55:54.462001Z  INFO fleet_host::mux: selected server server_id=server-2 force=false
+2026-06-10T15:55:56.211521Z  INFO fleet_host::mux: spawned server registered; stopping navigation retries server_id=server-1
+2026-06-10T15:55:56.455866Z  INFO fleet_host::mux: spawned server registered; stopping navigation retries server_id=server-2
+2026-06-10T15:56:00.700628Z  INFO fleet_host::hub_client: inbox → window: [marinmoran=idle, marinmoran=idle] connected=true tabs=2 waiting=0
+2026-06-10T15:56:00.950494Z  INFO fleet_host::hub_client: inbox → window: [marinmoran=idle, marinmoran=idle] connected=true tabs=2 waiting=0
+2026-06-10T15:56:10.700644Z  INFO fleet_host::hub_client: inbox → window: [marinmoran=idle, marinmoran=idle] connected=true tabs=2 waiting=0
+2026-06-10T15:56:10.951010Z  INFO fleet_host::hub_client: inbox → window: [marinmoran=idle, marinmoran=idle] connected=true tabs=2 waiting=0
+2026-06-10T15:56:18.355123Z  INFO fleet_host::mux: selected server server_id=server-1 force=false
+2026-06-10T15:56:19.191132Z  INFO fleet_host::mux: selected server server_id=server-2 force=false
+2026-06-10T15:56:20.700046Z  INFO fleet_host::hub_client: inbox → window: [marinmoran=idle, marinmoran=idle] connected=true tabs=2 waiting=0
+2026-06-10T15:56:20.951470Z  INFO fleet_host::hub_client: inbox → window: [marinmoran=idle, marinmoran=idle] connected=true tabs=2 waiting=0
+2026-06-10T15:56:21.822812Z  INFO fleet_host::mux: selected server server_id=server-1 force=false
+2026-06-10T15:56:23.239149Z  INFO fleet_host::mux: selected server server_id=server-2 force=false
+2026-06-10T15:56:23.618208Z  INFO fleet_host::mux: selected server server_id=server-1 force=false
+2026-06-10T15:56:27.485623Z  INFO fleet_host::mux: selected server server_id=server-2 force=false
+2026-06-10T15:56:30.699545Z  INFO fleet_host::hub_client: inbox → window: [marinmoran=idle, marinmoran=idle] connected=true tabs=2 waiting=0
+2026-06-10T15:56:30.949993Z  INFO fleet_host::hub_client: inbox → window: [marinmoran=idle, marinmoran=idle] connected=true tabs=2 waiting=0
+2026-06-10T15:56:31.347291Z  INFO fleet_host::mux: selected server server_id=server-1 force=false
+2026-06-10T15:56:35.220199Z  INFO fleet_host::mux: closed persistent editor surface server_id=server-2 editor_label=editor:server-2
+2026-06-10T15:56:35.273158Z  INFO fleet_host::spawn: closed spawned server id=server-2
+2026-06-10T15:56:35.273210Z  INFO fleet_host::bridge: server forgotten by explicit close server_id=server-2
+2026-06-10T15:56:35.273417Z  INFO fleet_host::mux: close server requested server_id=server-2 closed=true
+2026-06-10T15:56:35.274789Z  INFO fleet_host::mux: selected server server_id=server-1 force=false
+2026-06-10T15:56:36.674973Z  INFO fleet_host: termination signal received; cleaning up spawned servers signal="SIGTERM"
