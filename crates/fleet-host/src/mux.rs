@@ -11,6 +11,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    process::Command,
     sync::Mutex,
 };
 
@@ -314,6 +315,11 @@ pub fn close_server(
     id: String,
 ) -> bool {
     close_server_by_id(&app, &sup, &id)
+}
+
+#[tauri::command]
+pub fn open_server_external(app: AppHandle, id: String) -> Result<(), String> {
+    open_server_external_by_id(&app, &id)
 }
 
 #[tauri::command]
@@ -635,6 +641,39 @@ pub fn close_server_by_id(app: &AppHandle, sup: &crate::spawn::ServerSupervisor,
     closed
 }
 
+pub fn open_server_external_by_id(app: &AppHandle, id: &str) -> Result<(), String> {
+    let url = server_url(app, id).ok_or_else(|| "server URL unavailable".to_string())?;
+    open_external_url(&url).map_err(|e| format!("open browser failed: {e}"))
+}
+
+fn open_external_url(url: &str) -> std::io::Result<()> {
+    let (program, args) = external_open_command(url);
+    Command::new(program).args(args).spawn().map(|_| ())
+}
+
+#[cfg(target_os = "macos")]
+fn external_open_command(url: &str) -> (&'static str, Vec<String>) {
+    ("open", vec![url.to_string()])
+}
+
+#[cfg(target_os = "windows")]
+fn external_open_command(url: &str) -> (&'static str, Vec<String>) {
+    (
+        "cmd",
+        vec![
+            "/C".to_string(),
+            "start".to_string(),
+            "".to_string(),
+            url.to_string(),
+        ],
+    )
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+fn external_open_command(url: &str) -> (&'static str, Vec<String>) {
+    ("xdg-open", vec![url.to_string()])
+}
+
 fn close_editor(app: &AppHandle, id: &str) {
     let Some(state) = app.try_state::<MuxState>() else {
         return;
@@ -847,6 +886,7 @@ fn build_server_menu<M: Manager<tauri::Wry>>(
 ) -> tauri::Result<tauri::menu::Submenu<tauri::Wry>> {
     use tauri::menu::{CheckMenuItemBuilder, MenuItemBuilder, SubmenuBuilder};
     let close_current = close_current_menu_item(servers, selected);
+    let open_current_enabled = selected_server_has_url(servers, selected);
 
     let mut menu = SubmenuBuilder::new(manager, "Server")
         .item(
@@ -858,6 +898,11 @@ fn build_server_menu<M: Manager<tauri::Wry>>(
             &MenuItemBuilder::with_id("spawn:close-current", close_current.label)
                 .accelerator("CmdOrCtrl+Shift+W")
                 .enabled(close_current.enabled)
+                .build(manager)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("external:open-current", "Open Current in Browser")
+                .enabled(open_current_enabled)
                 .build(manager)?,
         )
         .separator()
@@ -941,6 +986,15 @@ fn close_current_menu_item(servers: &[Server], selected: Option<&str>) -> CloseC
         },
         enabled: true,
     }
+}
+
+fn selected_server_has_url(servers: &[Server], selected: Option<&str>) -> bool {
+    let Some(selected) = selected else {
+        return false;
+    };
+    servers
+        .iter()
+        .any(|server| server.id == selected && !server.url.is_empty())
 }
 
 fn server_switch_accelerator(index: usize) -> Option<String> {
@@ -1307,8 +1361,9 @@ fn editor_parking_pane(app: &AppHandle) -> Option<(LogicalPosition<f64>, Logical
 #[cfg(test)]
 mod tests {
     use super::{
-        close_current_menu_item, editor_label_for, keepalive_env_enabled, menu_server_label,
-        merged_servers, rail_menu_state_from, server_switch_accelerator, RailMenuState, Server,
+        close_current_menu_item, editor_label_for, external_open_command, keepalive_env_enabled,
+        menu_server_label, merged_servers, rail_menu_state_from, selected_server_has_url,
+        server_switch_accelerator, RailMenuState, Server,
     };
 
     #[cfg(target_os = "macos")]
@@ -1400,6 +1455,52 @@ mod tests {
         let stale_selection = close_current_menu_item(&[], Some("missing"));
         assert_eq!(stale_selection.label, "Close Current Server");
         assert!(!stale_selection.enabled);
+    }
+
+    #[test]
+    fn selected_server_has_url_only_for_selected_url_backed_server() {
+        let server = Server {
+            id: "server-1".into(),
+            label: "server-1".into(),
+            url: "http://127.0.0.1:1/".into(),
+            owned: true,
+        };
+        let no_url = Server {
+            id: "server-2".into(),
+            label: "server-2".into(),
+            url: "".into(),
+            owned: true,
+        };
+
+        assert!(selected_server_has_url(
+            &[server.clone(), no_url.clone()],
+            Some("server-1")
+        ));
+        assert!(!selected_server_has_url(
+            &[server.clone(), no_url.clone()],
+            Some("server-2")
+        ));
+        assert!(!selected_server_has_url(&[server, no_url], None));
+    }
+
+    #[test]
+    fn external_open_command_targets_requested_url() {
+        let (program, args) = external_open_command("http://127.0.0.1:51780/");
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(program, "open");
+            assert_eq!(args, vec!["http://127.0.0.1:51780/"]);
+        }
+        #[cfg(target_os = "windows")]
+        {
+            assert_eq!(program, "cmd");
+            assert_eq!(args, vec!["/C", "start", "", "http://127.0.0.1:51780/"]);
+        }
+        #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+        {
+            assert_eq!(program, "xdg-open");
+            assert_eq!(args, vec!["http://127.0.0.1:51780/"]);
+        }
     }
 
     #[test]
