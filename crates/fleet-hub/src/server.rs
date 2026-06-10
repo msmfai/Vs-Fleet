@@ -139,11 +139,10 @@ impl HubState {
         }
     }
 
-    /// Apply a face→Hub command. Mute/unmute/solo mutate the Hub state and
-    /// broadcast the resulting `session.updated` event(s). Other commands are
-    /// logged and accepted but not yet acted upon (later slices).
+    /// Apply a face→Hub command and broadcast the resulting persisted events.
+    /// Unknown commands are logged and accepted for forward compatibility.
     async fn apply_command(&self, command: fleet_protocol::Command) {
-        use fleet_protocol::Command;
+        use fleet_protocol::{Command, Target};
         match command {
             Command::Mute { session_id, .. } => {
                 let mut store = self.store.lock().await;
@@ -161,6 +160,47 @@ impl HubState {
                 let mut store = self.store.lock().await;
                 for ev in store.apply_solo(&session_id) {
                     let _ = self.tx.send(ev);
+                }
+            }
+            Command::Dismiss { target, .. } => {
+                let mut store = self.store.lock().await;
+                match target {
+                    Target::Session { session_id } => match store.apply_session_remove(&session_id)
+                    {
+                        Ok(Some(ev)) => {
+                            let _ = self.tx.send(ev);
+                        }
+                        Ok(None) => {}
+                        Err(e) => tracing::error!(
+                            error = %e,
+                            session_id,
+                            "persist dismiss session failed; dropped"
+                        ),
+                    },
+                    Target::Run { run_id } => {
+                        let session_id = store.snapshot().into_iter().find_map(|session| {
+                            session
+                                .runs
+                                .iter()
+                                .any(|run| run.run_id == run_id)
+                                .then_some(session.session_id)
+                        });
+                        if let Some(session_id) = session_id {
+                            match store.apply_run_remove(&session_id, &run_id) {
+                                Ok(evs) => {
+                                    for ev in evs {
+                                        let _ = self.tx.send(ev);
+                                    }
+                                }
+                                Err(e) => tracing::error!(
+                                    error = %e,
+                                    session_id,
+                                    run_id,
+                                    "persist dismiss run failed; dropped"
+                                ),
+                            }
+                        }
+                    }
                 }
             }
             other => {
@@ -508,6 +548,79 @@ mod tests {
             })
             .await;
         assert!(reply.is_none(), "command has no immediate reply");
+    }
+
+    #[tokio::test]
+    async fn dismiss_session_removes_it_and_broadcasts() {
+        let state = HubState::new();
+        state
+            .apply(ClientMessage::SessionUpsert {
+                session: sess("s1"),
+            })
+            .await;
+        let mut rx = state.subscribe();
+
+        state
+            .apply(ClientMessage::Command {
+                command: fleet_protocol::Command::dismiss(fleet_protocol::Target::session("s1")),
+            })
+            .await;
+
+        let ev = rx.recv().await.unwrap();
+        assert_eq!(ev.type_name(), "session.removed");
+        match ev {
+            Event::SessionRemoved { session_id, .. } => assert_eq!(session_id, "s1"),
+            other => panic!("expected session.removed, got {other:?}"),
+        }
+
+        let snap = state.apply(ClientMessage::Subscribe).await.unwrap();
+        match snap {
+            Event::Snapshot { sessions, .. } => assert!(sessions.is_empty()),
+            other => panic!("expected snapshot, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn dismiss_run_removes_it_and_updates_session() {
+        let state = HubState::new();
+        state
+            .apply(ClientMessage::SessionUpsert {
+                session: sess("s1"),
+            })
+            .await;
+        state
+            .apply(ClientMessage::RunUpsert {
+                session_id: "s1".into(),
+                run: AgentRun::new(
+                    "r1",
+                    AgentKind::Codex,
+                    "n",
+                    "/",
+                    State::Dead,
+                    Confidence::High,
+                    "2026-06-08T00:00:00Z",
+                ),
+                stamp: None,
+            })
+            .await;
+        let mut rx = state.subscribe();
+
+        state
+            .apply(ClientMessage::Command {
+                command: fleet_protocol::Command::dismiss(fleet_protocol::Target::run("r1")),
+            })
+            .await;
+
+        let first = rx.recv().await.unwrap();
+        let second = rx.recv().await.unwrap();
+        assert!(matches!(first, Event::RunRemoved { .. }));
+        assert!(matches!(second, Event::SessionUpdated { .. }));
+
+        let snap = state.apply(ClientMessage::Subscribe).await.unwrap();
+        match snap {
+            Event::Snapshot { sessions, .. } => assert!(sessions[0].runs.is_empty()),
+            other => panic!("expected snapshot, got {other:?}"),
+        }
     }
 
     // ── S25: mute / solo command handling ─────────────────────────────────────

@@ -76,11 +76,13 @@ fn main() {
     let ws_url = explicit_ws_url.unwrap_or_else(|| DEFAULT_HUB_URL.to_string());
 
     let shared: hub_client::Shared = Arc::new(Mutex::new(RenderedInbox::default()));
+    let (hub_commands, hub_command_rx) = hub_client::command_channel();
     let registry = bridge::BridgeRegistry::new();
     let bridge_token = bridge::launch_token();
 
     tauri::Builder::default()
         .manage(shared.clone())
+        .manage(hub_commands)
         .manage(mux::MuxState::new())
         .manage(registry.clone())
         .manage(spawn::ServerSupervisor::new(
@@ -96,7 +98,10 @@ fn main() {
             mux::spawn_server,
             mux::close_server,
             mux::get_host_status,
-            mux::clear_host_status_if_current
+            mux::clear_host_status_if_current,
+            hub_client::set_session_muted,
+            hub_client::set_session_soloed,
+            hub_client::dismiss_session
         ])
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
@@ -120,19 +125,37 @@ fn main() {
                 ) {
                     if let Some(active) = mux.selected.lock().ok().and_then(|g| g.clone()) {
                         mux::close_server_by_id(app, &sup, &active);
+                    } else {
+                        mux::emit_host_status(app, "warning", "menu", "no active server");
                     }
+                } else {
+                    mux::emit_host_status(app, "error", "menu", "server supervisor unavailable");
                 }
             } else if let Some(server_id) = id.strip_prefix("server:") {
-                mux::select(app, server_id.to_string());
+                if server_id != "none" {
+                    mux::select(app, server_id.to_string());
+                }
             } else if let Some(command) = id.strip_prefix("cmd:") {
                 // Forward a VS Code command to the active server's bridge.
-                if let (Some(mux), Some(reg)) = (
-                    app.try_state::<mux::MuxState>(),
-                    app.try_state::<bridge::BridgeRegistry>(),
-                ) {
-                    if let Some(active) = mux.selected.lock().ok().and_then(|g| g.clone()) {
-                        reg.send_command(&active, command);
-                    }
+                let Some(mux_state) = app.try_state::<mux::MuxState>() else {
+                    mux::emit_host_status(app, "error", "menu", "command bridge unavailable");
+                    return;
+                };
+                let Some(reg) = app.try_state::<bridge::BridgeRegistry>() else {
+                    mux::emit_host_status(app, "error", "menu", "command bridge unavailable");
+                    return;
+                };
+                let Some(active) = mux_state.selected.lock().ok().and_then(|g| g.clone()) else {
+                    mux::emit_host_status(app, "warning", "menu", "no active server");
+                    return;
+                };
+                if !reg.send_command(&active, command) {
+                    mux::emit_host_status(
+                        app,
+                        "warning",
+                        "menu",
+                        format!("command unavailable for {active}"),
+                    );
                 }
             }
         })
@@ -153,6 +176,7 @@ fn main() {
             let ws_url = ws_url.clone();
             let registry = registry.clone();
             let bridge_token = bridge_token.clone();
+            let hub_command_rx = hub_command_rx;
             // The embedded Hub, Hub link, and command-bridge / phone-home server
             // share one background runtime so Tauri owns the main thread.
             std::thread::spawn(move || {
@@ -190,7 +214,7 @@ fn main() {
                     {
                         tracing::error!(error = %e, "bridge server failed to bind");
                     }
-                    hub_client::run(handle, shared, ws_url).await;
+                    hub_client::run(handle, shared, ws_url, hub_command_rx).await;
                 });
             });
 

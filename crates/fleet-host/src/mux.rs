@@ -29,7 +29,7 @@ pub const RAIL: &str = "rail";
 pub const HOST_STATUS: &str = "host-status";
 
 /// One VS Code server workspace (a code-server the rail can switch to).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Server {
     /// Stable id (also the agent session id the server's reporter registers).
     pub id: String,
@@ -37,6 +37,8 @@ pub struct Server {
     pub label: String,
     /// The code-server URL Fleet embeds.
     pub url: String,
+    /// Whether Fleet owns the backing process/container and can kill it.
+    pub owned: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -214,9 +216,13 @@ pub fn get_servers(
     registry: State<'_, crate::bridge::BridgeRegistry>,
     sup: State<'_, crate::spawn::ServerSupervisor>,
 ) -> Vec<Server> {
+    merged_servers(sup.servers(), registry.servers())
+}
+
+fn merged_servers(spawned: Vec<Server>, registered: Vec<Server>) -> Vec<Server> {
     let mut seen = std::collections::HashSet::new();
     let mut out: Vec<Server> = Vec::new();
-    for s in sup.servers().into_iter().chain(registry.servers()) {
+    for s in spawned.into_iter().chain(registered) {
         if seen.insert(s.id.clone()) {
             out.push(s);
         }
@@ -292,8 +298,12 @@ pub fn spawn_server(
 
 /// Tauri command: close server `id` (kills the process Fleet spawned).
 #[tauri::command]
-pub fn close_server(app: AppHandle, sup: State<'_, crate::spawn::ServerSupervisor>, id: String) {
-    let _ = close_server_by_id(&app, &sup, &id);
+pub fn close_server(
+    app: AppHandle,
+    sup: State<'_, crate::spawn::ServerSupervisor>,
+    id: String,
+) -> bool {
+    close_server_by_id(&app, &sup, &id)
 }
 
 #[tauri::command]
@@ -312,12 +322,21 @@ pub fn clear_host_status_if_current(state: State<'_, MuxState>, message: String)
 
 pub fn emit_spawn_error(app: &AppHandle, source: &str, error: &str) {
     tracing::warn!(source, error, "spawn failed");
+    emit_host_status(app, "error", source, format!("spawn failed: {error}"));
+}
+
+pub fn emit_host_status(
+    app: &AppHandle,
+    level: impl Into<String>,
+    source: impl Into<String>,
+    message: impl Into<String>,
+) {
     set_host_status(
         app,
         HostStatus {
-            level: "error".into(),
+            level: level.into(),
             source: source.into(),
-            message: format!("spawn failed: {error}"),
+            message: message.into(),
         },
     );
 }
@@ -359,11 +378,13 @@ fn select_impl(app: &AppHandle, id: String, force_navigate: bool) {
     if keepalive_enabled() {
         select_persistent(app, &state, &id, force_navigate);
         sync_rail_selection(app);
+        refresh_menu(app);
         return;
     }
 
     select_singleton(app, &state, &id, force_navigate);
     sync_rail_selection(app);
+    refresh_menu(app);
 }
 
 fn select_singleton(app: &AppHandle, state: &State<'_, MuxState>, id: &str, force_navigate: bool) {
@@ -591,6 +612,7 @@ pub fn close_server_by_id(app: &AppHandle, sup: &crate::spawn::ServerSupervisor,
     }
 
     tracing::info!(server_id = %id, closed, "close server requested");
+    refresh_menu(app);
     closed
 }
 
@@ -659,20 +681,57 @@ fn sync_rail_selection(app: &AppHandle) {
     }
 }
 
-/// Build Fleet's native macOS menu bar: a real Edit menu (so ⌘C/⌘V work in the
-/// editor webview), a Server switcher mirroring the rail, plus the standard app /
-/// window menus. The webview can't own the OS menu bar, so Fleet provides one
-/// wired to the active surface.
+/// Build Fleet's native menu bar: a real Edit menu (so ⌘C/⌘V work in the editor
+/// webview), a Server switcher mirroring the rail, plus the standard app/window
+/// menus. The webview can't own the OS menu bar, so Fleet provides one wired to
+/// the active surface.
 pub fn build_menu(app: &mut App) -> tauri::Result<()> {
+    app.set_menu(build_app_menu(app, &[], None)?)?;
+    Ok(())
+}
+
+pub fn refresh_menu(app: &AppHandle) {
+    if let Err(e) = refresh_menu_result(app) {
+        tracing::warn!(error = %e, "native menu refresh failed");
+    }
+}
+
+fn refresh_menu_result(app: &AppHandle) -> tauri::Result<()> {
+    let servers = menu_servers(app);
+    let selected = app
+        .try_state::<MuxState>()
+        .and_then(|state| state.selected.lock().ok().and_then(|g| g.clone()));
+    app.set_menu(build_app_menu(app, &servers, selected.as_deref())?)?;
+    Ok(())
+}
+
+fn menu_servers(app: &AppHandle) -> Vec<Server> {
+    let spawned = app
+        .try_state::<crate::spawn::ServerSupervisor>()
+        .map(|sup| sup.servers())
+        .unwrap_or_default();
+    let registered = app
+        .try_state::<crate::bridge::BridgeRegistry>()
+        .map(|reg| reg.servers())
+        .unwrap_or_default();
+    merged_servers(spawned, registered)
+}
+
+fn build_app_menu<M: Manager<tauri::Wry>>(
+    manager: &M,
+    servers: &[Server],
+    selected: Option<&str>,
+) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 
     // Standard app menu (the bold first menu on macOS).
-    let app_menu = SubmenuBuilder::new(app, "Fleet")
+    let app_menu = SubmenuBuilder::new(manager, "Fleet")
         .about(None)
         .separator()
         .item(
             &MenuItemBuilder::with_id("cmd:workbench.action.openSettings", "Settings…")
-                .build(app)?,
+                .accelerator("CmdOrCtrl+,")
+                .build(manager)?,
         )
         .separator()
         .hide()
@@ -695,39 +754,124 @@ pub fn build_menu(app: &mut App) -> tauri::Result<()> {
     ];
     let mut subs = Vec::new();
     for (title, items) in vscode_menus {
-        subs.push(build_sub(app, title, items)?);
+        subs.push(build_sub(manager, title, items)?);
     }
 
-    // Server: spawn a new code-server (it phones home) / close the current one.
-    // Switching between servers is the rail's job (the dynamic push-registered
-    // list); these are the lifecycle actions.
-    let server_menu = SubmenuBuilder::new(app, "Server")
-        .item(&MenuItemBuilder::with_id("spawn:new", "New Server").build(app)?)
-        .item(&MenuItemBuilder::with_id("spawn:close-current", "Close Current Server").build(app)?)
-        .build()?;
+    let server_menu = build_server_menu(manager, servers, selected)?;
 
-    let window_menu = SubmenuBuilder::new(app, "Window")
+    let window_menu = SubmenuBuilder::new(manager, "Window")
         .minimize()
         .fullscreen()
         .separator()
         .close_window()
         .build()?;
 
-    let help_menu = build_sub(app, "Help", HELP)?;
+    let help_menu = build_sub(manager, "Help", HELP)?;
 
-    let mut menu = MenuBuilder::new(app).item(&app_menu);
+    let mut menu = MenuBuilder::new(manager).item(&app_menu);
     for sub in &subs {
         menu = menu.item(sub);
     }
-    menu = menu.item(&server_menu).item(&window_menu).item(&help_menu);
-    app.set_menu(menu.build()?)?;
-    Ok(())
+    menu.item(&server_menu)
+        .item(&window_menu)
+        .item(&help_menu)
+        .build()
+}
+
+fn build_server_menu<M: Manager<tauri::Wry>>(
+    manager: &M,
+    servers: &[Server],
+    selected: Option<&str>,
+) -> tauri::Result<tauri::menu::Submenu<tauri::Wry>> {
+    use tauri::menu::{CheckMenuItemBuilder, MenuItemBuilder, SubmenuBuilder};
+    let close_current = close_current_menu_item(servers, selected);
+
+    let mut menu = SubmenuBuilder::new(manager, "Server")
+        .item(
+            &MenuItemBuilder::with_id("spawn:new", "New Server")
+                .accelerator("CmdOrCtrl+Shift+N")
+                .build(manager)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("spawn:close-current", close_current.label)
+                .accelerator("CmdOrCtrl+Shift+W")
+                .enabled(close_current.enabled)
+                .build(manager)?,
+        )
+        .separator();
+
+    if servers.is_empty() {
+        return menu
+            .item(
+                &MenuItemBuilder::with_id("server:none", "No Servers")
+                    .enabled(false)
+                    .build(manager)?,
+            )
+            .build();
+    }
+
+    for (idx, server) in servers.iter().enumerate() {
+        let mut item = CheckMenuItemBuilder::with_id(
+            format!("server:{}", server.id),
+            menu_server_label(server),
+        )
+        .checked(selected == Some(server.id.as_str()));
+        if let Some(accelerator) = server_switch_accelerator(idx) {
+            item = item.accelerator(accelerator);
+        }
+        let item = item.build(manager)?;
+        menu = menu.item(&item);
+    }
+
+    menu.build()
+}
+
+fn menu_server_label(server: &Server) -> String {
+    if server.owned {
+        server.label.clone()
+    } else {
+        format!("{} (external)", server.label)
+    }
+}
+
+struct CloseCurrentMenuItem {
+    label: &'static str,
+    enabled: bool,
+}
+
+fn close_current_menu_item(servers: &[Server], selected: Option<&str>) -> CloseCurrentMenuItem {
+    let Some(selected) = selected else {
+        return CloseCurrentMenuItem {
+            label: "Close Current Server",
+            enabled: false,
+        };
+    };
+    let Some(server) = servers.iter().find(|server| server.id == selected) else {
+        return CloseCurrentMenuItem {
+            label: "Close Current Server",
+            enabled: false,
+        };
+    };
+    CloseCurrentMenuItem {
+        label: if server.owned {
+            "Close Current Server"
+        } else {
+            "Forget Current Server"
+        },
+        enabled: true,
+    }
+}
+
+fn server_switch_accelerator(index: usize) -> Option<String> {
+    (index < 9).then(|| format!("CmdOrCtrl+{}", index + 1))
 }
 
 /// One entry in a mirrored VS Code menu.
 enum MItem {
     /// Forward a VS Code command: `(label, command_id)`.
     Cmd(&'static str, &'static str),
+    /// Forward a VS Code command with a native menu accelerator.
+    CmdA(&'static str, &'static str, &'static str),
     Sep,
     /// Native clipboard items (reliable in the webview).
     Cut,
@@ -736,13 +880,13 @@ enum MItem {
 }
 
 /// Build a submenu from a list of [`MItem`]s.
-fn build_sub(
-    app: &App,
+fn build_sub<M: Manager<tauri::Wry>>(
+    manager: &M,
     title: &str,
     items: &[MItem],
 ) -> tauri::Result<tauri::menu::Submenu<tauri::Wry>> {
     use tauri::menu::{MenuItemBuilder, SubmenuBuilder};
-    let mut b = SubmenuBuilder::new(app, title);
+    let mut b = SubmenuBuilder::new(manager, title);
     for it in items {
         b = match it {
             MItem::Sep => b.separator(),
@@ -750,7 +894,13 @@ fn build_sub(
             MItem::Copy => b.copy(),
             MItem::Paste => b.paste(),
             MItem::Cmd(label, id) => {
-                let mi = MenuItemBuilder::with_id(format!("cmd:{id}"), *label).build(app)?;
+                let mi = MenuItemBuilder::with_id(format!("cmd:{id}"), *label).build(manager)?;
+                b.item(&mi)
+            }
+            MItem::CmdA(label, id, accelerator) => {
+                let mi = MenuItemBuilder::with_id(format!("cmd:{id}"), *label)
+                    .accelerator(*accelerator)
+                    .build(manager)?;
                 b.item(&mi)
             }
         };
@@ -759,60 +909,121 @@ fn build_sub(
 }
 
 // ── VS Code's default menu structure (real command ids, forwarded) ───────────
-use MItem::{Cmd, Copy as MCopy, Cut as MCut, Paste as MPaste, Sep};
+use MItem::{Cmd, CmdA, Copy as MCopy, Cut as MCut, Paste as MPaste, Sep};
 
 const FILE: &[MItem] = &[
-    Cmd("New Text File", "workbench.action.files.newUntitledFile"),
+    CmdA(
+        "New Text File",
+        "workbench.action.files.newUntitledFile",
+        "CmdOrCtrl+N",
+    ),
     Cmd("New Window", "workbench.action.newWindow"),
     Sep,
-    Cmd("Open File…", "workbench.action.files.openFile"),
+    CmdA(
+        "Open File…",
+        "workbench.action.files.openFile",
+        "CmdOrCtrl+O",
+    ),
     Cmd("Open Folder…", "workbench.action.files.openFolder"),
     Cmd("Open Recent…", "workbench.action.openRecent"),
     Sep,
-    Cmd("Save", "workbench.action.files.save"),
-    Cmd("Save As…", "workbench.action.files.saveAs"),
-    Cmd("Save All", "workbench.action.files.saveAll"),
+    CmdA("Save", "workbench.action.files.save", "CmdOrCtrl+S"),
+    CmdA(
+        "Save As…",
+        "workbench.action.files.saveAs",
+        "CmdOrCtrl+Shift+S",
+    ),
+    CmdA(
+        "Save All",
+        "workbench.action.files.saveAll",
+        "CmdOrCtrl+Alt+S",
+    ),
     Cmd("Auto Save", "workbench.action.toggleAutoSave"),
     Sep,
     Cmd("Revert File", "workbench.action.files.revert"),
-    Cmd("Close Editor", "workbench.action.closeActiveEditor"),
+    CmdA(
+        "Close Editor",
+        "workbench.action.closeActiveEditor",
+        "CmdOrCtrl+W",
+    ),
     Cmd("Close Folder", "workbench.action.closeFolder"),
 ];
 
 const EDIT: &[MItem] = &[
-    Cmd("Undo", "undo"),
-    Cmd("Redo", "redo"),
+    CmdA("Undo", "undo", "CmdOrCtrl+Z"),
+    CmdA("Redo", "redo", "CmdOrCtrl+Shift+Z"),
     Sep,
     MCut,
     MCopy,
     MPaste,
     Sep,
-    Cmd("Find", "actions.find"),
-    Cmd("Replace", "editor.action.startFindReplaceAction"),
+    CmdA("Find", "actions.find", "CmdOrCtrl+F"),
+    CmdA(
+        "Replace",
+        "editor.action.startFindReplaceAction",
+        "CmdOrCtrl+Alt+F",
+    ),
     Sep,
-    Cmd("Find in Files", "workbench.action.findInFiles"),
-    Cmd("Replace in Files", "workbench.action.replaceInFiles"),
+    CmdA(
+        "Find in Files",
+        "workbench.action.findInFiles",
+        "CmdOrCtrl+Shift+F",
+    ),
+    CmdA(
+        "Replace in Files",
+        "workbench.action.replaceInFiles",
+        "CmdOrCtrl+Shift+H",
+    ),
     Sep,
-    Cmd("Toggle Line Comment", "editor.action.commentLine"),
-    Cmd("Toggle Block Comment", "editor.action.blockComment"),
+    CmdA(
+        "Toggle Line Comment",
+        "editor.action.commentLine",
+        "CmdOrCtrl+/",
+    ),
+    CmdA(
+        "Toggle Block Comment",
+        "editor.action.blockComment",
+        "CmdOrCtrl+Shift+/",
+    ),
 ];
 
 const SELECTION: &[MItem] = &[
-    Cmd("Select All", "editor.action.selectAll"),
+    CmdA("Select All", "editor.action.selectAll", "CmdOrCtrl+A"),
     Cmd("Expand Selection", "editor.action.smartSelect.expand"),
     Cmd("Shrink Selection", "editor.action.smartSelect.shrink"),
     Sep,
-    Cmd("Copy Line Up", "editor.action.copyLinesUpAction"),
-    Cmd("Copy Line Down", "editor.action.copyLinesDownAction"),
-    Cmd("Move Line Up", "editor.action.moveLinesUpAction"),
-    Cmd("Move Line Down", "editor.action.moveLinesDownAction"),
+    CmdA(
+        "Copy Line Up",
+        "editor.action.copyLinesUpAction",
+        "Shift+Alt+Up",
+    ),
+    CmdA(
+        "Copy Line Down",
+        "editor.action.copyLinesDownAction",
+        "Shift+Alt+Down",
+    ),
+    CmdA("Move Line Up", "editor.action.moveLinesUpAction", "Alt+Up"),
+    CmdA(
+        "Move Line Down",
+        "editor.action.moveLinesDownAction",
+        "Alt+Down",
+    ),
     Cmd("Duplicate Selection", "editor.action.duplicateSelection"),
     Sep,
-    Cmd("Add Cursor Above", "editor.action.insertCursorAbove"),
-    Cmd("Add Cursor Below", "editor.action.insertCursorBelow"),
-    Cmd(
+    CmdA(
+        "Add Cursor Above",
+        "editor.action.insertCursorAbove",
+        "CmdOrCtrl+Alt+Up",
+    ),
+    CmdA(
+        "Add Cursor Below",
+        "editor.action.insertCursorBelow",
+        "CmdOrCtrl+Alt+Down",
+    ),
+    CmdA(
         "Add Next Occurrence",
         "editor.action.addSelectionToNextFindMatch",
+        "CmdOrCtrl+D",
     ),
     Cmd(
         "Column Selection Mode",
@@ -821,10 +1032,14 @@ const SELECTION: &[MItem] = &[
 ];
 
 const VIEW: &[MItem] = &[
-    Cmd("Command Palette…", "workbench.action.showCommands"),
+    CmdA(
+        "Command Palette…",
+        "workbench.action.showCommands",
+        "CmdOrCtrl+Shift+P",
+    ),
     Cmd("Open View…", "workbench.action.openView"),
     Sep,
-    Cmd("Explorer", "workbench.view.explorer"),
+    CmdA("Explorer", "workbench.view.explorer", "CmdOrCtrl+Shift+E"),
     Cmd("Search", "workbench.view.search"),
     Cmd("Source Control", "workbench.view.scm"),
     Cmd("Run and Debug", "workbench.view.debug"),
@@ -834,49 +1049,83 @@ const VIEW: &[MItem] = &[
     Cmd("Output", "workbench.action.output.toggleOutput"),
     Cmd("Terminal", "workbench.action.terminal.toggleTerminal"),
     Sep,
-    Cmd("Word Wrap", "editor.action.toggleWordWrap"),
-    Cmd(
+    CmdA("Word Wrap", "editor.action.toggleWordWrap", "Alt+Z"),
+    CmdA(
         "Toggle Side Bar",
         "workbench.action.toggleSidebarVisibility",
+        "CmdOrCtrl+B",
     ),
-    Cmd("Toggle Panel", "workbench.action.togglePanel"),
-    Cmd("Zoom In", "workbench.action.zoomIn"),
-    Cmd("Zoom Out", "workbench.action.zoomOut"),
+    CmdA(
+        "Toggle Panel",
+        "workbench.action.togglePanel",
+        "CmdOrCtrl+J",
+    ),
+    CmdA("Zoom In", "workbench.action.zoomIn", "CmdOrCtrl+="),
+    CmdA("Zoom Out", "workbench.action.zoomOut", "CmdOrCtrl+-"),
 ];
 
 const GO: &[MItem] = &[
-    Cmd("Back", "workbench.action.navigateBack"),
-    Cmd("Forward", "workbench.action.navigateForward"),
+    CmdA(
+        "Back",
+        "workbench.action.navigateBack",
+        "CmdOrCtrl+Alt+Left",
+    ),
+    CmdA(
+        "Forward",
+        "workbench.action.navigateForward",
+        "CmdOrCtrl+Alt+Right",
+    ),
     Sep,
-    Cmd("Go to File…", "workbench.action.quickOpen"),
-    Cmd(
+    CmdA("Go to File…", "workbench.action.quickOpen", "CmdOrCtrl+P"),
+    CmdA(
         "Go to Symbol in Workspace…",
         "workbench.action.showAllSymbols",
+        "CmdOrCtrl+T",
     ),
-    Cmd("Go to Symbol in Editor…", "workbench.action.gotoSymbol"),
+    CmdA(
+        "Go to Symbol in Editor…",
+        "workbench.action.gotoSymbol",
+        "CmdOrCtrl+Shift+O",
+    ),
     Sep,
-    Cmd("Go to Definition", "editor.action.revealDefinition"),
+    CmdA("Go to Definition", "editor.action.revealDefinition", "F12"),
     Cmd("Go to References", "editor.action.goToReferences"),
-    Cmd("Go to Line/Column…", "workbench.action.gotoLine"),
+    CmdA(
+        "Go to Line/Column…",
+        "workbench.action.gotoLine",
+        "CmdOrCtrl+G",
+    ),
     Sep,
-    Cmd("Next Problem", "editor.action.marker.next"),
-    Cmd("Previous Problem", "editor.action.marker.prev"),
+    CmdA("Next Problem", "editor.action.marker.next", "F8"),
+    CmdA("Previous Problem", "editor.action.marker.prev", "Shift+F8"),
 ];
 
 const RUN: &[MItem] = &[
-    Cmd("Start Debugging", "workbench.action.debug.start"),
-    Cmd("Run Without Debugging", "workbench.action.debug.run"),
-    Cmd("Stop Debugging", "workbench.action.debug.stop"),
+    CmdA("Start Debugging", "workbench.action.debug.start", "F5"),
+    CmdA(
+        "Run Without Debugging",
+        "workbench.action.debug.run",
+        "Ctrl+F5",
+    ),
+    CmdA("Stop Debugging", "workbench.action.debug.stop", "Shift+F5"),
     Cmd("Restart Debugging", "workbench.action.debug.restart"),
     Sep,
     Cmd("Open Configurations", "workbench.action.debug.configure"),
     Cmd("Add Configuration…", "debug.addConfiguration"),
     Sep,
-    Cmd("Toggle Breakpoint", "editor.debug.action.toggleBreakpoint"),
+    CmdA(
+        "Toggle Breakpoint",
+        "editor.debug.action.toggleBreakpoint",
+        "F9",
+    ),
 ];
 
 const TERMINAL: &[MItem] = &[
-    Cmd("New Terminal", "workbench.action.terminal.new"),
+    CmdA(
+        "New Terminal",
+        "workbench.action.terminal.new",
+        "Ctrl+Shift+`",
+    ),
     Cmd("Split Terminal", "workbench.action.terminal.split"),
     Sep,
     Cmd("Run Task…", "workbench.action.tasks.runTask"),
@@ -976,7 +1225,10 @@ fn editor_parking_pane(app: &AppHandle) -> Option<(LogicalPosition<f64>, Logical
 
 #[cfg(test)]
 mod tests {
-    use super::{editor_label_for, keepalive_env_enabled};
+    use super::{
+        close_current_menu_item, editor_label_for, keepalive_env_enabled, menu_server_label,
+        merged_servers, server_switch_accelerator, Server,
+    };
 
     #[cfg(target_os = "macos")]
     use super::macos_title_bar_style_from_env_value;
@@ -1001,6 +1253,88 @@ mod tests {
         assert_eq!(
             editor_label_for("host/ws 1@prod"),
             "editor:host~2fws~201~40prod"
+        );
+    }
+
+    #[test]
+    fn server_switch_accelerators_cover_first_nine_servers() {
+        assert_eq!(server_switch_accelerator(0).as_deref(), Some("CmdOrCtrl+1"));
+        assert_eq!(server_switch_accelerator(8).as_deref(), Some("CmdOrCtrl+9"));
+        assert_eq!(server_switch_accelerator(9), None);
+    }
+
+    #[test]
+    fn menu_server_labels_mark_external_servers() {
+        assert_eq!(
+            menu_server_label(&Server {
+                id: "server-1".into(),
+                label: "server-1".into(),
+                url: "http://127.0.0.1:1/".into(),
+                owned: true,
+            }),
+            "server-1"
+        );
+        assert_eq!(
+            menu_server_label(&Server {
+                id: "remote".into(),
+                label: "prod".into(),
+                url: "http://127.0.0.1:2/".into(),
+                owned: false,
+            }),
+            "prod (external)"
+        );
+    }
+
+    #[test]
+    fn close_current_menu_item_tracks_selected_server_ownership() {
+        let owned = Server {
+            id: "server-1".into(),
+            label: "server-1".into(),
+            url: "http://127.0.0.1:1/".into(),
+            owned: true,
+        };
+        let external = Server {
+            id: "remote".into(),
+            label: "prod".into(),
+            url: "http://127.0.0.1:2/".into(),
+            owned: false,
+        };
+
+        let no_selection = close_current_menu_item(&[owned.clone(), external.clone()], None);
+        assert_eq!(no_selection.label, "Close Current Server");
+        assert!(!no_selection.enabled);
+
+        let selected_owned =
+            close_current_menu_item(&[owned.clone(), external.clone()], Some("server-1"));
+        assert_eq!(selected_owned.label, "Close Current Server");
+        assert!(selected_owned.enabled);
+
+        let selected_external = close_current_menu_item(&[owned, external], Some("remote"));
+        assert_eq!(selected_external.label, "Forget Current Server");
+        assert!(selected_external.enabled);
+
+        let stale_selection = close_current_menu_item(&[], Some("missing"));
+        assert_eq!(stale_selection.label, "Close Current Server");
+        assert!(!stale_selection.enabled);
+    }
+
+    #[test]
+    fn merged_servers_prefers_fleet_owned_entries() {
+        let owned = Server {
+            id: "server-1".into(),
+            label: "server-1".into(),
+            url: "http://127.0.0.1:1/".into(),
+            owned: true,
+        };
+        let registered = Server {
+            id: "server-1".into(),
+            label: "bridge label".into(),
+            url: "http://127.0.0.1:2/".into(),
+            owned: false,
+        };
+        assert_eq!(
+            merged_servers(vec![owned.clone()], vec![registered]),
+            vec![owned]
         );
     }
 

@@ -184,30 +184,35 @@ impl MergeEngine {
         self.sessions.values().all(Self::rollup_holds)
     }
 
-    /// Set `muted = true` on a session. Returns `Some(session.updated)` if the
-    /// session was found and the flag changed; `None` if absent or already muted.
+    /// Set `muted = true` on a session. If the session was soloed, muting it
+    /// also clears `soloed` so the inbox leaves solo mode. Returns
+    /// `Some(session.updated)` if the session was found and either flag changed;
+    /// `None` if absent or already muted and not soloed.
     ///
     /// Muting silences pings for the session without removing it from the inbox
     /// (README §15.4 / PLAN S25). State is still visible; only notifications are
     /// suppressed.
     pub fn apply_mute(&mut self, session_id: &str) -> Option<Event> {
         let sess = self.sessions.get_mut(session_id)?;
-        if sess.muted {
+        if sess.muted && !sess.soloed {
             return None; // already muted, no change
         }
         sess.muted = true;
+        sess.soloed = false;
         let cloned = sess.clone();
         Some(Event::session_updated(cloned))
     }
 
     /// Set `muted = false` on a session. Returns `Some(session.updated)` if the
-    /// session was found and the flag changed; `None` if absent or already unmuted.
+    /// session was found and either mute or solo state changed; `None` if absent
+    /// or already unmuted and not soloed.
     pub fn apply_unmute(&mut self, session_id: &str) -> Option<Event> {
         let sess = self.sessions.get_mut(session_id)?;
-        if !sess.muted {
+        if !sess.muted && !sess.soloed {
             return None; // already unmuted, no change
         }
         sess.muted = false;
+        sess.soloed = false;
         let cloned = sess.clone();
         Some(Event::session_updated(cloned))
     }
@@ -220,8 +225,9 @@ impl MergeEngine {
     /// If `session_id` is not found, returns an empty vec (no-op).
     ///
     /// Semantics: exactly one session is soloed at a time. Sending a `solo` for
-    /// a second session atomically moves the solo. Sending a `solo` for the
-    /// already-soloed session is a no-op (idempotent).
+    /// a second session atomically moves the solo. The soloed session is also
+    /// unmuted so it can ping. Sending a `solo` for the already-soloed unmuted
+    /// session is a no-op (idempotent).
     pub fn apply_solo(&mut self, session_id: &str) -> Vec<Event> {
         if !self.sessions.contains_key(session_id) {
             return Vec::new();
@@ -243,8 +249,9 @@ impl MergeEngine {
 
         // Second pass: set solo on the target.
         if let Some(s) = self.sessions.get_mut(session_id) {
-            if !s.soloed {
+            if !s.soloed || s.muted {
                 s.soloed = true;
+                s.muted = false;
                 events.push(Event::session_updated(s.clone()));
             }
         }
@@ -471,6 +478,35 @@ mod tests {
     }
 
     #[test]
+    fn mute_clears_soloed_flag() {
+        let mut e = MergeEngine::new();
+        e.upsert_session(sess("s1"));
+        e.apply_solo("s1");
+        assert!(e.session("s1").unwrap().soloed);
+
+        let ev = e.apply_mute("s1").expect("mute must clear solo");
+        assert_eq!(ev.type_name(), "session.updated");
+        let s = e.session("s1").unwrap();
+        assert!(s.muted);
+        assert!(!s.soloed);
+    }
+
+    #[test]
+    fn unmute_clears_soloed_even_when_not_muted() {
+        let mut e = MergeEngine::new();
+        e.upsert_session(sess("s1"));
+        e.apply_solo("s1");
+        assert!(e.session("s1").unwrap().soloed);
+        assert!(!e.session("s1").unwrap().muted);
+
+        let ev = e.apply_unmute("s1").expect("unmute must clear solo");
+        assert_eq!(ev.type_name(), "session.updated");
+        let s = e.session("s1").unwrap();
+        assert!(!s.muted);
+        assert!(!s.soloed);
+    }
+
+    #[test]
     fn solo_sets_flag_on_target_and_clears_others() {
         let mut e = MergeEngine::new();
         for id in ["s1", "s2", "s3"] {
@@ -506,6 +542,20 @@ mod tests {
             "second solo must be a no-op (already soloed)"
         );
         assert!(e.session("s1").unwrap().soloed);
+    }
+
+    #[test]
+    fn solo_unmutes_target() {
+        let mut e = MergeEngine::new();
+        e.upsert_session(sess("s1"));
+        e.apply_mute("s1");
+        assert!(e.session("s1").unwrap().muted);
+
+        let evs = e.apply_solo("s1");
+        assert_eq!(evs.len(), 1);
+        let s = e.session("s1").unwrap();
+        assert!(s.soloed);
+        assert!(!s.muted);
     }
 
     #[test]

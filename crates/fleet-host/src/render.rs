@@ -4,7 +4,7 @@
 
 use serde::Serialize;
 
-use fleet_host_core::{AgentIcon, InboxView, SessionTab, TabState};
+use fleet_host_core::{sort::sort_tabs, AgentIcon, InboxView, SessionTab, TabState};
 use fleet_protocol::{Confidence, LocationGlyph, Urgency};
 
 /// The whole inbox as the frontend consumes it.
@@ -80,15 +80,27 @@ fn agent_label(a: AgentIcon) -> &'static str {
     a.label()
 }
 
-/// Render a whole inbox view, marking it connected/disconnected.
-pub fn render(view: &InboxView, connected: bool) -> RenderedInbox {
-    let tabs: Vec<RenderedTab> = view.tabs.iter().map(render_tab).collect();
+/// Render a whole inbox view at a known timestamp, marking it
+/// connected/disconnected. The tab order follows the host-core UX sort:
+/// unread first, then urgency, then longest waiting age.
+pub fn render_at(view: &InboxView, connected: bool, now: Option<&str>) -> RenderedInbox {
+    let mut tabs = view.tabs.clone();
+    sort_tabs(&mut tabs, now);
+    let tabs: Vec<RenderedTab> = tabs.iter().map(render_tab).collect();
     let waiting_count = tabs.iter().filter(|t| t.attention).count();
     RenderedInbox {
         tabs,
         waiting_count,
         connected,
     }
+}
+
+/// Render without a clock. This preserves deterministic behavior in tests and
+/// non-live callers while still applying unread/urgency ordering. The live Hub
+/// link calls [`render_at`] with the current timestamp so age participates too.
+#[cfg(test)]
+pub fn render(view: &InboxView, connected: bool) -> RenderedInbox {
+    render_at(view, connected, None)
 }
 
 #[cfg(test)]
@@ -131,6 +143,33 @@ mod tests {
         // A real reporter keeps the session rollup consistent with its runs.
         s.rollup_state = state;
         s
+    }
+
+    fn rendered_tab(
+        id: &str,
+        unread: bool,
+        urgency: Option<Urgency>,
+        waiting_since: Option<&str>,
+    ) -> SessionTab {
+        SessionTab {
+            session_id: id.into(),
+            glyph: LocationGlyph::Laptop,
+            agent_icon: AgentIcon::Claude,
+            title: id.into(),
+            state: if urgency.is_some() {
+                TabState::Waiting
+            } else {
+                TabState::Idle
+            },
+            urgency,
+            confidence: urgency.map(|_| Confidence::High),
+            waiting_since: waiting_since.map(String::from),
+            muted: false,
+            soloed: false,
+            unread,
+            run_count: 1,
+            last_message: None,
+        }
     }
 
     #[test]
@@ -189,5 +228,44 @@ mod tests {
         assert!(json.contains("\"title\":\"main\""));
         assert!(json.contains("\"state\":\"working\""));
         assert!(json.contains("\"connected\":true"));
+    }
+
+    #[test]
+    fn render_sorts_unread_then_urgency_then_waiting_age() {
+        let view = InboxView {
+            tabs: vec![
+                rendered_tab("idle", false, None, None),
+                rendered_tab(
+                    "new-approval",
+                    false,
+                    Some(Urgency::Approval),
+                    Some("2026-06-08T11:59:00Z"),
+                ),
+                rendered_tab(
+                    "old-approval",
+                    false,
+                    Some(Urgency::Approval),
+                    Some("2026-06-08T10:00:00Z"),
+                ),
+                rendered_tab(
+                    "unread-question",
+                    true,
+                    Some(Urgency::Question),
+                    Some("2026-06-08T11:30:00Z"),
+                ),
+            ],
+        };
+
+        let rendered = render_at(&view, true, Some("2026-06-08T12:00:00Z"));
+        let ids: Vec<&str> = rendered
+            .tabs
+            .iter()
+            .map(|tab| tab.session_id.as_str())
+            .collect();
+
+        assert_eq!(
+            ids,
+            vec!["unread-question", "old-approval", "new-approval", "idle"]
+        );
     }
 }
