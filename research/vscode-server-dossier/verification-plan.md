@@ -36,6 +36,17 @@ or reconnects when its URL is reloaded into the singleton editor webview.
 Goal: prove a hidden child webview keeps one server connected while another is
 selected.
 
+Host probe:
+
+```sh
+node crates/fleet-host/scripts/host-keepalive-probe.mjs
+```
+
+The probe launches the real Tauri host with two autospawned servers, clicks
+between rail rows, captures full-screen screenshots, records host logs and RSS,
+tags PNG metadata, and writes a review-server-compatible report under
+`crates/fleet-host/artifacts/keepalive/<timestamp>/`.
+
 Procedure:
 
 1. Run Fleet with keepalive enabled (the default).
