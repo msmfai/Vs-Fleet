@@ -84,6 +84,19 @@ impl BridgeRegistry {
         }
     }
 
+    /// Explicitly remove a server from the push registry, used when Fleet closes
+    /// a server it spawned. The bridge drop task may still run later; generation
+    /// checks make that stale unregister harmless.
+    pub fn forget(&self, server_id: &str) -> bool {
+        if let Ok(mut map) = self.inner.lock() {
+            if map.remove(server_id).is_some() {
+                tracing::info!(%server_id, "server forgotten by explicit close");
+                return true;
+            }
+        }
+        false
+    }
+
     fn register(&self, id: String, tx: Tx, url: String, label: String) -> u64 {
         let generation = self.next_generation.fetch_add(1, Ordering::SeqCst);
         if let Ok(mut map) = self.inner.lock() {
