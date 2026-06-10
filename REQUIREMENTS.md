@@ -55,8 +55,12 @@ which is why `+` (new server) failed with no feedback.
   Fleet now installs the bundled `fleet-bridge` VSIX there before starting each local
   server.
 - ✅ **Local spawned server state** — Fleet defaults local `code serve-web`
-  workspaces, server data, logs, shims, and reporter sockets under `~/.fleet/mux`
-  instead of macOS temp folders. Override with `FLEET_MUX_DIR`.
+  workspaces, server data, logs, shims, reporter sockets, and `TMPDIR` under
+  `~/.fleet/mux` instead of macOS temp folders. Override with `FLEET_MUX_DIR`.
+- ✅ **Cold host reboot hygiene** — the embedded Hub is a non-persisted live
+  mirror under `~/.fleet/run`, and bridge registrations carry a per-window token
+  so stale orphaned servers from an older Fleet process cannot attach to a new
+  window.
 - **fleet-reporter discovery** — the bundled `Fleet.app` can't find `fleet-reporter` on a
   GUI-launch PATH; bundle it into the `.app` / look next-to-exe.
 - **Binary discovery on GUI launch** — apps opened from Finder don't inherit your shell

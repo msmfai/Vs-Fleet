@@ -18,6 +18,7 @@ APP="$HERE/Fleet.app"
 BIN="$HERE/target/$PROFILE/fleet-host"
 REPORTER_BIN="$ROOT/target/$PROFILE/fleet-reporter"
 BRIDGE_VSIX="$HERE/../../packages/fleet-bridge/fleet-bridge-0.2.0.vsix"
+BRIDGE_PACKAGE="$HERE/../../packages/fleet-bridge/package-vsix.sh"
 BUILD_VERSION="$(date -u +%Y%m%d%H%M%S)"
 
 echo "building fleet-host ($PROFILE)..."
@@ -29,6 +30,12 @@ else
   ( cd "$ROOT" && cargo build -p fleet-reporter )
 fi
 [ -x "$BIN" ] || { echo "binary not found: $BIN"; exit 1; }
+
+if [ -x "$BRIDGE_PACKAGE" ]; then
+  "$BRIDGE_PACKAGE"
+else
+  echo "warning: fleet-bridge packer not found at $BRIDGE_PACKAGE"
+fi
 
 echo "assembling $APP..."
 rm -rf "$APP"
