@@ -481,6 +481,7 @@ function rowKeyboardShortcuts(model) {
   const shortcuts = ["Enter", "Space", "ContextMenu", "Shift+F10", "ArrowDown", "ArrowUp", "Home", "End"];
   if (sessionActionBusy(model.srv.id)) return shortcuts.join(" ");
   if (model.agent && inbox.connected) shortcuts.push("M", "S");
+  if (model.srv.url) shortcuts.push("B");
   if (canRetryServer(model.srv, model.pendingState)) shortcuts.push("R");
   if (canDismissAgent(model.agent, model.state) || canForgetAgentOnly(model.srv, model.agent)) {
     shortcuts.push("D");
@@ -519,6 +520,12 @@ function rowMenuItems(id) {
       label: "Copy URL",
       shortcut: "U",
       action: () => copyRowValue("url", model.srv.url),
+    });
+    items.push({
+      id: "open-browser",
+      label: "Open in Browser",
+      shortcut: "B",
+      action: () => openRowInBrowser(id),
     });
   }
 
@@ -1216,6 +1223,24 @@ async function copyRowValue(label, value) {
   }
 }
 
+async function openRowInBrowser(id) {
+  const srv = serverById(id);
+  if (!srv || !srv.url) {
+    showRailInfo("server URL unavailable");
+    return;
+  }
+  try {
+    await invoke("open_server_external", { id });
+    showRailInfo("opened in browser");
+  } catch (e) {
+    showHostStatus({
+      level: "error",
+      source: "rail",
+      message: `open browser failed: ${String(e)}`,
+    });
+  }
+}
+
 async function copyText(text) {
   if (!text) throw new Error("nothing to copy");
   if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1473,6 +1498,9 @@ function handleRowKeydown(ev, row, id) {
   } else if (plainKey === "s") {
     ev.preventDefault();
     toggleSoloRow(id);
+  } else if (plainKey === "b") {
+    ev.preventDefault();
+    openRowInBrowser(id);
   } else if (plainKey === "r") {
     ev.preventDefault();
     retryRow(id);

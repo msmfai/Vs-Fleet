@@ -124,6 +124,7 @@ fn main() {
             mux::select_server,
             mux::spawn_server,
             mux::close_server,
+            mux::open_server_external,
             mux::get_host_status,
             mux::clear_host_status_if_current,
             hub_client::set_session_muted,
@@ -165,6 +166,18 @@ fn main() {
                 run_rail_action(app, "__fleetJumpNextUnread");
             } else if id == "rail:cycle-unread" {
                 run_rail_action(app, "__fleetCycleUnread");
+            } else if id == "external:open-current" {
+                let Some(mux_state) = app.try_state::<mux::MuxState>() else {
+                    mux::emit_host_status(app, "error", "menu", "server selector unavailable");
+                    return;
+                };
+                let Some(active) = mux_state.selected.lock().ok().and_then(|g| g.clone()) else {
+                    mux::emit_host_status(app, "warning", "menu", "no active server");
+                    return;
+                };
+                if let Err(e) = mux::open_server_external_by_id(app, &active) {
+                    mux::emit_host_status(app, "error", "menu", e);
+                }
             } else if let Some(server_id) = id.strip_prefix("server:") {
                 if server_id != "none" {
                     mux::select(app, server_id.to_string());
