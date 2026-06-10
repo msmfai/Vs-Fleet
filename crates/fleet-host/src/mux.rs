@@ -9,7 +9,10 @@
 //! Only the rail webview gets Fleet's IPC; each editor surface is a plain
 //! external origin (the code-server) with no Fleet API access.
 
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Mutex,
+};
 
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "macos")]
@@ -46,6 +49,13 @@ pub struct HostStatus {
     pub level: String,
     pub source: String,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct RailMenuState {
+    row_count: usize,
+    unread_count: usize,
+    openable_unread_count: usize,
 }
 
 /// One persistent editor webview owned by a server id.
@@ -695,7 +705,7 @@ fn sync_rail_selection(app: &AppHandle) {
 /// menus. The webview can't own the OS menu bar, so Fleet provides one wired to
 /// the active surface.
 pub fn build_menu(app: &mut App) -> tauri::Result<()> {
-    app.set_menu(build_app_menu(app, &[], None)?)?;
+    app.set_menu(build_app_menu(app, &[], None, RailMenuState::default())?)?;
     Ok(())
 }
 
@@ -710,7 +720,13 @@ fn refresh_menu_result(app: &AppHandle) -> tauri::Result<()> {
     let selected = app
         .try_state::<MuxState>()
         .and_then(|state| state.selected.lock().ok().and_then(|g| g.clone()));
-    app.set_menu(build_app_menu(app, &servers, selected.as_deref())?)?;
+    let rail_state = rail_menu_state(app, &servers);
+    app.set_menu(build_app_menu(
+        app,
+        &servers,
+        selected.as_deref(),
+        rail_state,
+    )?)?;
     Ok(())
 }
 
@@ -726,10 +742,46 @@ fn menu_servers(app: &AppHandle) -> Vec<Server> {
     merged_servers(spawned, registered)
 }
 
+fn rail_menu_state(app: &AppHandle, servers: &[Server]) -> RailMenuState {
+    let inbox = app
+        .try_state::<crate::hub_client::Shared>()
+        .and_then(|shared| shared.lock().ok().map(|g| g.clone()));
+    rail_menu_state_from(servers, inbox.as_ref())
+}
+
+fn rail_menu_state_from(
+    servers: &[Server],
+    inbox: Option<&crate::render::RenderedInbox>,
+) -> RailMenuState {
+    let server_ids: HashSet<&str> = servers.iter().map(|server| server.id.as_str()).collect();
+    let mut row_ids = server_ids.clone();
+    let mut unread_count = 0;
+    let mut openable_unread_count = 0;
+
+    if let Some(inbox) = inbox {
+        for tab in &inbox.tabs {
+            row_ids.insert(tab.session_id.as_str());
+            if tab.unread {
+                unread_count += 1;
+                if server_ids.contains(tab.session_id.as_str()) {
+                    openable_unread_count += 1;
+                }
+            }
+        }
+    }
+
+    RailMenuState {
+        row_count: row_ids.len(),
+        unread_count,
+        openable_unread_count,
+    }
+}
+
 fn build_app_menu<M: Manager<tauri::Wry>>(
     manager: &M,
     servers: &[Server],
     selected: Option<&str>,
+    rail_state: RailMenuState,
 ) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 
@@ -766,7 +818,7 @@ fn build_app_menu<M: Manager<tauri::Wry>>(
         subs.push(build_sub(manager, title, items)?);
     }
 
-    let server_menu = build_server_menu(manager, servers, selected)?;
+    let server_menu = build_server_menu(manager, servers, selected, rail_state)?;
 
     let window_menu = SubmenuBuilder::new(manager, "Window")
         .minimize()
@@ -791,6 +843,7 @@ fn build_server_menu<M: Manager<tauri::Wry>>(
     manager: &M,
     servers: &[Server],
     selected: Option<&str>,
+    rail_state: RailMenuState,
 ) -> tauri::Result<tauri::menu::Submenu<tauri::Wry>> {
     use tauri::menu::{CheckMenuItemBuilder, MenuItemBuilder, SubmenuBuilder};
     let close_current = close_current_menu_item(servers, selected);
@@ -811,16 +864,19 @@ fn build_server_menu<M: Manager<tauri::Wry>>(
         .item(
             &MenuItemBuilder::with_id("rail:palette", "Session Palette")
                 .accelerator("CmdOrCtrl+K")
+                .enabled(rail_state.row_count > 0)
                 .build(manager)?,
         )
         .item(
             &MenuItemBuilder::with_id("rail:jump-unread", "Jump to Next Unread")
                 .accelerator("CmdOrCtrl+J")
+                .enabled(rail_state.openable_unread_count > 0)
                 .build(manager)?,
         )
         .item(
             &MenuItemBuilder::with_id("rail:cycle-unread", "Cycle Unread Without Marking Read")
                 .accelerator("CmdOrCtrl+Shift+J")
+                .enabled(rail_state.unread_count > 0)
                 .build(manager)?,
         )
         .separator();
@@ -1252,11 +1308,14 @@ fn editor_parking_pane(app: &AppHandle) -> Option<(LogicalPosition<f64>, Logical
 mod tests {
     use super::{
         close_current_menu_item, editor_label_for, keepalive_env_enabled, menu_server_label,
-        merged_servers, server_switch_accelerator, Server,
+        merged_servers, rail_menu_state_from, server_switch_accelerator, RailMenuState, Server,
     };
 
     #[cfg(target_os = "macos")]
     use super::macos_title_bar_style_from_env_value;
+
+    use crate::render::{RenderedInbox, RenderedTab};
+    use fleet_protocol::LocationGlyph;
 
     #[cfg(target_os = "macos")]
     use tauri::TitleBarStyle;
@@ -1344,6 +1403,35 @@ mod tests {
     }
 
     #[test]
+    fn rail_menu_state_tracks_rows_and_unread_openable_sessions() {
+        let server = Server {
+            id: "server-1".into(),
+            label: "server-1".into(),
+            url: "http://127.0.0.1:1/".into(),
+            owned: true,
+        };
+        let inbox = RenderedInbox {
+            tabs: vec![
+                rendered_tab("server-1", true),
+                rendered_tab("agent-only", true),
+                rendered_tab("read", false),
+            ],
+            connected: true,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            rail_menu_state_from(&[server], Some(&inbox)),
+            RailMenuState {
+                row_count: 3,
+                unread_count: 2,
+                openable_unread_count: 1,
+            }
+        );
+        assert_eq!(rail_menu_state_from(&[], None), RailMenuState::default());
+    }
+
+    #[test]
     fn merged_servers_prefers_fleet_owned_entries() {
         let owned = Server {
             id: "server-1".into(),
@@ -1361,6 +1449,28 @@ mod tests {
             merged_servers(vec![owned.clone()], vec![registered]),
             vec![owned]
         );
+    }
+
+    fn rendered_tab(session_id: &str, unread: bool) -> RenderedTab {
+        RenderedTab {
+            session_id: session_id.into(),
+            location: LocationGlyph::Laptop,
+            agent: "agent".into(),
+            title: session_id.into(),
+            state: "waiting".into(),
+            state_glyph: ".".into(),
+            attention: unread,
+            pinging: unread,
+            ping_suppressed: false,
+            urgency: None,
+            confidence: None,
+            waiting_since: None,
+            muted: false,
+            soloed: false,
+            unread,
+            run_count: 1,
+            last_message: None,
+        }
     }
 
     #[cfg(target_os = "macos")]

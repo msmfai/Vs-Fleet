@@ -242,6 +242,7 @@ fn push(
     if let Ok(mut g) = shared.lock() {
         *g = rendered.clone();
     }
+    crate::mux::refresh_menu(app);
     let _ = app.emit("inbox", rendered);
 }
 
