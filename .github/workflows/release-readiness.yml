@@ -21,6 +21,9 @@ jobs:
             sudo apt-get install -y ripgrep
           fi
 
+      - name: Owner decision gate self-test
+        run: ./scripts/test-owner-decision-gate.sh
+
       - name: Release hygiene gate
         run: ./scripts/release-check.sh
 
