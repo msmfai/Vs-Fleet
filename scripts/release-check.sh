@@ -79,6 +79,7 @@ for required in \
   docs/ARCHITECTURE.md \
   docs/release/RELEASE_PROCESS.md \
   docs/release/DEPENDENCY_REVIEW.md \
+  docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md \
   .github/workflows/release-readiness.yml \
   .github/PULL_REQUEST_TEMPLATE.md \
   .github/ISSUE_TEMPLATE/bug_report.yml \
