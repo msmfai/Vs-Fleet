@@ -20,6 +20,7 @@ write_record() {
   local versioning_checked='x'
   local community_checked='x'
   local custody_checked='x'
+  local ai_checked='x'
 
   case "$distribution" in
     source) source_checked='x' ;;
@@ -146,14 +147,19 @@ Decision record status: $status
 - [$custody_checked] Single-maintainer alpha. Only the repository owner or named maintainer may push release tags, create GitHub releases, change repository settings, or publish packages.
 - [ ] Other: \`TODO\`
 
+### 17. AI-Assisted Contribution Provenance
+
+- [$ai_checked] Allow AI-assisted contributions if the contributor certifies human review, right to submit, and no private prompts, logs, or generated artifacts.
+- [ ] Other: \`TODO\`
+
 ## Required Before Binary Distribution
 
-### 17. macOS Signing and Notarization
+### 18. macOS Signing and Notarization
 
 - [$signing_checked] No public binaries until Developer ID signing and notarization are automated.
 - [ ] Other: \`TODO\`
 
-### 18. Update Channel
+### 19. Update Channel
 
 - [$update_checked] No auto-update in alpha.
 - [ ] Other: \`TODO\`
@@ -218,6 +224,12 @@ write_record "$custody_missing" APPROVED source decided undecided
 perl -0pi -e 's/- \[x\] Single-maintainer alpha\./- [ ] Single-maintainer alpha./' "$custody_missing"
 expect_fail_contains "source-only alpha requires a release custody decision" "$custody_missing" \
   "### 16\\. Release Custody And Maintainer Authority must have exactly one checked choice; found 0"
+
+ai_missing="$TMPDIR/ai-missing.md"
+write_record "$ai_missing" APPROVED source decided undecided
+perl -0pi -e 's/- \[x\] Allow AI-assisted contributions/- [ ] Allow AI-assisted contributions/' "$ai_missing"
+expect_fail_contains "source-only alpha requires an AI contribution decision" "$ai_missing" \
+  "### 17\\. AI-Assisted Contribution Provenance must have exactly one checked choice; found 0"
 
 binary_missing="$TMPDIR/binary-missing.md"
 write_record "$binary_missing" APPROVED unsigned decided undecided

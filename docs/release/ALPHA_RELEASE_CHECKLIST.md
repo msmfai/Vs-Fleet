@@ -95,6 +95,9 @@ closed or explicitly accepted.
   `docs/release/OWNER_DECISION_RECORD.md`, fill the Release Custody section of
   `docs/release/GITHUB_PUBLICATION_EVIDENCE.md`, and run
   `./scripts/check-release-custody-decision.sh`.
+- [ ] Choose AI-assisted contribution provenance in
+  `docs/release/OWNER_DECISION_RECORD.md` and run
+  `./scripts/check-ai-contribution-decision.sh`.
 - [ ] Draft GitHub pre-release notes from
   `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` and remove all placeholders.
 - [ ] Run the release-notes checker with the expected commit:
@@ -244,6 +247,9 @@ closed or explicitly accepted.
 - `scripts/check-release-custody-decision.sh` validates who can push public
   release tags, create GitHub releases, change repository settings, or publish
   packages, so the first public alpha has a clear supply-chain custody boundary.
+- `scripts/check-ai-contribution-decision.sh` validates that AI-assisted
+  outside contributions have explicit human-review, right-to-submit, and
+  private-prompt/log/artifact provenance boundaries before public PR intake.
 - `scripts/check-privacy-decision.sh` validates that the approved
   privacy/telemetry posture matches the README, security policy, architecture
   notes, issue template, and release notes template.

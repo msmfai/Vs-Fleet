@@ -150,17 +150,26 @@ is still `TODO`, ambiguous, or only a recommendation.
     `GITHUB_PUBLICATION_EVIDENCE.md` and run
     `./scripts/check-release-custody-decision.sh`.
 
+17. AI-assisted contribution provenance:
+    Recommended alpha default: allow AI-assisted contributions only when the
+    contributor certifies human review, right to submit, and no private prompts,
+    private model transcripts, local logs, workspace paths, or generated
+    artifacts.
+    Owner answer:
+    Follow-up: run `./scripts/check-ai-contribution-decision.sh` after copying
+    this choice into `OWNER_DECISION_RECORD.md`.
+
 ## Binary-Only Decisions
 
 These are not required for a source-only alpha. They become required before any
 public app bundle.
 
-17. macOS signing and notarization:
+18. macOS signing and notarization:
     Recommended default: no public binaries until Developer ID signing and
     notarization are automated.
     Owner answer:
 
-18. Update channel:
+19. Update channel:
     Recommended default: no auto-update in alpha.
     Owner answer:
 

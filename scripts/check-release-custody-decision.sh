@@ -26,7 +26,7 @@ if ! rg -q '^Decision record status: APPROVED$' "$owner_record"; then
 fi
 
 custody_block="$(
-  sed -n '/^### 16\. Release Custody And Maintainer Authority$/,/^## Required Before Binary Distribution$/p' "$owner_record"
+  sed -n '/^### 16\. Release Custody And Maintainer Authority$/,/^### 17\. AI-Assisted Contribution Provenance$/p' "$owner_record"
 )"
 
 checked_count="$(printf '%s\n' "$custody_block" | rg -c '^- \[x\] ' || true)"

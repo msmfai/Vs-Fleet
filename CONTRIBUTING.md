@@ -14,6 +14,14 @@ maintainer explicitly asks for them.
   data, credentials, or machine-specific paths.
 - Do not add dependencies without explaining why they are needed.
 
+## AI-assisted changes
+
+AI-assisted contributions are allowed only when the contributor has reviewed and
+understands the change, has the right to submit it under the project license,
+and does not include private prompts, private model transcripts, private logs,
+workspace paths, generated build outputs, raw logs, or machine-specific paths.
+The contributor is responsible for the submitted code, tests, and provenance.
+
 ## Contribution licensing
 
 This section must be finalized before accepting outside code contributions.

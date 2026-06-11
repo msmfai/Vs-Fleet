@@ -152,6 +152,8 @@ for required in \
   scripts/test-community-intake-decision-check.sh \
   scripts/check-release-custody-decision.sh \
   scripts/test-release-custody-decision-check.sh \
+  scripts/check-ai-contribution-decision.sh \
+  scripts/test-ai-contribution-decision-check.sh \
   scripts/test-release-check.sh \
   scripts/check-release-notes.sh \
   scripts/test-release-notes-check.sh \
@@ -254,6 +256,9 @@ else
       fail=1
     fi
     if ! scripts/check-release-custody-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md .; then
+      fail=1
+    fi
+    if ! scripts/check-ai-contribution-decision.sh docs/release/OWNER_DECISION_RECORD.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md; then
       fail=1
     fi
   fi
