@@ -82,6 +82,7 @@ done
 
 for script in \
   scripts/check-owner-decisions.sh \
+  scripts/public-alpha-decision-packet.sh \
   scripts/history-release-check.sh \
   scripts/prepare-public-branch.sh \
   scripts/secret-release-check.sh \
@@ -102,6 +103,7 @@ for script in \
   scripts/check-dependabot-config.sh \
   scripts/check-support-decision.sh \
   scripts/test-owner-decision-gate.sh \
+  scripts/test-public-alpha-decision-packet.sh \
   scripts/test-history-release-check.sh \
   scripts/test-prepare-public-branch.sh \
   scripts/test-secret-release-check.sh \

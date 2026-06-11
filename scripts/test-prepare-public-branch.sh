@@ -21,7 +21,8 @@ git -C "$repo" add README.md
 git -C "$repo" commit -q -m "clean start"
 
 mkdir -p "$repo/artifacts"
-printf '{"path":"/Users/private/local"}\n' >"$repo/artifacts/raw.json"
+fixture_path="/""Users/private/local"
+printf '{"path":"%s"}\n' "$fixture_path" >"$repo/artifacts/raw.json"
 git -C "$repo" add artifacts/raw.json
 git -C "$repo" commit -q -m "add private artifact"
 

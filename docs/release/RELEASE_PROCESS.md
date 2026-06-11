@@ -13,6 +13,8 @@ Do not publish a public alpha until these are true:
 - Rust and npm package metadata no longer declare `UNLICENSED`.
 - `./scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .`
   passes.
+- `./scripts/public-alpha-decision-packet.sh` reports
+  `Release readiness: OWNER DECISIONS COMPLETE`.
 - `./scripts/release-check.sh` passes.
 - CI is green on the exact public branch or commit, including the manual
   "Release Readiness" workflow.

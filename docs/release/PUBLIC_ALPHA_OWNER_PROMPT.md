@@ -6,6 +6,14 @@ Use this before marking
 The release gates intentionally do not infer these choices. Public GitHub
 visibility should wait until the owner has made each decision explicitly.
 
+Run this at any point to see the current unresolved owner choices and the
+mechanical follow-up commands implied by the selected history/distribution
+answers:
+
+```sh
+./scripts/public-alpha-decision-packet.sh
+```
+
 ## Required Answers
 
 Copy the answers into `OWNER_DECISION_RECORD.md`; do not publish while any value
