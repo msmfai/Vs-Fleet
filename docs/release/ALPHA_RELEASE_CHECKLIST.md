@@ -36,8 +36,9 @@ closed or explicitly accepted.
   match the owner record.
 - [x] Remove or redact tracked artifacts that include local paths, process
   command lines, raw logs, or failed eval output.
-- [ ] Run `./scripts/history-release-check.sh` and either publish cleaned
-  history or explicitly accept current branch history exposure.
+- [ ] Run `./scripts/release-check.sh`; it includes
+  `./scripts/history-release-check.sh` and requires either cleaned history or
+  explicit owner acceptance of current branch history exposure.
 - [ ] Run dependency review for the exact public branch, or explicitly accept
   skipping it in the owner decision record.
 - [ ] Record dependency review evidence in
@@ -128,10 +129,11 @@ closed or explicitly accepted.
   probe runs are not tracked for public release.
 - `containers/fleet-env/eval/artifacts/**` is now a local ignored artifact area;
   generated eval reports/screenshots are not tracked for public release.
-- `scripts/history-release-check.sh` audits full git history for local paths,
-  generated outputs, logs, and raw artifacts. On the current branch it still
-  fails because prior commits contain reviewed host/eval artifacts; publish a
-  cleaned history or explicitly accept that exposure in the owner record.
+- `scripts/release-check.sh` runs `scripts/history-release-check.sh`, which
+  audits full git history for local paths, generated outputs, logs, and raw
+  artifacts. On the current branch it still fails because prior commits contain
+  reviewed host/eval artifacts; publish a cleaned history or explicitly accept
+  that exposure in the owner record.
 - The GitHub CI workflow exists, but should be re-run after the public tree is
   cleaned.
 

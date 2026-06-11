@@ -82,6 +82,8 @@ for required in \
   docs/release/DEPENDENCY_REVIEW_EVIDENCE.md \
   docs/release/PUBLIC_CI_EVIDENCE.md \
   docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md \
+  scripts/history-release-check.sh \
+  scripts/test-history-release-check.sh \
   scripts/check-license-decision.sh \
   scripts/test-license-decision-check.sh \
   scripts/check-namespace-decision.sh \
@@ -115,6 +117,8 @@ if [ ! -f docs/release/OWNER_DECISION_RECORD.md ]; then
   echo "FAIL: missing docs/release/OWNER_DECISION_RECORD.md"
   fail=1
 elif ! scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md; then
+  fail=1
+elif ! scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md; then
   fail=1
 elif ! scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
   fail=1
