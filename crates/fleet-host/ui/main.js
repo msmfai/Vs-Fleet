@@ -16,7 +16,8 @@ const paletteEl = document.getElementById("palette");
 const paletteInput = document.getElementById("palette-input");
 const paletteList = document.getElementById("palette-list");
 const rowMenuEl = document.getElementById("row-menu");
-if (spawnBtn) spawnBtn.onclick = spawnServer;
+const createMenuEl = document.getElementById("create-menu");
+if (spawnBtn) spawnBtn.onclick = toggleCreateMenu;
 if (jumpBtn) jumpBtn.onclick = jumpNextUnread;
 if (paletteBtn) paletteBtn.onclick = () => openPalette();
 
@@ -46,6 +47,7 @@ let paletteOpen = false;
 let paletteQuery = "";
 let paletteIndex = 0;
 let rowMenu = { open: false, serverId: null, x: 0, y: 0, index: 0 };
+let createMenu = { open: false, x: 0, y: 0 };
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -759,6 +761,7 @@ function render() {
 
   if (paletteOpen) renderPalette();
   if (rowMenu.open) renderRowMenu();
+  if (createMenu.open) renderCreateMenu();
 }
 
 async function activateServer(id, options = {}) {
@@ -888,9 +891,74 @@ function choosePalette(id) {
   activateServer(id);
 }
 
+function createMenuItem(label, action, options = {}) {
+  const item = el("button", "row-menu-item", "");
+  item.type = "button";
+  item.setAttribute("role", "menuitem");
+  item.disabled = Boolean(options.disabled);
+  item.appendChild(el("span", "", label));
+  item.onclick = () => {
+    if (item.disabled) return;
+    closeCreateMenu();
+    action();
+  };
+  return item;
+}
+
+function renderCreateMenu() {
+  if (!createMenuEl || !createMenu.open) return;
+  createMenuEl.replaceChildren();
+  createMenuEl.classList.remove("hidden");
+  createMenuEl.style.left = `${createMenu.x}px`;
+  createMenuEl.style.top = `${createMenu.y}px`;
+
+  createMenuEl.appendChild(createMenuItem("New in Home", () => spawnServer({ mode: "local" })));
+  createMenuEl.appendChild(createMenuItem("Open Folder...", openFolderPrompt));
+
+  const rect = createMenuEl.getBoundingClientRect();
+  const left = Math.max(8, Math.min(createMenu.x, window.innerWidth - rect.width - 8));
+  const top = Math.max(8, Math.min(createMenu.y, window.innerHeight - rect.height - 8));
+  createMenuEl.style.left = `${left}px`;
+  createMenuEl.style.top = `${top}px`;
+}
+
+function openCreateMenu() {
+  if (!createMenuEl || !spawnBtn || spawning) return;
+  if (paletteOpen) closePalette();
+  closeRowMenu();
+  const rect = spawnBtn.getBoundingClientRect();
+  createMenu = {
+    ...createMenu,
+    open: true,
+    x: rect.right - 180,
+    y: rect.bottom + 5,
+  };
+  renderCreateMenu();
+}
+
+function closeCreateMenu() {
+  createMenu.open = false;
+  if (!createMenuEl) return;
+  createMenuEl.classList.add("hidden");
+  createMenuEl.replaceChildren();
+}
+
+function toggleCreateMenu(ev) {
+  if (ev) ev.stopPropagation();
+  if (createMenu.open) closeCreateMenu();
+  else openCreateMenu();
+}
+
+function openFolderPrompt() {
+  const folder = window.prompt("Open folder path", "~");
+  if (!folder || !folder.trim()) return;
+  spawnServer({ mode: "local", folder: folder.trim() });
+}
+
 function openRowMenu(id, x, y) {
   if (!rowMenuEl) return;
   if (paletteOpen) closePalette();
+  closeCreateMenu();
   rowMenu = {
     open: true,
     serverId: id,
@@ -1179,13 +1247,14 @@ async function focusSession(id) {
   }
 }
 
-async function spawnServer() {
+async function spawnServer(request = {}) {
   if (spawning) return;
+  closeCreateMenu();
   spawning = true;
   statusOverride = null;
   render();
   try {
-    const id = await invoke("spawn_server");
+    const id = await invoke("spawn_server_with_options", { request });
     pending = pending.filter((p) => p.id !== id);
     pending.push({ id, label: id, owned: true, startedAt: Date.now() });
     await selectServer(id); // shows the loading page + selects the pending tab
@@ -1476,10 +1545,14 @@ if (paletteEl) {
 }
 
 document.addEventListener("mousedown", (ev) => {
+  if (createMenu.open && createMenuEl && !createMenuEl.contains(ev.target) && ev.target !== spawnBtn) {
+    closeCreateMenu();
+  }
   if (!rowMenu.open || !rowMenuEl) return;
   if (!rowMenuEl.contains(ev.target)) closeRowMenu();
 });
 
 window.addEventListener("resize", () => {
   if (rowMenu.open) closeRowMenu();
+  if (createMenu.open) closeCreateMenu();
 });

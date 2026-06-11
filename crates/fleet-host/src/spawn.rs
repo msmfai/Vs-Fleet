@@ -45,6 +45,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use serde::Deserialize;
+
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
@@ -67,6 +69,13 @@ pub struct ServerSupervisor {
     bridge_port: u16,
     hub_url: String,
     bridge_token: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpawnRequest {
+    pub mode: Option<String>,
+    pub folder: Option<String>,
 }
 
 impl ServerSupervisor {
@@ -119,16 +128,33 @@ impl ServerSupervisor {
     /// else the default local-process path. Both return a [`Server`] that Fleet adds
     /// to the rail immediately; the spawned env phones home to the bridge on its own.
     pub fn spawn(&self) -> std::io::Result<crate::mux::Server> {
+        self.spawn_with(SpawnRequest::default())
+    }
+
+    pub fn spawn_with(&self, request: SpawnRequest) -> std::io::Result<crate::mux::Server> {
+        let mode = request
+            .mode
+            .as_deref()
+            .map(str::trim)
+            .filter(|mode| !mode.is_empty());
         match spawn_mode() {
+            _ if mode == Some("container") => self.spawn_container(),
+            _ if mode == Some("local") => self.spawn_local(Some(
+                request
+                    .folder
+                    .as_deref()
+                    .map(expand_user_path)
+                    .unwrap_or_else(default_spawn_folder),
+            )),
             SpawnMode::Container => self.spawn_container(),
             SpawnMode::Ssh => self.spawn_ssh(),
-            SpawnMode::Local => self.spawn_local(),
+            SpawnMode::Local => self.spawn_local(request.folder.as_deref().map(expand_user_path)),
         }
     }
 
     /// Spawn a new VS Code web server (+ its reporter + claude shim) and record it.
     /// Returns its [`Server`]; Fleet adds it to the rail immediately.
-    fn spawn_local(&self) -> std::io::Result<crate::mux::Server> {
+    fn spawn_local(&self, folder_override: Option<PathBuf>) -> std::io::Result<crate::mux::Server> {
         let base = fleet_mux_base();
         let (n, id) = self.allocate_server_id();
         let label = server_label(n);
@@ -138,31 +164,30 @@ impl ServerSupervisor {
         let process_cwd = fleet_spawn_cwd(&base);
         std::fs::create_dir_all(&process_cwd)?;
         let tool_path = fleet_tool_path();
-        let folder = base.join(format!("ws-{id}"));
-        // The workspace is either a fresh clone of FLEET_SPAWN_REPO (repo-as-workspace,
-        // the north-star ergonomic) or an empty folder with a hint file.
-        match std::env::var("FLEET_SPAWN_REPO") {
-            Ok(spec) if !spec.trim().is_empty() => {
-                let url = resolve_repo(&spec);
-                let ok = Command::new("git")
-                    .args(["clone", "--depth", "1", &url, &folder.to_string_lossy()])
-                    .status()
-                    .map(|s| s.success())
-                    .unwrap_or(false);
-                if ok {
-                    tracing::info!(%id, %url, "cloned repo into workspace");
-                } else {
-                    tracing::warn!(%id, %url, "git clone failed; using an empty workspace");
-                    let _ = std::fs::create_dir_all(&folder);
+        let folder = match folder_override {
+            Some(folder) => folder,
+            None => match std::env::var("FLEET_SPAWN_REPO") {
+                Ok(spec) if !spec.trim().is_empty() => {
+                    let folder = base.join(format!("ws-{id}"));
+                    let url = resolve_repo(&spec);
+                    let ok = Command::new("git")
+                        .args(["clone", "--depth", "1", &url, &folder.to_string_lossy()])
+                        .status()
+                        .map(|s| s.success())
+                        .unwrap_or(false);
+                    if ok {
+                        tracing::info!(%id, %url, "cloned repo into workspace");
+                        folder
+                    } else {
+                        tracing::warn!(%id, %url, "git clone failed; using home folder");
+                        default_spawn_folder()
+                    }
                 }
-            }
-            _ => {
-                let _ = std::fs::create_dir_all(&folder);
-                let _ = std::fs::write(
-                    folder.join(format!("{id}.md")),
-                    format!("# {id}\n\nSpawned by Fleet at port {port}.\nRun `claude` in the terminal — this tab will light up.\n"),
-                );
-            }
+                _ => default_spawn_folder(),
+            },
+        };
+        if !folder.exists() {
+            std::fs::create_dir_all(&folder)?;
         }
 
         // --- agent-state pipeline: a per-server reporter + a claude shim ---------
@@ -188,7 +213,10 @@ impl ServerSupervisor {
         write_spawned_server_settings(&user_data)?;
         install_fleet_bridge(&editor, &user_data)?;
         let server_bin = local_code_server_bin(&editor).unwrap_or_else(|| editor.clone());
-        let url = format!("http://127.0.0.1:{port}/?folder={}", folder.display());
+        let url = format!(
+            "http://127.0.0.1:{port}/?folder={}",
+            query_escape(&folder.to_string_lossy())
+        );
         let (cs_out, cs_err) = log_files(&format!("cs-{id}"));
 
         // Prepend the shim dir so the terminal's `claude` is Fleet-wrapped.
@@ -1354,6 +1382,36 @@ fn fleet_spawn_cwd_from(
         .unwrap_or_else(|| base.to_path_buf())
 }
 
+fn default_spawn_folder() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(fleet_mux_base)
+}
+
+fn expand_user_path(value: &str) -> PathBuf {
+    if value == "~" {
+        return default_spawn_folder();
+    }
+    if let Some(rest) = value.strip_prefix("~/") {
+        return default_spawn_folder().join(rest);
+    }
+    PathBuf::from(value)
+}
+
+fn query_escape(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
+                out.push(byte as char);
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
 /// `(stdout, stderr)` redirected to `<fleet-mux>/<name>.log` so spawned
 /// processes are debuggable (falls back to null if the file can't be created).
 fn log_files(name: &str) -> (Stdio, Stdio) {
@@ -1414,6 +1472,14 @@ mod tests {
     fn ws_port_parses_with_or_without_trailing_slash() {
         assert_eq!(ws_port("ws://127.0.0.1:51777"), Some(51777));
         assert_eq!(ws_port("ws://127.0.0.1:51777/"), Some(51777));
+    }
+
+    #[test]
+    fn query_escape_preserves_paths_but_escapes_query_chars() {
+        assert_eq!(
+            query_escape("/Users/example/My Project?a=b"),
+            "/Users/example/My%20Project%3Fa%3Db"
+        );
     }
 
     #[test]
