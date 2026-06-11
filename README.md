@@ -13,7 +13,7 @@
   <img alt="Platform: macOS" src="https://img.shields.io/badge/platform-macOS-lightgrey">
   <img alt="Mode: local first" src="https://img.shields.io/badge/mode-local--first-blue">
   <img alt="Architecture: app plus extension" src="https://img.shields.io/badge/architecture-Fleet.app%20%2B%20VS%20Code%20bridge-6f42c1">
-  <a href="LICENSE"><img alt="License: MIT OR Apache-2.0" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-green"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
 ## Overview
@@ -154,5 +154,4 @@ See [SUPPORT.md](SUPPORT.md) for the current alpha support boundary.
 
 ## License
 
-Fleet is licensed under `MIT OR Apache-2.0`. See [LICENSE](LICENSE) for the
-project license notice and links to the full MIT and Apache-2.0 texts.
+Fleet is licensed under the MIT License. See [LICENSE](LICENSE).

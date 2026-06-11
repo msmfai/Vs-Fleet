@@ -50,7 +50,8 @@ Decision record status: $status
 
 ### 1. License
 
-- [x] MIT OR Apache-2.0 dual license.
+- [ ] MIT OR Apache-2.0 dual license.
+- [x] MIT only.
 - [ ] Other: \`TODO\`
 
 ### 2. Public History

@@ -173,7 +173,7 @@ fi
 
 echo
 echo "Recommended alpha defaults to review:"
-echo "- License: MIT OR Apache-2.0 for source alpha; reserve AGPL-3.0-only plus a commercial exception for a future CLI/hosted-control-plane trigger."
+echo "- License: MIT for source alpha; reserve AGPL-3.0-only plus a commercial exception for a future CLI/hosted-control-plane trigger."
 echo "- History: cleaned/squashed first public branch."
 echo "- Scope: local macOS host plus local code serve-web workflow only."
 echo "- Distribution: source-only alpha."

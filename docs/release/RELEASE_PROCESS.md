@@ -8,9 +8,9 @@ VSX packages, or container images.
 
 Do not publish a public alpha until these are true:
 
-- The `MIT OR Apache-2.0` project license is applied.
-- Root `LICENSE` exists, with full MIT and Apache-2.0 texts under `docs/legal/`.
-- Rust and npm package metadata use `MIT OR Apache-2.0`.
+- The `MIT` project license is applied.
+- Root `LICENSE` exists.
+- Rust and npm package metadata use `MIT`.
 - If using recommended defaults, generate a PENDING review draft with
   `./scripts/draft-owner-decisions.sh <github-owner> <github-repo> docs/release/OWNER_DECISION_RECORD.draft.md`
   and copy only reviewed choices into `docs/release/OWNER_DECISION_RECORD.md`.

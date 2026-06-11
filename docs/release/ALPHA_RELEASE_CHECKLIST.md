@@ -12,9 +12,9 @@ visibility.
 
 ## Blocking before public GitHub visibility
 
-- [x] Choose and apply the `MIT OR Apache-2.0` project license.
-- [x] Add root `LICENSE` and full MIT/Apache-2.0 texts under `docs/legal/`.
-- [x] Apply `MIT OR Apache-2.0` to `Cargo.toml`,
+- [x] Choose and apply the `MIT` project license.
+- [x] Add root `LICENSE`.
+- [x] Apply `MIT` to `Cargo.toml`,
   `crates/fleet-host/Cargo.toml`, and package manifests/lockfiles.
 - [ ] Run `./scripts/check-license-decision.sh` after the owner record is
   approved to verify the owner record, root `LICENSE`, Rust manifests, npm
@@ -173,10 +173,10 @@ visibility.
 
 - Root `Cargo.toml`, `crates/fleet-host/Cargo.toml`,
   `packages/*/package.json`, and `packages/*/package-lock.json` declare
-  `MIT OR Apache-2.0`.
+  `MIT`.
 - Rust crates set `publish = false`, and extension package manifests set
   `"private": true`; the release gate enforces those source-only alpha fences.
-- Root `LICENSE` and `docs/legal` full license texts are tracked.
+- Root `LICENSE` is tracked.
   `SECURITY.md` and `CONTRIBUTING.md` are present.
 - `SUPPORT.md`, `CODE_OF_CONDUCT.md`, GitHub issue templates, and a pull request
   template are present.

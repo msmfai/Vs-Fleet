@@ -3,7 +3,7 @@
 This is the current source-only alpha path. It is intended for local macOS
 dogfooding and technical review, not for packaged binary distribution.
 
-Fleet is licensed as `MIT OR Apache-2.0`; public visibility remains gated by
+Fleet is licensed as `MIT`; public visibility remains gated by
 the owner decision record and release checklist in
 `docs/release/ALPHA_RELEASE_CHECKLIST.md`.
 
