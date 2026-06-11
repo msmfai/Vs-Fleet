@@ -115,6 +115,43 @@ field_value() {
   printf '%s\n' "$value"
 }
 
+namespace_block="$(
+  sed -n '/^### 3\. Public Namespace$/,/^### 4\. Alpha Scope$/p' "$owner_record"
+)"
+
+decision_for() {
+  local surface=$1
+  printf '%s\n' "$namespace_block" |
+    awk -F'|' -v surface="$surface" '
+      function trim(s) {
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
+        return s
+      }
+      trim($2) == surface {
+        value = trim($3)
+        gsub(/^`|`$/, "", value)
+        print value
+        found = 1
+        exit
+      }
+      END { if (!found) exit 1 }
+    '
+}
+
+require_namespace_value() {
+  local surface=$1
+  local value
+  if ! value="$(decision_for "$surface")"; then
+    echo "FAIL: Public Namespace table missing decision for $surface"
+    exit 1
+  fi
+  if [ -z "$value" ] || [[ "$value" == *TODO* ]] || [[ "$value" == *" or "* ]]; then
+    echo "FAIL: Public Namespace decision for $surface is not concrete: $value"
+    exit 1
+  fi
+  printf '%s\n' "$value"
+}
+
 require_commit() {
   local commit
   if ! commit="$(field_value "Commit")"; then
@@ -168,16 +205,37 @@ require_field_pattern() {
   fi
 }
 
+require_github_actions_run_for_repo() {
+  local label=$1
+  local repo_url=$2
+  local value
+  if ! value="$(field_value "$label")"; then
+    echo "FAIL: $evidence_file must contain $label"
+    exit 1
+  fi
+  case "$value" in
+    "$repo_url"/actions/runs/*)
+      run_id="${value#"$repo_url"/actions/runs/}"
+      if printf '%s\n' "$run_id" | rg -q '^[0-9]+$'; then
+        return
+      fi
+      ;;
+  esac
+  echo "FAIL: $label must contain a GitHub Actions run URL for $repo_url"
+  exit 1
+}
+
 case "$checked" in
   "- [x] Require GitHub Actions green on the exact branch/commit before public"*)
     reject_placeholder_evidence
     require_status "PASS"
     require_commit
     require_field_pattern "Branch" '^[A-Za-z0-9._/-]+$' "a concrete branch name"
-    require_field_pattern "CI workflow run" '^https://github\.com/[^/]+/[^/]+/actions/runs/[0-9]+$' \
-      "a GitHub Actions run URL"
-    require_field_pattern "Release Readiness workflow run" '^https://github\.com/[^/]+/[^/]+/actions/runs/[0-9]+$' \
-      "a GitHub Actions run URL"
+    github_org="$(require_namespace_value "GitHub org/user")"
+    github_repo="$(require_namespace_value "GitHub repo name")"
+    expected_repo_url="https://github.com/$github_org/$github_repo"
+    require_github_actions_run_for_repo "CI workflow run" "$expected_repo_url"
+    require_github_actions_run_for_repo "Release Readiness workflow run" "$expected_repo_url"
     ;;
   "- [x] Accept local check output only for the first publish.")
     reject_placeholder_evidence

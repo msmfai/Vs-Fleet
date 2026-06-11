@@ -19,6 +19,15 @@ Decision record status: $status
 
 ## Required Before Public GitHub Visibility
 
+### 3. Public Namespace
+
+| Surface | Decision |
+|---|---|
+| GitHub org/user | example |
+| GitHub repo name | fleet |
+
+### 4. Alpha Scope
+
 ### 9. Public CI Evidence
 
 - [$([ "$checked" = "github" ] && echo x || echo ' ')] Require GitHub Actions green on the exact branch/commit before public
@@ -108,6 +117,13 @@ write_evidence "$evidence_bad_ci_url" PASS "$COMMIT" \
 CI workflow run: https://gitlab.com/example/fleet/-/pipelines/123
 Release Readiness workflow run: https://github.com/example/fleet/actions/runs/123456789"
 expect_fail "non-GitHub CI run URL is rejected for GitHub Actions decision" "$owner_github" "$evidence_bad_ci_url"
+
+evidence_wrong_repo_url="$TMPDIR/evidence-wrong-repo-url.md"
+write_evidence "$evidence_wrong_repo_url" PASS "$COMMIT" \
+  "Branch: build/fleet-v1
+CI workflow run: https://github.com/other/fleet/actions/runs/123456788
+Release Readiness workflow run: https://github.com/example/fleet/actions/runs/123456789"
+expect_fail "wrong repository CI run URL is rejected for GitHub Actions decision" "$owner_github" "$evidence_wrong_repo_url"
 
 owner_local="$TMPDIR/owner-local.md"
 evidence_local="$TMPDIR/evidence-local.md"
