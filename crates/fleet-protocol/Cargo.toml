@@ -22,10 +22,10 @@ schema = ["dep:schemars"]
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-schemars = { version = "0.8", optional = true }
+schemars = { version = "1.2", optional = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
 proptest = "1"
-schemars = "0.8"
+schemars = "1.2"
 jsonschema = "0.18"
