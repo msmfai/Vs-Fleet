@@ -173,9 +173,7 @@ fn main() {
         bridge::launch_token_from_path(&embedded_hub_runtime_dir().join("bridge.token"));
 
     tauri::Builder::default()
-        // Fleet embeds full editor surfaces. Tauri's macOS default menu installs
-        // native Edit/Window/App accelerators that can preempt VS Code terminals.
-        .enable_macos_default_menu(false)
+        .menu(mux::build_menu)
         .manage(shared.clone())
         .manage(hub_commands)
         .manage(mux::MuxState::new())
@@ -202,6 +200,7 @@ fn main() {
             hub_client::dismiss_session,
             hub_client::focus_session
         ])
+        .on_menu_event(|app, event| handle_shell_menu_event(app, event.id().as_ref()))
         .setup(move |app| {
             #[cfg(target_os = "macos")]
             {
@@ -260,7 +259,6 @@ fn main() {
             });
 
             mux::build_window(app)?;
-            mux::build_menu(app)?;
 
             // Test harness hook: auto-spawn N servers on startup so an integration
             // test can drive Fleet without clicking (`FLEET_AUTOSPAWN=n`).
@@ -289,6 +287,49 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Fleet host");
+}
+
+fn handle_shell_menu_event(app: &tauri::AppHandle, id: &str) {
+    match id {
+        "app:quit" => app.exit(0),
+        "window:minimize" => {
+            if let Some(window) = app.get_window(mux::WINDOW) {
+                if let Err(e) = window.minimize() {
+                    mux::emit_host_status(app, "error", "menu", format!("minimize failed: {e}"));
+                }
+            }
+        }
+        "window:fullscreen" => {
+            if let Some(window) = app.get_window(mux::WINDOW) {
+                match window.is_fullscreen() {
+                    Ok(fullscreen) => {
+                        if let Err(e) = window.set_fullscreen(!fullscreen) {
+                            mux::emit_host_status(
+                                app,
+                                "error",
+                                "menu",
+                                format!("fullscreen failed: {e}"),
+                            );
+                        }
+                    }
+                    Err(e) => mux::emit_host_status(
+                        app,
+                        "error",
+                        "menu",
+                        format!("fullscreen state unavailable: {e}"),
+                    ),
+                }
+            }
+        }
+        "window:close" => {
+            if let Some(window) = app.get_window(mux::WINDOW) {
+                if let Err(e) = window.close() {
+                    mux::emit_host_status(app, "error", "menu", format!("close failed: {e}"));
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 fn probe_control_port() -> Option<u16> {

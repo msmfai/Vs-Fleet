@@ -759,15 +759,41 @@ fn sync_rail_selection(app: &AppHandle) {
     }
 }
 
-/// Fleet deliberately does not install a custom native menu bar.
+/// Build Fleet's static native shell menu.
 ///
-/// The embedded editor is a full keyboard surface in its own right; app-level
-/// menu items and accelerators preempt keystrokes intended for VS Code terminals.
-/// Rebuilding or mutating native menus also closes open macOS menu bar popovers,
-/// so the host leaves menu ownership to the OS/runtime defaults.
-pub fn build_menu(app: &mut App) -> tauri::Result<()> {
-    let _ = app;
-    Ok(())
+/// Fleet embeds full editor surfaces, so the menu must not define app-wide
+/// accelerators or editor/server command proxies. It also must be installed only
+/// through Tauri's builder, not rebuilt during bridge or selection churn, because
+/// AppKit closes any open menu bar popover when the app menu changes.
+pub fn build_menu<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> tauri::Result<tauri::menu::Menu<R>> {
+    use tauri::menu::{MenuBuilder, MenuItem, SubmenuBuilder};
+
+    let quit = MenuItem::with_id(app, "app:quit", "Quit Fleet", true, None::<&str>)?;
+    let minimize = MenuItem::with_id(app, "window:minimize", "Minimize", true, None::<&str>)?;
+    let fullscreen =
+        MenuItem::with_id(app, "window:fullscreen", "Toggle Full Screen", true, None::<&str>)?;
+    let close = MenuItem::with_id(app, "window:close", "Close Window", true, None::<&str>)?;
+
+    let app_menu = SubmenuBuilder::new(app, "Fleet")
+        .about(None)
+        .separator()
+        .item(&quit)
+        .build()?;
+    let window_menu = SubmenuBuilder::new(app, "Window")
+        .item(&minimize)
+        .item(&fullscreen)
+        .separator()
+        .item(&close)
+        .build()?;
+    let help_menu = SubmenuBuilder::new(app, "Help").build()?;
+
+    MenuBuilder::new(app)
+        .item(&app_menu)
+        .item(&window_menu)
+        .item(&help_menu)
+        .build()
 }
 
 pub fn refresh_menu(app: &AppHandle) {

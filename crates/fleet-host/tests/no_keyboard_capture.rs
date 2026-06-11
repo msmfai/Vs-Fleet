@@ -29,7 +29,6 @@ fn fleet_shell_has_no_app_wide_keyboard_capture() {
         "Cmd/Ctrl",
         "set_focus(",
         "MenuItemBuilder::with_id",
-        "SubmenuBuilder::new",
     ];
 
     for rel in files {
@@ -49,15 +48,19 @@ fn fleet_shell_has_no_app_wide_keyboard_capture() {
 }
 
 #[test]
-fn native_menu_is_not_installed_or_rebuilt_by_fleet() {
+fn native_menu_is_static_and_has_no_editor_accelerators() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let main_path = manifest.join("src/main.rs");
     let main = fs::read_to_string(&main_path).unwrap_or_else(|err| {
         panic!("failed to read {}: {err}", main_path.display());
     });
     assert!(
-        main.contains(".enable_macos_default_menu(false)"),
-        "Fleet must explicitly disable Tauri's macOS default menu; its predefined accelerators steal keys from embedded VS Code"
+        main.contains(".menu(mux::build_menu)"),
+        "Fleet must install one static native menu through the Tauri builder"
+    );
+    assert!(
+        !main.contains("enable_macos_default_menu(false)"),
+        "disabling the default macOS menu leaves the top-level menu bar unstable"
     );
 
     let path = manifest.join("src/mux.rs");
@@ -73,4 +76,26 @@ fn native_menu_is_not_installed_or_rebuilt_by_fleet() {
         contents.contains("pub fn refresh_menu(app: &AppHandle) {\n    let _ = app;\n}"),
         "refresh_menu must stay a no-op so bridge/register/selection churn does not close macOS menus"
     );
+    assert!(
+        !contents.contains("MenuItemBuilder::with_id("),
+        "Fleet must not install command menu items that could grow accelerators later"
+    );
+    for pattern in [
+        ".cut()",
+        ".copy()",
+        ".paste()",
+        ".undo()",
+        ".redo()",
+        ".select_all()",
+        "\"cmd:",
+        "\"spawn:",
+        "\"server:",
+        "\"rail:",
+        "\"external:",
+    ] {
+        assert!(
+            !contents.contains(pattern),
+            "Fleet native menu must not contain editor/server command pattern {pattern:?}"
+        );
+    }
 }
