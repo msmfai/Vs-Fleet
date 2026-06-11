@@ -25,6 +25,8 @@ closed or explicitly accepted.
 - [x] Add `CONTRIBUTING.md` and a contribution licensing policy.
 - [x] Remove or redact tracked artifacts that include local paths, process
   command lines, raw logs, or failed eval output.
+- [ ] Run `./scripts/history-release-check.sh` and either publish cleaned
+  history or explicitly accept current branch history exposure.
 - [x] State the alpha support boundary: best-effort, breaking changes expected,
   not production-ready.
 - [ ] Confirm package namespaces before publishing anything to crates.io,
@@ -67,6 +69,10 @@ closed or explicitly accepted.
   probe runs are not tracked for public release.
 - `containers/fleet-env/eval/artifacts/**` is now a local ignored artifact area;
   generated eval reports/screenshots are not tracked for public release.
+- `scripts/history-release-check.sh` audits full git history for local paths,
+  generated outputs, logs, and raw artifacts. On the current branch it still
+  fails because prior commits contain reviewed host/eval artifacts; publish a
+  cleaned history or explicitly accept that exposure in the owner record.
 - The GitHub CI workflow exists, but should be re-run after the public tree is
   cleaned.
 

@@ -16,6 +16,8 @@ Do not publish a public alpha until these are true:
   "Release Readiness" workflow.
 - Generated artifacts, local logs, screenshots, VSIX files, app bundles, and
   machine-specific paths are not tracked.
+- `./scripts/history-release-check.sh` passes, or the approved owner decision
+  record explicitly accepts current branch history exposure.
 - Rust crate manifests retain `publish = false` and extension package manifests
   retain `"private": true` unless the owner decision record explicitly changes
   distribution scope away from source-only alpha.
@@ -83,11 +85,20 @@ Do not publish a public alpha until these are true:
 
    The command should print nothing.
 
-9. Run the manual GitHub "Release Readiness" workflow on the exact commit you
+9. Run the history exposure audit:
+
+   ```sh
+   ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md
+   ```
+
+   If it fails, either publish a cleaned/squashed first public branch or approve
+   the owner decision record choice that accepts current branch history exposure.
+
+10. Run the manual GitHub "Release Readiness" workflow on the exact commit you
    intend to publish. It is expected to fail until the owner decision record is
    approved and the license metadata is applied.
 
-10. Create a signed git tag after checks pass:
+11. Create a signed git tag after checks pass:
 
    ```sh
    git tag -s v0.1.0-alpha.1 -m "Fleet v0.1.0-alpha.1"
@@ -96,7 +107,7 @@ Do not publish a public alpha until these are true:
    Use an annotated tag if signing is not configured, but record that choice in
    the release notes.
 
-11. Push the tag and create a GitHub release marked pre-release. The release
+12. Push the tag and create a GitHub release marked pre-release. The release
    should be source-only unless binary distribution has been explicitly approved.
 
 ## First Public GitHub Publish
@@ -105,6 +116,8 @@ Before making a previously private branch public, decide whether to squash or
 rewrite history. Raw artifacts were removed from the current tree, but prior
 commits may still contain local paths or failed visual/eval evidence. If that is
 not acceptable, publish a cleaned history rather than the full working branch.
+Use `./scripts/history-release-check.sh` as the mechanical audit before first
+public visibility.
 
 ## Binary Release Gate
 
