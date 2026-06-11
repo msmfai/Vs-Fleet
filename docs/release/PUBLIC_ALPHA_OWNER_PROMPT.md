@@ -14,6 +14,11 @@ answers:
 ./scripts/public-alpha-decision-packet.sh
 ```
 
+The packet includes a **Minimal owner reply shape**. Use that when you want to
+accept the recommended source-only alpha defaults and only supply the remaining
+free-form values: namespace, security contact/private reporting choice,
+emergency removal owner, and later CI run URLs.
+
 To create a review draft with the recommended source-alpha defaults checked,
 run:
 

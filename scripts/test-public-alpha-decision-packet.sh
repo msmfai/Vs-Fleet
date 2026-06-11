@@ -229,6 +229,9 @@ expect_output "pending incomplete record" '2\. Public History'
 expect_output "pending incomplete record" '6\. Distribution Scope'
 expect_output "pending incomplete record" 'Owner review helper:'
 expect_output "pending incomplete record" 'Release evidence snapshot:'
+expect_output "pending incomplete record" 'Minimal owner reply shape:'
+expect_output "pending incomplete record" 'I accept the recommended source-only alpha defaults'
+expect_output "pending incomplete record" 'Emergency removal owner for publication evidence'
 expect_output "pending incomplete record" 'Public branch evidence: MISSING'
 expect_output "pending incomplete record" './scripts/draft-owner-decisions.sh <github-owner> <github-repo>'
 expect_output "pending incomplete record" 'Choose Public History before selecting the release-check command'
@@ -243,6 +246,7 @@ expect_output "approved clean source-only record" 'check-public-release-branch\.
 expect_output "approved clean source-only record" 'generate-public-ci-evidence\.sh <branch> <ci-run-url> <release-readiness-run-url> <source-ref>'
 expect_output "approved clean source-only record" 'release-evidence-status\.sh'
 expect_output "approved clean source-only record" 'Contribution intake: require DCO sign-off'
+expect_output "approved clean source-only record" 'VS Code Marketplace publisher: deferred for source alpha'
 
 mkdir -p "$TMPDIR/release-docs"
 cp "$clean_source" "$TMPDIR/release-docs/OWNER_DECISION_RECORD.md"
