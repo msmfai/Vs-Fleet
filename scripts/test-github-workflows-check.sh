@@ -71,6 +71,7 @@ jobs:
       - run: ./scripts/test-draft-owner-decisions.sh
       - run: ./scripts/test-public-alpha-decision-packet.sh
       - run: ./scripts/test-owner-release-approval-check.sh
+      - run: ./scripts/test-owner-reply-template-check.sh
       - run: ./scripts/test-public-alpha-readiness-assessment-check.sh
       - run: ./scripts/test-license-intent-check.sh
       - run: ./scripts/test-apply-license-decision.sh
@@ -102,6 +103,7 @@ jobs:
       - run: ./scripts/test-release-notes-check.sh
       - run: ./scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md
       - run: ./scripts/check-owner-release-approval.sh docs/release/OWNER_RELEASE_APPROVAL.md
+      - run: ./scripts/check-owner-reply-template.sh docs/release/OWNER_DECISION_REPLY_TEMPLATE.md
       - run: ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md
       - run: ./scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md "$(git rev-parse HEAD)"
       - run: ./scripts/secret-release-check.sh
@@ -230,7 +232,7 @@ expect_fail "Release Readiness must keep release notes self-test" "$ci" "$no_rel
 
 no_owner_helpers="$TMPDIR/no-owner-helpers.yml"
 write_release "$no_owner_helpers"
-perl -0pi -e 's/\n      - run: \.\/scripts\/test-draft-owner-decisions\.sh\n//; s/\n      - run: \.\/scripts\/test-public-alpha-decision-packet\.sh\n//' "$no_owner_helpers"
+perl -0pi -e 's/\n      - run: \.\/scripts\/test-draft-owner-decisions\.sh\n//; s/\n      - run: \.\/scripts\/test-public-alpha-decision-packet\.sh\n//; s/\n      - run: \.\/scripts\/test-owner-reply-template-check\.sh\n//; s/\n      - run: \.\/scripts\/check-owner-reply-template\.sh docs\/release\/OWNER_DECISION_REPLY_TEMPLATE\.md\n//' "$no_owner_helpers"
 expect_fail "Release Readiness must keep owner decision helper self-tests" "$ci" "$no_owner_helpers"
 
 no_readiness_assessment="$TMPDIR/no-readiness-assessment.yml"

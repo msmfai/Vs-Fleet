@@ -68,6 +68,8 @@ require_text "$release" './scripts/test-public-alpha-decision-packet.sh' \
   "public alpha decision packet self-test"
 require_text "$release" './scripts/test-owner-release-approval-check.sh' \
   "owner release approval sheet self-test"
+require_text "$release" './scripts/test-owner-reply-template-check.sh' \
+  "owner decision reply template self-test"
 require_text "$release" './scripts/test-public-alpha-readiness-assessment-check.sh' \
   "public alpha readiness assessment self-test"
 require_text "$release" './scripts/test-license-intent-check.sh' "license intent self-test"
@@ -121,6 +123,8 @@ require_text "$release" './scripts/check-owner-decisions.sh docs/release/OWNER_D
   "owner decision gate"
 require_text "$release" './scripts/check-owner-release-approval.sh docs/release/OWNER_RELEASE_APPROVAL.md' \
   "owner release approval sheet gate"
+require_text "$release" './scripts/check-owner-reply-template.sh docs/release/OWNER_DECISION_REPLY_TEMPLATE.md' \
+  "owner decision reply template gate"
 require_text "$release" './scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md' \
   "history exposure gate"
 require_text "$release" './scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md' \

@@ -36,6 +36,9 @@ jobs:
       - name: Owner release approval sheet self-test
         run: ./scripts/test-owner-release-approval-check.sh
 
+      - name: Owner decision reply template self-test
+        run: ./scripts/test-owner-reply-template-check.sh
+
       - name: Public alpha readiness assessment self-test
         run: ./scripts/test-public-alpha-readiness-assessment-check.sh
 
@@ -200,6 +203,9 @@ jobs:
 
       - name: Owner release approval sheet gate
         run: ./scripts/check-owner-release-approval.sh docs/release/OWNER_RELEASE_APPROVAL.md
+
+      - name: Owner decision reply template gate
+        run: ./scripts/check-owner-reply-template.sh docs/release/OWNER_DECISION_REPLY_TEMPLATE.md
 
       - name: Verify no generated artifacts are tracked
         run: |

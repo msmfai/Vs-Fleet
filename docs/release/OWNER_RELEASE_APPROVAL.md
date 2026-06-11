@@ -77,16 +77,20 @@ Use these as the recommended source-alpha choices:
    ./scripts/draft-owner-decisions.sh <github-owner> <github-repo> docs/release/OWNER_DECISION_RECORD.draft.md
    ```
 
-2. Review every checked choice in the draft against this sheet.
-3. Copy approved choices into `docs/release/OWNER_DECISION_RECORD.md`.
-4. Fill namespace, public branch, CI, GitHub publication, and dependency review
+2. If accepting the recommended source-only alpha posture, fill
+   [OWNER_DECISION_REPLY_TEMPLATE.md](OWNER_DECISION_REPLY_TEMPLATE.md) first so
+   the remaining namespace, security, emergency-removal, and CI evidence values
+   are explicit.
+3. Review every checked choice in the draft against this sheet.
+4. Copy approved choices into `docs/release/OWNER_DECISION_RECORD.md`.
+5. Fill namespace, public branch, CI, GitHub publication, and dependency review
    evidence. Use the evidence generators instead of hand-editing reviewed
    evidence:
    `./scripts/generate-public-branch-evidence.sh`,
    `./scripts/generate-public-ci-evidence.sh`, and
    `./scripts/generate-github-publication-evidence.sh`.
-5. Change `OWNER_DECISION_RECORD.md` to `Decision record status: APPROVED`.
-6. Run the release gate for the public branch:
+6. Change `OWNER_DECISION_RECORD.md` to `Decision record status: APPROVED`.
+7. Run the release gate for the public branch:
 
    ```sh
    ./scripts/release-evidence-status.sh

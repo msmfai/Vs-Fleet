@@ -32,4 +32,13 @@ if "$ROOT/scripts/check-owner-release-approval.sh" "$missing_decision" >"$TMPDIR
   exit 1
 fi
 
+missing_reply_template="$TMPDIR/missing-reply-template.md"
+cp "$sheet" "$missing_reply_template"
+perl -0pi -e 's/\n2\. If accepting the recommended source-only alpha posture,.*?are explicit\.//s' "$missing_reply_template"
+if "$ROOT/scripts/check-owner-release-approval.sh" "$missing_reply_template" >"$TMPDIR/fail3.out" 2>&1; then
+  echo "FAIL: missing reply template reference should fail" >&2
+  cat "$TMPDIR/fail3.out" >&2
+  exit 1
+fi
+
 echo "Owner release approval sheet tests passed."
