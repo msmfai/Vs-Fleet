@@ -5,38 +5,42 @@
 <h1 align="center">VS Fleet</h1>
 
 <p align="center">
-  A local-first control surface for terminal-based AI coding sessions in VS Code web.
+  A macOS app for managing local VS Code web sessions used by terminal-based AI coding agents.
 </p>
 
 <p align="center">
-  <a href="docs/release/PUBLIC_ALPHA_READINESS_ASSESSMENT.md"><img alt="Status: source alpha" src="https://img.shields.io/badge/status-source--alpha-orange"></a>
-  <img alt="Platform: macOS" src="https://img.shields.io/badge/platform-macOS-lightgrey">
-  <img alt="Mode: local first" src="https://img.shields.io/badge/mode-local--first-blue">
-  <img alt="Architecture: app plus extension" src="https://img.shields.io/badge/architecture-Fleet.app%20%2B%20VS%20Code%20bridge-6f42c1">
+  <a href="docs/release/PUBLIC_ALPHA_READINESS_ASSESSMENT.md"><img alt="Status" src="https://img.shields.io/badge/status-alpha-orange"></a>
+  <img alt="Platform" src="https://img.shields.io/badge/platform-macOS-lightgrey">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
-## Overview
+## What is VS Fleet?
 
 VS Fleet is a compact macOS app for supervising local `code serve-web` sessions
 used by terminal-based AI coding agents. It collects editor and agent state,
 shows each session in a small Fleet window, and lets you switch between sessions
 without Fleet owning the agent process or capturing the user's keystrokes.
 
-This repository contains two runtime pieces that work together:
+The alpha is intentionally local-only: it uses the user's installed VS Code CLI
+and starts local web sessions from the Fleet app.
 
-| Piece | Path | Role |
-|---|---|---|
-| Fleet app / host | `crates/fleet-host` | The macOS Tauri app, sidebar UI, embedded session webviews, local bridge, and convenience session launcher. |
-| Fleet Bridge extension | `packages/fleet-bridge` | A VS Code extension packaged as a VSIX and installed into each spawned `code serve-web` profile so the editor can register with Fleet and report state. |
+## Features
 
-The app bundle build assembles both pieces. `crates/fleet-host/bundle.sh` builds
-the Rust host, builds the Fleet Bridge VSIX, copies both into `Fleet.app`, and
-the host installs the bridge extension into spawned local VS Code web sessions.
+- Launch local VS Code web sessions from the Fleet window.
+- Open a new session in the user's home directory or in a selected local folder.
+- View, rename, mute, dismiss, and switch between sessions.
+- Track unread and waiting state from terminal-based coding agents.
+- Keep Fleet as a client: editor sessions and reporters connect back to Fleet.
 
-## Quickstart
+## Requirements
 
-Source-alpha macOS build:
+- macOS.
+- A local VS Code installation with the `code` command available.
+- Rust and Node.js tooling for building from source.
+
+## Getting Started
+
+Alpha macOS build:
 
 ```sh
 cd crates/fleet-host
@@ -48,12 +52,31 @@ From Fleet, use the plus menu to start a local session in your home folder or
 open another local folder. Remote and container launch paths are not the
 supported alpha path.
 
-## Project Status
+## Components
 
-VS Fleet is in source-alpha release preparation. The codebase is suitable for
-private dogfooding and technical review; public visibility is gated by the
-owner decision record, history/artifact cleanup, security evidence, and support
-evidence tracked in:
+| Component | Path | Description |
+|---|---|---|
+| Fleet host | `crates/fleet-host` | Tauri macOS app, session list, embedded VS Code webviews, local bridge, and local session launcher. |
+| Fleet Bridge | `packages/fleet-bridge` | VS Code extension packaged into the app and installed into spawned `code serve-web` profiles. |
+| Fleet reporter | `crates/fleet-reporter` | Reports editor/session/agent state back to Fleet. |
+| Fleet hub | `crates/fleet-hub` | Local state projection used by the host, reporter, and CLI. |
+
+`crates/fleet-host/bundle.sh` builds the Rust host, builds the Fleet Bridge
+VSIX, copies both into `Fleet.app`, and includes the reporter binary used by
+spawned sessions.
+
+## Status
+
+VS Fleet is alpha software. It is suitable for private dogfooding and technical
+review, but not for general users or production workflows.
+
+Current support boundary:
+
+- Local macOS app.
+- Local `code serve-web` sessions launched from the user's VS Code install.
+- Source builds only; no signed or notarized binary distribution yet.
+
+## Documentation
 
 - [Public alpha decisions](docs/release/PUBLIC_ALPHA_DECISIONS.md)
 - [Public alpha readiness assessment](docs/release/PUBLIC_ALPHA_READINESS_ASSESSMENT.md)
@@ -66,17 +89,7 @@ evidence tracked in:
 The long-form product and architecture spec lives in
 [docs/ENGINEERING_SPEC.md](docs/ENGINEERING_SPEC.md).
 
-## What Works Today
-
-- A Rust Hub, protocol crate, reporter, CLI, and host-core model.
-- A macOS Tauri Fleet host that embeds local `code serve-web` sessions.
-- A Fleet Bridge VS Code extension used by the host to register editor sessions
-  and route commands.
-- Local session spawning from the host as a convenience function.
-- Session rename, mute/solo/dismiss, unread/waiting state, and host logs.
-- Automated Rust tests and host-level visual probe infrastructure.
-
-## Not Release-Ready
+## Limitations
 
 - Public binary distribution: no signing/notarization policy yet.
 - Remote/container deployment: design and eval harness exist, but this is not a
@@ -86,7 +99,7 @@ The long-form product and architecture spec lives in
 - Tracked visual/eval artifacts: useful for development, but they need pruning
   or redaction before public GitHub visibility.
 
-## Repository layout
+## Project Structure
 
 | Path | Purpose |
 |---|---|
@@ -101,7 +114,7 @@ The long-form product and architecture spec lives in
 | `containers/fleet-env` | Container/eval harness material. |
 | `docs` | Engineering spec and release-readiness docs. |
 
-## Build and test
+## Development
 
 Core workspace:
 
@@ -124,28 +137,34 @@ Release hygiene gate:
 ./scripts/release-check.sh
 ```
 
-The release check is expected to fail until public-alpha blockers are resolved.
+The release check is expected to fail until public alpha blockers are resolved.
 See [docs/release/RELEASE_PROCESS.md](docs/release/RELEASE_PROCESS.md) for the
-source-alpha release process.
+alpha release process.
+
+## Roadmap
 
 No public roadmap commitments are made during alpha. Public issues, labels, and
 milestones are triage hints only, not delivery promises, unless a later owner
 decision publishes a concrete roadmap.
 
-`Fleet` is a provisional source-alpha working name. This repository makes no trademark claim to the name, and stable package or binary publication under Fleet namespaces is deferred until the owner completes the public name decision.
+`Fleet` is a provisional alpha working name. This repository makes no
+trademark claim to the name, and stable package or binary publication under
+Fleet namespaces is deferred until the owner completes the public name decision.
 
-## Security and privacy
+## Security and Privacy
 
 Fleet is local-first and has no intended telemetry by default. It can still log
-local metadata such as workspace paths, local URLs, session labels, process command lines, and editor state. Scrub logs and review artifacts before sharing them publicly.
+local metadata such as workspace paths, local URLs, session labels, process
+command lines, and editor state. Scrub logs and review artifacts before sharing
+them publicly.
 
-Local source-alpha runtime data lives under `~/.fleet/run` and `~/.fleet/mux`
+Local alpha runtime data lives under `~/.fleet/run` and `~/.fleet/mux`
 unless `FLEET_RUNTIME_DIR` or `FLEET_MUX_DIR` is set. Manual cleanup is
 documented in [Local data and uninstall](docs/LOCAL_DATA_AND_UNINSTALL.md).
 
-## Editor Server Boundary
+## Legal
 
-The source alpha uses the user's local `code serve-web` install. Fleet does not
+The alpha uses the user's local `code serve-web` install. Fleet does not
 download, bundle, host, or redistribute Microsoft's VS Code Server, Microsoft
 Marketplace extensions, or Microsoft remote extensions.
 
