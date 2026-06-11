@@ -7,6 +7,10 @@ alpha. Use it when the owner decision record chooses a cleaned/squashed first
 public branch. Do not mark the owner decision record `APPROVED` until this file
 is concrete and `scripts/check-public-branch-evidence.sh` passes.
 
+This is release-control evidence. It may be updated after the clean public
+branch is created; the verifier compares the public branch to the source tree
+while allowing this evidence file itself to differ.
+
 Generate this file with:
 
 ```sh
@@ -16,6 +20,7 @@ Generate this file with:
 Source commit: `TODO`
 Public branch: `TODO`
 Public root commit: `TODO`
+Release-control evidence file: `docs/release/PUBLIC_BRANCH_EVIDENCE.md`
 History check command: `TODO`
 History check result: `TODO`
 

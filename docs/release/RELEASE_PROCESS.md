@@ -40,7 +40,9 @@ Do not publish a public alpha until these are true:
   used to create a single-commit public branch from the approved source tree.
 - If current history is not accepted, `docs/release/PUBLIC_BRANCH_EVIDENCE.md`
   records the source commit, public branch, public root commit, and passing
-  history check.
+  history check. This evidence is a release-control artifact; it may differ
+  between the private release-prep branch and the clean public branch because a
+  public commit cannot contain evidence naming its own future commit hash.
 - Rust crate manifests retain `publish = false` and extension package manifests
   retain `"private": true` unless the owner decision record explicitly changes
   distribution scope away from source-only alpha.
@@ -252,7 +254,14 @@ Do not publish a public alpha until these are true:
 Before making a previously private branch public, decide whether to squash or
 rewrite history. Raw artifacts were removed from the current tree, but prior
 commits may still contain local paths or failed visual/eval evidence. If that is
-not acceptable, create a single-commit public branch:
+not acceptable, create a single-commit public branch.
+
+The public branch evidence file is intentionally treated as release-control
+evidence. Create the clean public branch from the reviewed source commit, then
+generate/update `docs/release/PUBLIC_BRANCH_EVIDENCE.md` on the release-prep
+branch. The verifier allows that evidence file to differ between the source
+commit, the evidence commit, and the clean public branch; every other tracked
+path must match.
 
 ```sh
 ./scripts/prepare-public-branch.sh public-alpha HEAD

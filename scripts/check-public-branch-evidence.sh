@@ -6,14 +6,62 @@ evidence_file="${2:-docs/release/PUBLIC_BRANCH_EVIDENCE.md}"
 expected_source="${3:-}"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+
+release_control_path() {
+  local path=$1
+  local rel=""
+  local physical_root=""
+  local physical_path=""
+
+  if [ -n "$root" ]; then
+    physical_root="$(cd "$root" && pwd -P)"
+    case "$path" in
+      "$root"/*) rel="${path#"$root/"}" ;;
+      /*)
+        if [ -d "$(dirname "$path")" ]; then
+          physical_path="$(cd "$(dirname "$path")" && pwd -P)/$(basename "$path")"
+          case "$physical_path" in
+            "$physical_root"/*) rel="${physical_path#"$physical_root/"}" ;;
+            *) rel="" ;;
+          esac
+        fi
+        ;;
+      *) rel="$path" ;;
+    esac
+  fi
+
+  if [ -n "$rel" ]; then
+    printf '%s\n' "$rel"
+  fi
+}
+
+trees_match_except_release_control() {
+  local left=$1
+  local right=$2
+  local allowed=$3
+
+  if [ "$(git -C "$root" rev-parse "$left^{tree}")" = "$(git -C "$root" rev-parse "$right^{tree}")" ]; then
+    return 0
+  fi
+
+  if [ -z "$allowed" ]; then
+    return 1
+  fi
+
+  local diff_names
+  diff_names="$(git -C "$root" diff --name-only "$left" "$right")"
+  diff_names="$(printf '%s\n' "$diff_names" | awk -v allowed="$allowed" 'NF && $0 != allowed { print }')"
+  [ -z "$diff_names" ]
+}
 
 if [ ! -f "$owner_record" ]; then
   echo "FAIL: missing owner decision record: $owner_record"
   exit 1
 fi
 
-if [ -z "$expected_source" ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  expected_source="$(git rev-parse HEAD)"
+if [ -z "$expected_source" ] && [ -n "$root" ]; then
+  expected_source="$(git -C "$root" rev-parse HEAD)"
 fi
 
 if ! rg -q '^Decision record status: APPROVED$' "$owner_record"; then
@@ -96,6 +144,8 @@ history_result="$(require_field "History check result")"
 single_root="$(require_field "Single root commit")"
 tree_matches="$(require_field "Public tree matches source commit tree")"
 no_private_history="$(require_field "Public branch contains no prior private history")"
+release_control_file="$(field_value "Release-control evidence file" || true)"
+allowed_release_control="$(release_control_path "$evidence_file")"
 
 for pair in \
   "Source commit:$source_commit" \
@@ -109,16 +159,24 @@ do
 done
 
 if [ -n "$expected_source" ] && [ "$source_commit" != "$expected_source" ]; then
-  echo "FAIL: public branch source commit $source_commit does not match expected commit $expected_source"
+  if [ -z "$allowed_release_control" ] ||
+    ! trees_match_except_release_control "$source_commit" "$expected_source" "$allowed_release_control"; then
+    echo "FAIL: public branch source commit $source_commit does not match expected commit $expected_source"
+    exit 1
+  fi
+fi
+
+if [ -n "$release_control_file" ] && [ "$release_control_file" != "$allowed_release_control" ]; then
+  echo "FAIL: Release-control evidence file must match tracked evidence path $allowed_release_control"
   exit 1
 fi
 
-if ! git rev-parse --verify -q "$source_commit^{commit}" >/dev/null; then
+if ! git -C "$root" rev-parse --verify -q "$source_commit^{commit}" >/dev/null; then
   echo "FAIL: source commit does not exist locally: $source_commit"
   exit 1
 fi
 
-resolved_public="$(git rev-parse --verify "$public_branch^{commit}" 2>/dev/null || true)"
+resolved_public="$(git -C "$root" rev-parse --verify "$public_branch^{commit}" 2>/dev/null || true)"
 if [ -z "$resolved_public" ]; then
   echo "FAIL: public branch does not resolve locally: $public_branch"
   exit 1
@@ -129,20 +187,18 @@ if [ "$resolved_public" != "$public_root" ]; then
   exit 1
 fi
 
-if [ "$(git rev-list --count "$public_branch")" != "1" ]; then
+if [ "$(git -C "$root" rev-list --count "$public_branch")" != "1" ]; then
   echo "FAIL: public branch must contain exactly one commit"
   exit 1
 fi
 
-if [ "$(git rev-list --parents -n1 "$public_branch" | wc -w | tr -d ' ')" != "1" ]; then
+if [ "$(git -C "$root" rev-list --parents -n1 "$public_branch" | wc -w | tr -d ' ')" != "1" ]; then
   echo "FAIL: public branch root commit must have no parents"
   exit 1
 fi
 
-source_tree="$(git rev-parse "$source_commit^{tree}")"
-public_tree="$(git rev-parse "$public_root^{tree}")"
-if [ "$source_tree" != "$public_tree" ]; then
-  echo "FAIL: public branch tree does not match source commit tree"
+if ! trees_match_except_release_control "$source_commit" "$public_root" "$allowed_release_control"; then
+  echo "FAIL: public branch tree does not match source commit tree outside release-control evidence"
   exit 1
 fi
 

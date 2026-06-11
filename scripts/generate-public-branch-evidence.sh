@@ -12,6 +12,10 @@ The script verifies that:
   - public-branch's tree matches source-ref's tree
   - history-release-check passes for public-branch
 
+The output file is release-control evidence. If it is written into the worktree,
+it may differ from the prepared public branch because a commit cannot contain
+evidence that names its own future commit hash.
+
 If output-file is omitted or "-", the evidence is printed to stdout. Existing
 files are not overwritten unless FLEET_PUBLIC_BRANCH_EVIDENCE_FORCE=1 is set.
 EOF
@@ -42,6 +46,27 @@ fi
 
 source_commit="$(git -C "$root" rev-parse --verify "$source_ref^{commit}")"
 public_root="$(git -C "$root" rev-parse --verify "$public_branch^{commit}")"
+output_rel=""
+release_control_line=""
+if [ "$output" != "-" ]; then
+  physical_root="$(cd "$root" && pwd -P)"
+  case "$output" in
+    "$root"/*) output_rel="${output#"$root/"}" ;;
+    /*)
+      if [ -d "$(dirname "$output")" ]; then
+        physical_output="$(cd "$(dirname "$output")" && pwd -P)/$(basename "$output")"
+        case "$physical_output" in
+          "$physical_root"/*) output_rel="${physical_output#"$physical_root/"}" ;;
+          *) output_rel="" ;;
+        esac
+      fi
+      ;;
+    *) output_rel="$output" ;;
+  esac
+  if [ -n "$output_rel" ]; then
+    release_control_line="Release-control evidence file: \`$output_rel\`"
+  fi
+fi
 
 if [ "$(git -C "$root" rev-list --count "$public_branch")" != "1" ]; then
   echo "FAIL: public branch must contain exactly one commit: $public_branch" >&2
@@ -56,8 +81,12 @@ fi
 source_tree="$(git -C "$root" rev-parse "$source_commit^{tree}")"
 public_tree="$(git -C "$root" rev-parse "$public_root^{tree}")"
 if [ "$source_tree" != "$public_tree" ]; then
-  echo "FAIL: public branch tree does not match source commit tree" >&2
-  exit 1
+  diff_names="$(git -C "$root" diff --name-only "$source_commit" "$public_root")"
+  diff_names="$(printf '%s\n' "$diff_names" | awk -v allowed="$output_rel" 'NF && $0 != allowed { print }')"
+  if [ -z "$output_rel" ] || [ -n "$diff_names" ]; then
+    echo "FAIL: public branch tree does not match source commit tree outside release-control evidence" >&2
+    exit 1
+  fi
 fi
 
 if ! "$root/scripts/history-release-check.sh" "$root/docs/release/OWNER_DECISION_RECORD.md" "$public_branch" >/dev/null; then
@@ -79,6 +108,7 @@ is concrete and \`scripts/check-public-branch-evidence.sh\` passes.
 Source commit: \`$source_commit\`
 Public branch: \`$public_branch\`
 Public root commit: \`$public_root\`
+$release_control_line
 History check command: \`./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md $public_branch\`
 History check result: \`PASS\`
 
