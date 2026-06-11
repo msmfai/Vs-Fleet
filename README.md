@@ -85,6 +85,7 @@ command lines, and editor state. Scrub logs and review artifacts before sharing
 them publicly.
 
 See [SECURITY.md](SECURITY.md) for the current alpha security policy.
+See [SUPPORT.md](SUPPORT.md) for the current alpha support boundary.
 
 ## License
 
