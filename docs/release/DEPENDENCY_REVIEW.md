@@ -19,32 +19,19 @@ Run this before public GitHub visibility and before every source alpha tag.
 - Bundled artifacts produced by release scripts, especially bridge VSIX files and
   app bundles.
 
-## Commands
+## Command
 
 From the repository root:
 
 ```sh
-cargo tree --workspace --all-features
-cargo metadata --format-version 1 --locked > /tmp/fleet-cargo-metadata.json
-( cd crates/fleet-host && cargo metadata --format-version 1 --locked > /tmp/fleet-host-cargo-metadata.json )
+./scripts/run-dependency-review.sh
 ```
 
-For JavaScript packages:
-
-```sh
-( cd packages/fleet-bridge && npm ci && npm audit --audit-level=moderate )
-( cd packages/extension && npm ci && npm audit --audit-level=moderate )
-```
-
-For generated release artifacts:
-
-```sh
-./scripts/release-check.sh
-./scripts/check-lockfile-policy.sh
-git ls-files | rg '(^|/)coverage/|(^|/)node_modules/|(^|/)out/|\.vsix$|Fleet\.app/'
-```
-
-The second command should print nothing.
+The script runs Rust metadata checks, npm audit checks, lockfile policy, and a
+generated-artifact check. It writes
+[`DEPENDENCY_REVIEW_EVIDENCE.md`](DEPENDENCY_REVIEW_EVIDENCE.md) only after all
+commands pass. Run `./scripts/release-check.sh` afterwards as the final release
+verifier; do not use it as an input to dependency evidence generation.
 
 ## What to Record
 

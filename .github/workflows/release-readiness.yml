@@ -72,6 +72,9 @@ jobs:
       - name: Dependency review gate self-test
         run: ./scripts/test-dependency-review-decision-check.sh
 
+      - name: Dependency review runner self-test
+        run: ./scripts/test-dependency-review-runner.sh
+
       - name: Support decision gate self-test
         run: ./scripts/test-support-decision-check.sh
 

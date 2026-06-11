@@ -58,6 +58,7 @@ jobs:
       - run: ./scripts/test-doc-link-check.sh
       - run: ./scripts/test-public-tree-size-check.sh
       - run: ./scripts/test-lockfile-policy-check.sh
+      - run: ./scripts/test-dependency-review-runner.sh
       - run: ./scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md
       - run: ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md
       - run: ./scripts/secret-release-check.sh
@@ -157,5 +158,10 @@ no_lockfile_gate="$TMPDIR/no-lockfile-gate.yml"
 write_release "$no_lockfile_gate"
 perl -0pi -e 's/\n      - run: \.\/scripts\/test-lockfile-policy-check\.sh\n//; s/\n      - run: \.\/scripts\/check-lockfile-policy\.sh\n//' "$no_lockfile_gate"
 expect_fail "Release Readiness must keep lockfile policy checks" "$ci" "$no_lockfile_gate"
+
+no_dependency_runner="$TMPDIR/no-dependency-runner.yml"
+write_release "$no_dependency_runner"
+perl -0pi -e 's/\n      - run: \.\/scripts\/test-dependency-review-runner\.sh\n//' "$no_dependency_runner"
+expect_fail "Release Readiness must keep dependency review runner self-test" "$ci" "$no_dependency_runner"
 
 echo "GitHub workflow check tests passed."

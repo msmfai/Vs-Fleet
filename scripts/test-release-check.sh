@@ -97,6 +97,7 @@ for script in \
   scripts/check-github-workflows.sh \
   scripts/check-privacy-decision.sh \
   scripts/check-dependency-review-decision.sh \
+  scripts/run-dependency-review.sh \
   scripts/check-dependabot-config.sh \
   scripts/check-support-decision.sh \
   scripts/test-owner-decision-gate.sh \
@@ -117,6 +118,7 @@ for script in \
   scripts/test-github-workflows-check.sh \
   scripts/test-privacy-decision-check.sh \
   scripts/test-dependency-review-decision-check.sh \
+  scripts/test-dependency-review-runner.sh \
   scripts/test-dependabot-config-check.sh \
   scripts/test-support-decision-check.sh \
   scripts/test-release-check.sh \
