@@ -323,6 +323,13 @@ commit, and the clean public branch; every other tracked path must match.
 ./scripts/check-public-release-branch.sh public-alpha "$(git rev-parse HEAD)"
 ```
 
+If `public-alpha` already exists locally during release-prep iteration, refresh
+it explicitly:
+
+```sh
+FLEET_PUBLIC_BRANCH_FORCE=1 ./scripts/prepare-public-branch.sh public-alpha HEAD
+```
+
 `./scripts/check-public-release-branch.sh` runs the history, evidence, secret,
 and aggregate release gates against the cleaned public branch so the audits
 match the history that will be pushed to GitHub.
