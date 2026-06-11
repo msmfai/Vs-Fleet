@@ -12,7 +12,7 @@ use fleet_host_core::{
 use fleet_protocol::{Confidence, LocationGlyph, Urgency};
 
 /// The whole inbox as the frontend consumes it.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct RenderedInbox {
     pub tabs: Vec<RenderedTab>,
     /// How many waiting tabs are allowed to ping — drives the title/app badge.
@@ -24,7 +24,7 @@ pub struct RenderedInbox {
 }
 
 /// One rendered session row.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RenderedTab {
     pub session_id: String,
     /// Location glyph (`laptop`/`docker`/`remote`) — serializes to its wire token.
