@@ -98,7 +98,7 @@ async fn connect_once(
             maybe_command = command_rx.recv(), if !commands_closed => {
                 match maybe_command {
                     Some(command) => {
-                        ws.send(Message::Text(command_frame_text(command)?)).await?;
+                        ws.send(Message::Text(command_frame_text(command)?.into())).await?;
                     }
                     None => commands_closed = true,
                 }

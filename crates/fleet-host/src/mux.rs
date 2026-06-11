@@ -783,10 +783,11 @@ fn sync_rail_selection(app: &AppHandle) {
 /// Build Fleet's static native shell menu.
 ///
 /// Fleet embeds full editor surfaces, so this mirrors Tauri's AppKit-aware
-/// default menu but omits the Edit submenu that owns copy/paste/select-all
-/// accelerators. It is installed once through Tauri's builder and never rebuilt
-/// during bridge or selection churn; mutating an AppKit menu closes any open
-/// top-level macOS menu.
+/// default shell menu. The Edit submenu uses only native predefined items so
+/// copy/paste/select-all/undo/redo are delivered by AppKit to the focused
+/// VS Code webview instead of through Fleet command handlers. It is installed
+/// once through Tauri's builder and never rebuilt during bridge or selection
+/// churn; mutating an AppKit menu closes any open top-level macOS menu.
 pub fn build_menu<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
 ) -> tauri::Result<tauri::menu::Menu<R>> {
@@ -827,6 +828,21 @@ pub fn build_menu<R: tauri::Runtime>(
         &[&PredefinedMenuItem::close_window(app, None)?],
     )?;
 
+    let edit_menu = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+        ],
+    )?;
+
     let view_menu = Submenu::with_items(
         app,
         "View",
@@ -850,7 +866,14 @@ pub fn build_menu<R: tauri::Runtime>(
 
     Menu::with_items(
         app,
-        &[&app_menu, &file_menu, &view_menu, &window_menu, &help_menu],
+        &[
+            &app_menu,
+            &file_menu,
+            &edit_menu,
+            &view_menu,
+            &window_menu,
+            &help_menu,
+        ],
     )
 }
 
