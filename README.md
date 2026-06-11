@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="crates/fleet-host/icons/icon.png" alt="VS Fleet logo" width="128" height="128">
+  <img src="crates/fleet-host/icons/icon.png" alt="VS Fleet logo" width="512" height="512">
 </p>
 
 <h1 align="center">VS Fleet</h1>
