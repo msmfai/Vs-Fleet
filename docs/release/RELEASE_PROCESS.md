@@ -81,7 +81,9 @@ Do not publish a public alpha until these are true:
   passes.
 - `./scripts/run-dependency-review.sh` generates
   `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` for the exact public commit when
-  the owner chooses to run dependency review.
+  the owner chooses to run dependency review. This evidence is a release-control
+  artifact; it may differ between the reviewed commit and the final release-prep
+  commit because committing the evidence changes the commit hash.
 - `./scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"`
   passes.
 - `./scripts/check-dependabot-config.sh .github/dependabot.yml` passes, so the
@@ -180,8 +182,12 @@ Do not publish a public alpha until these are true:
    [DEPENDENCY_REVIEW_EVIDENCE.md](DEPENDENCY_REVIEW_EVIDENCE.md), and record
    any accepted findings in the release notes. If dependency review is
    deliberately skipped for the first public source alpha, record that accepted
-   risk in
-   [OWNER_DECISION_RECORD.md](OWNER_DECISION_RECORD.md).
+   risk in [OWNER_DECISION_RECORD.md](OWNER_DECISION_RECORD.md).
+
+   The dependency review evidence file is release-control evidence. If you
+   commit it after running the review, the checker permits that evidence file to
+   differ between the reviewed commit and the release-prep commit; any other
+   tracked-path drift still fails.
 
 8. Verify the public tree has no tracked generated artifacts:
 
