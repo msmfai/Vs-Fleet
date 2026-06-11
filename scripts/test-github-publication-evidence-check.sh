@@ -39,12 +39,14 @@ write_evidence() {
   local status=${2:-PASS}
   local repo=${3:-"https://github.com/smfmarin/vs-fleet"}
   local protection=${4:-"enabled"}
+  local commit=${5:-"$COMMIT"}
   cat >"$file" <<EOF
 # GitHub Publication Evidence
 
 GitHub publication evidence status: $status
 
-Commit: $COMMIT
+Commit: $commit
+Release-control evidence file: docs/release/GITHUB_PUBLICATION_EVIDENCE.md
 Repository: $repo
 Default branch: public-alpha
 
@@ -133,5 +135,47 @@ todo_namespace="$TMPDIR/todo-namespace.md"
 write_owner_record "$todo_namespace" APPROVED
 perl -0pi -e 's/\| GitHub repo name \| vs-fleet \|/| GitHub repo name | `TODO` |/' "$todo_namespace"
 expect_fail "namespace placeholders are rejected" "$todo_namespace" "$evidence"
+
+repo="$TMPDIR/repo"
+mkdir -p "$repo/docs/release"
+git -C "$repo" init -q
+git -C "$repo" config user.email "release-test@example.invalid"
+git -C "$repo" config user.name "Fleet Release Test"
+
+printf '# Fleet fixture\n' >"$repo/README.md"
+write_owner_record "$repo/docs/release/OWNER_DECISION_RECORD.md" APPROVED
+git -C "$repo" add .
+git -C "$repo" commit -q -m "reviewed publication source"
+reviewed_commit="$(git -C "$repo" rev-parse HEAD)"
+
+write_evidence "$repo/docs/release/GITHUB_PUBLICATION_EVIDENCE.md" PASS \
+  "https://github.com/smfmarin/vs-fleet" "enabled" "$reviewed_commit"
+
+git -C "$repo" add docs/release/GITHUB_PUBLICATION_EVIDENCE.md
+git -C "$repo" commit -q -m "record GitHub publication evidence"
+evidence_commit="$(git -C "$repo" rev-parse HEAD)"
+
+if ! (cd "$repo" && "$ROOT/scripts/check-github-publication-evidence.sh" \
+  docs/release/OWNER_DECISION_RECORD.md \
+  docs/release/GITHUB_PUBLICATION_EVIDENCE.md \
+  "$evidence_commit") >"$TMPDIR/publication-evidence-commit.out" 2>&1; then
+  echo "FAIL: publication evidence commit should pass when only the publication evidence file differs" >&2
+  cat "$TMPDIR/publication-evidence-commit.out" >&2
+  exit 1
+fi
+
+printf 'unexpected publication-reviewed payload drift\n' >"$repo/README.md"
+git -C "$repo" add README.md
+git -C "$repo" commit -q -m "drift publication payload"
+drift_commit="$(git -C "$repo" rev-parse HEAD)"
+
+if (cd "$repo" && "$ROOT/scripts/check-github-publication-evidence.sh" \
+  docs/release/OWNER_DECISION_RECORD.md \
+  docs/release/GITHUB_PUBLICATION_EVIDENCE.md \
+  "$drift_commit") >"$TMPDIR/publication-evidence-drift.out" 2>&1; then
+  echo "FAIL: publication evidence check should reject payload drift outside the evidence file" >&2
+  cat "$TMPDIR/publication-evidence-drift.out" >&2
+  exit 1
+fi
 
 echo "GitHub publication evidence check tests passed."

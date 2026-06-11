@@ -7,7 +7,12 @@ that will become the first public GitHub alpha. Do not mark the owner decision
 record `APPROVED` until this file is concrete and
 `scripts/check-github-publication-evidence.sh` passes.
 
+This is release-control evidence. It may be updated after the reviewed commit is
+selected; the verifier compares the reviewed commit to the release-prep commit
+while allowing this evidence file itself to differ.
+
 Commit: `TODO`
+Release-control evidence file: `docs/release/GITHUB_PUBLICATION_EVIDENCE.md`
 Repository: `TODO`
 Default branch: `TODO`
 
