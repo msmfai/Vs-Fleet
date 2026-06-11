@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ci="${1:-.github/workflows/ci.yml}"
+release="${2:-.github/workflows/release-readiness.yml}"
+
+require_file() {
+  local file=$1
+  if [ ! -f "$file" ]; then
+    echo "FAIL: missing workflow file: $file"
+    exit 1
+  fi
+}
+
+require_text() {
+  local file=$1
+  local pattern=$2
+  local description=$3
+  if ! rg -q "$pattern" "$file"; then
+    echo "FAIL: $file must contain $description"
+    exit 1
+  fi
+}
+
+require_file "$ci"
+require_file "$release"
+
+require_text "$ci" '^name:[[:space:]]*CI$' "workflow name CI"
+require_text "$ci" 'pull_request:' "pull_request trigger"
+require_text "$ci" 'push:' "push trigger"
+require_text "$ci" 'cargo fmt --all -- --check' "Rust formatting check"
+require_text "$ci" 'cargo clippy --workspace --all-targets --all-features -- -D warnings' \
+  "workspace clippy with warnings denied"
+require_text "$ci" 'cargo test --workspace --all-targets --all-features' \
+  "workspace test command"
+require_text "$ci" 'cargo llvm-cov report --fail-under-lines 80' \
+  "workspace coverage floor"
+require_text "$ci" 'cargo llvm-cov report --package fleet-protocol --package fleet-hub --fail-under-lines 85' \
+  "protocol and hub coverage floor"
+require_text "$ci" 'pnpm -r build' "recursive package build"
+require_text "$ci" 'pnpm -r test' "recursive package test"
+
+require_text "$release" '^name:[[:space:]]*Release Readiness$' "workflow name Release Readiness"
+require_text "$release" 'workflow_dispatch:' "manual workflow_dispatch trigger"
+require_text "$release" './scripts/test-release-check.sh' "release-check self-test"
+require_text "$release" './scripts/test-dependabot-config-check.sh' "Dependabot config self-test"
+require_text "$release" './scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md' \
+  "owner decision gate"
+require_text "$release" './scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md' \
+  "history exposure gate"
+require_text "$release" './scripts/release-check.sh' "release hygiene gate"
+require_text "$release" 'cargo clippy --workspace --all-targets --all-features -- -D warnings' \
+  "source alpha clippy check"
+require_text "$release" 'cargo test --workspace --all-targets --all-features' \
+  "source alpha Rust tests"
+require_text "$release" 'cd crates/fleet-host' "standalone Fleet host check"
+require_text "$release" './bundle.sh release' "Fleet host bundle verification"
+require_text "$release" 'npm run build' "npm build checks"
+require_text "$release" 'npm test' "extension npm tests"
+
+echo "GitHub workflow check passed."

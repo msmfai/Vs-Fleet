@@ -58,6 +58,9 @@ Set these before public visibility:
 - GitHub Actions is enabled for the release-readiness and source-check workflows.
 - `.github/dependabot.yml` is present and `./scripts/check-dependabot-config.sh
   .github/dependabot.yml` passes before public visibility.
+- `./scripts/check-github-workflows.sh .github/workflows/ci.yml
+  .github/workflows/release-readiness.yml` passes before recording public CI
+  evidence.
 
 ## Security Settings
 
