@@ -231,14 +231,10 @@ fn push(
         "inbox → window: [{}]",
         summary.join(", ")
     );
-    let previous_waiting = shared
-        .lock()
-        .ok()
-        .map(|g| g.waiting_count)
-        .unwrap_or_default();
+    let previous = shared.lock().ok().map(|g| g.clone());
     log_notification_outcomes(notification_outcomes);
     deliver_notification_outcomes(app, notification_outcomes);
-    update_window_indicators(app, &rendered, previous_waiting, notification_outcomes);
+    update_window_indicators(app, previous.as_ref(), &rendered, notification_outcomes);
     if let Ok(mut g) = shared.lock() {
         *g = rendered.clone();
     }
@@ -247,28 +243,88 @@ fn push(
 
 fn update_window_indicators(
     app: &AppHandle,
+    previous: Option<&RenderedInbox>,
     rendered: &RenderedInbox,
-    previous_waiting: usize,
     notification_outcomes: &[NotificationOutcome],
 ) {
     let Some(window) = app.get_window(crate::mux::WINDOW) else {
         return;
     };
+    let update = window_indicator_update(previous, rendered, notification_outcomes);
 
-    let _ = window.set_title(&fleet_window_title(rendered));
-    let _ = window.set_badge_count(waiting_badge_count(rendered.waiting_count));
+    if let Some(title) = update.title {
+        let _ = window.set_title(&title);
+    }
+    if let Some(badge_count) = update.badge_count {
+        let _ = window.set_badge_count(badge_count);
+    }
     #[cfg(target_os = "macos")]
     {
-        let _ = window.set_badge_label(waiting_badge_label(rendered.waiting_count));
+        if let Some(badge_label) = update.badge_label {
+            let _ = window.set_badge_label(badge_label);
+        }
     }
 
+    match update.attention {
+        AttentionUpdate::None => {}
+        AttentionUpdate::Clear => {
+            let _ = window.request_user_attention(None);
+        }
+        AttentionUpdate::Request if !window.is_focused().unwrap_or(false) => {
+            let _ = window.request_user_attention(Some(UserAttentionType::Informational));
+        }
+        AttentionUpdate::Request => {}
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WindowIndicatorUpdate {
+    title: Option<String>,
+    badge_count: Option<Option<i64>>,
+    #[cfg(target_os = "macos")]
+    badge_label: Option<Option<String>>,
+    attention: AttentionUpdate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AttentionUpdate {
+    None,
+    Clear,
+    Request,
+}
+
+fn window_indicator_update(
+    previous: Option<&RenderedInbox>,
+    rendered: &RenderedInbox,
+    notification_outcomes: &[NotificationOutcome],
+) -> WindowIndicatorUpdate {
+    let title = fleet_window_title(rendered);
+    let previous_title = previous.map(fleet_window_title);
+    let badge_count = waiting_badge_count(rendered.waiting_count);
+    let previous_badge_count = previous.map(|inbox| waiting_badge_count(inbox.waiting_count));
+    let previous_waiting = previous
+        .map(|inbox| inbox.waiting_count)
+        .unwrap_or_default();
     let should_alert =
         has_notification_fire(notification_outcomes) || rendered.waiting_count > previous_waiting;
 
-    if rendered.waiting_count == 0 {
-        let _ = window.request_user_attention(None);
-    } else if should_alert && !window.is_focused().unwrap_or(false) {
-        let _ = window.request_user_attention(Some(UserAttentionType::Informational));
+    WindowIndicatorUpdate {
+        title: (previous_title.as_deref() != Some(title.as_str())).then_some(title),
+        badge_count: (previous_badge_count != Some(badge_count)).then_some(badge_count),
+        #[cfg(target_os = "macos")]
+        badge_label: {
+            let badge_label = waiting_badge_label(rendered.waiting_count);
+            let previous_badge_label =
+                previous.map(|inbox| waiting_badge_label(inbox.waiting_count));
+            (previous_badge_label != Some(badge_label.clone())).then_some(badge_label)
+        },
+        attention: if rendered.waiting_count == 0 && previous_waiting > 0 {
+            AttentionUpdate::Clear
+        } else if rendered.waiting_count > 0 && should_alert {
+            AttentionUpdate::Request
+        } else {
+            AttentionUpdate::None
+        },
     }
 }
 
@@ -459,6 +515,45 @@ mod tests {
     fn waiting_badge_count_is_only_present_for_waiting_sessions() {
         assert_eq!(waiting_badge_count(0), None);
         assert_eq!(waiting_badge_count(3), Some(3));
+    }
+
+    #[test]
+    fn repeated_inbox_update_does_not_touch_native_window_state() {
+        let previous = inbox(0, true);
+        let rendered = inbox(0, true);
+        let update = window_indicator_update(Some(&previous), &rendered, &[]);
+
+        assert_eq!(update.title, None);
+        assert_eq!(update.badge_count, None);
+        #[cfg(target_os = "macos")]
+        assert_eq!(update.badge_label, None);
+        assert_eq!(update.attention, AttentionUpdate::None);
+    }
+
+    #[test]
+    fn waiting_delta_updates_badge_title_and_attention_once() {
+        let previous = inbox(0, true);
+        let rendered = inbox(1, true);
+        let update = window_indicator_update(Some(&previous), &rendered, &[]);
+
+        assert_eq!(update.title, Some("Fleet (1 waiting)".into()));
+        assert_eq!(update.badge_count, Some(Some(1)));
+        #[cfg(target_os = "macos")]
+        assert_eq!(update.badge_label, Some(Some("1".into())));
+        assert_eq!(update.attention, AttentionUpdate::Request);
+    }
+
+    #[test]
+    fn resolved_waiting_delta_clears_attention_once() {
+        let previous = inbox(1, true);
+        let rendered = inbox(0, true);
+        let update = window_indicator_update(Some(&previous), &rendered, &[]);
+
+        assert_eq!(update.title, Some("Fleet".into()));
+        assert_eq!(update.badge_count, Some(None));
+        #[cfg(target_os = "macos")]
+        assert_eq!(update.badge_label, Some(None));
+        assert_eq!(update.attention, AttentionUpdate::Clear);
     }
 
     #[test]

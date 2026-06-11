@@ -2,10 +2,10 @@
  * Fleet Bridge — the command bridge that lets the Fleet multiplexer drive this
  * VS Code. On activation it connects back to Fleet's bridge WS server
  * (`FLEET_BRIDGE_URL`), registers as this server (`FLEET_SERVER_ID`), and runs
- * `vscode.commands.executeCommand(id)` for every command Fleet forwards from its
- * native menu. This is the only reliable way to forward commands into a web VS
- * Code (synthetic keystrokes are untrusted); the extension runs in the server's
- * Node extension host, so `process.env` + `ws` are available.
+ * `vscode.commands.executeCommand(id)` for command/probe frames sent over the
+ * bridge. This is the only reliable way to forward commands into a web VS Code
+ * (synthetic keystrokes are untrusted); the extension runs in the server's Node
+ * extension host, so `process.env` + `ws` are available.
  *
  * ─── BRIDGE WIRE PROTOCOL (frozen — harness side must match this) ──────────────
  *

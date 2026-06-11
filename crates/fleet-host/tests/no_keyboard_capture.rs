@@ -27,6 +27,9 @@ fn fleet_shell_has_no_app_wide_keyboard_capture() {
         ".accelerator(",
         "CmdOrCtrl",
         "Cmd/Ctrl",
+        "set_focus(",
+        "MenuItemBuilder::with_id",
+        "SubmenuBuilder::new",
     ];
 
     for rel in files {
@@ -46,7 +49,7 @@ fn fleet_shell_has_no_app_wide_keyboard_capture() {
 }
 
 #[test]
-fn native_menu_is_not_rebuilt_after_startup() {
+fn native_menu_is_not_installed_or_rebuilt_by_fleet() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let path = manifest.join("src/mux.rs");
     let contents = fs::read_to_string(&path).unwrap_or_else(|err| {
@@ -54,8 +57,8 @@ fn native_menu_is_not_rebuilt_after_startup() {
     });
     assert_eq!(
         contents.matches("set_menu(").count(),
-        1,
-        "Fleet must not rebuild the native menu after startup; set_menu closes open macOS menus"
+        0,
+        "Fleet must not install or rebuild native menus; AppKit menu mutation closes open macOS menus"
     );
     assert!(
         contents.contains("pub fn refresh_menu(app: &AppHandle) {\n    let _ = app;\n}"),
