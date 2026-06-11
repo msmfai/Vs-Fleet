@@ -29,6 +29,7 @@ fn fleet_shell_has_no_app_wide_keyboard_capture() {
         "Cmd/Ctrl",
         "set_focus(",
         "MenuItemBuilder::with_id",
+        "SubmenuBuilder::new",
     ];
 
     for rel in files {
@@ -48,15 +49,19 @@ fn fleet_shell_has_no_app_wide_keyboard_capture() {
 }
 
 #[test]
-fn native_menu_is_static_and_has_no_editor_accelerators() {
+fn fleet_does_not_install_or_mutate_native_menus() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let main_path = manifest.join("src/main.rs");
     let main = fs::read_to_string(&main_path).unwrap_or_else(|err| {
         panic!("failed to read {}: {err}", main_path.display());
     });
     assert!(
-        main.contains(".menu(mux::build_menu)"),
-        "Fleet must install one static native menu through the Tauri builder"
+        !main.contains(".menu("),
+        "Fleet must not install a custom native menu; leave normal macOS menu ownership to Tauri/AppKit"
+    );
+    assert!(
+        !main.contains(".on_menu_event("),
+        "Fleet must not handle native menu events for editor or rail commands"
     );
     assert!(
         !main.contains("enable_macos_default_menu(false)"),
@@ -77,8 +82,16 @@ fn native_menu_is_static_and_has_no_editor_accelerators() {
         "refresh_menu must stay a no-op so bridge/register/selection churn does not close macOS menus"
     );
     assert!(
+        !contents.contains("pub fn build_menu"),
+        "Fleet must not define a custom native menu builder"
+    );
+    assert!(
         !contents.contains("MenuItemBuilder::with_id("),
         "Fleet must not install command menu items that could grow accelerators later"
+    );
+    assert!(
+        !contents.contains("SubmenuBuilder::new"),
+        "Fleet must not install custom native submenus"
     );
     for pattern in [
         ".cut()",
