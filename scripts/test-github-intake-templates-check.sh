@@ -78,8 +78,8 @@ EOF
   cat >"$dir/.github/PULL_REQUEST_TEMPLATE.md" <<'EOF'
 # Pull Request
 
-Fleet is not accepting broad unsolicited code contributions until the project
-license is chosen and applied.
+Fleet accepts focused alpha contributions under the project license with DCO
+sign-off. Broad or speculative code changes are triaged narrowly during alpha.
 
 ## Checks
 
@@ -91,7 +91,7 @@ Commands run:
 
 ## Contribution Licensing
 
-- [ ] I understand contributions may be deferred until the project license and contribution policy are finalized.
+- [ ] I understand broad alpha contributions are triaged narrowly even when they satisfy the licensing and DCO requirements.
 EOF
 }
 

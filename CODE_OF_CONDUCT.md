@@ -1,7 +1,6 @@
 # Code of Conduct
 
-Fleet is not yet open for broad public contribution, but public discussion still
-needs clear expectations.
+Fleet is not yet open for broad public contribution, but public discussion still needs clear expectations.
 
 ## Expected behavior
 
@@ -23,5 +22,4 @@ needs clear expectations.
 
 ## Enforcement
 
-Maintainers may edit, hide, lock, or remove issues, pull requests, comments, or
-accounts from project spaces when needed to keep the project usable and safe.
+Maintainers may edit, hide, lock, or remove issues, pull requests, comments, or accounts from project spaces when needed to keep the project usable and safe.

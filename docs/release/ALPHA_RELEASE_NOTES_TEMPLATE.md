@@ -41,8 +41,7 @@ Not supported as a public alpha commitment:
 - Node.js 20 and npm.
 - Git.
 - user-provided VS Code `code` CLI.
-- Linux, Windows, and remote/container workflows are not supported alpha
-  platforms.
+- Linux, Windows, and remote/container workflows are not supported alpha platforms.
 
 ## Roadmap And Non-Goals
 

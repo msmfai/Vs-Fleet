@@ -11,10 +11,8 @@ during alpha. There are no stable release lines yet.
 
 ## Reporting a vulnerability
 
-Use GitHub Private Vulnerability Reporting for this repository once it is
-enabled. If private reporting is not enabled yet, do not publish a public issue
-with exploit details; contact the maintainer out of band and ask for a private
-reporting channel first.
+GitHub Private Vulnerability Reporting is enabled for this repository. Do not
+publish exploit details in public issues.
 
 ## Current alpha security posture
 

@@ -59,14 +59,14 @@ require_text "$feedback" 'Release packaging' "release packaging feedback topic"
 require_text "$feedback" 'id:[[:space:]]*context' "feedback context field"
 require_text "$feedback" 'id:[[:space:]]*feedback' "feedback body field"
 
-require_text "$pr" 'not accepting broad unsolicited code contributions' \
-  "pre-license contribution boundary"
-require_text "$pr" 'license is chosen and applied' \
-  "license-before-contribution boundary"
+require_text "$pr" 'focused alpha contributions under the project license with DCO' \
+  "approved alpha contribution boundary"
+require_text "$pr" 'Broad or speculative code changes are triaged narrowly during alpha' \
+  "broad-change alpha triage boundary"
 require_text "$pr" 'did not add generated build output, raw logs, private screenshots, or machine-specific paths' \
   "artifact/privacy contribution checklist"
 require_text "$pr" 'Test Evidence' "test evidence section"
 require_text "$pr" 'Contribution Licensing' "contribution licensing section"
-require_text "$pr" 'contribution policy' "contribution policy acknowledgement"
+require_text "$pr" 'licensing and DCO requirements' "contribution policy acknowledgement"
 
 echo "GitHub intake template check passed."
