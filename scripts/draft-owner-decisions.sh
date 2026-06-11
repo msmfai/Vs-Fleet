@@ -228,12 +228,28 @@ Current default recommendation: use alpha pre-release tags and promise no stable
 API, protocol, state-file, or upgrade compatibility until the project has real
 outside users.
 
+### 15. Community Intake And Moderation
+
+Choose what public discussion surfaces are open during alpha and how they are
+moderated.
+
+- [x] Open public issues only for scoped bug reports and alpha feedback; keep
+  blank issues disabled and keep discussions off unless explicitly enabled
+  later.
+- [ ] Keep public issues and discussions closed during alpha; collect feedback
+  privately or by invite only.
+- [ ] Other: \`TODO\`
+
+Current default recommendation: open only the scoped bug and alpha-feedback
+templates for source alpha; keep blank issues disabled and keep Discussions off
+until there is maintainer capacity for broad community support.
+
 ## Required Before Binary Distribution
 
 These do not block a source-only alpha, but they must be decided before any
 public app bundle.
 
-### 15. macOS Signing and Notarization
+### 16. macOS Signing and Notarization
 
 - [ ] No public binaries until Developer ID signing and notarization are
   automated.
@@ -243,7 +259,7 @@ public app bundle.
 Current default recommendation: no public binaries until signing and notarization
 are automated.
 
-### 16. Update Channel
+### 17. Update Channel
 
 - [ ] No auto-update in alpha.
 - [ ] GitHub Releases only.

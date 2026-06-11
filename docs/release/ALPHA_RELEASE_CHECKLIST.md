@@ -85,6 +85,9 @@ closed or explicitly accepted.
 - [ ] Choose the versioning and compatibility promise in
   `docs/release/OWNER_DECISION_RECORD.md` and run
   `./scripts/check-versioning-decision.sh`.
+- [ ] Choose the community intake and moderation posture in
+  `docs/release/OWNER_DECISION_RECORD.md` and run
+  `./scripts/check-community-intake-decision.sh`.
 - [ ] Draft GitHub pre-release notes from
   `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` and remove all placeholders.
 - [ ] Run the release-notes checker with the expected commit:
@@ -224,6 +227,10 @@ closed or explicitly accepted.
   promise against the release notes, support/security docs, and release process,
   so alpha users do not infer stable APIs, state formats, or upgrade paths by
   accident.
+- `scripts/check-community-intake-decision.sh` validates the approved public
+  issue/discussion posture against the issue templates, code of conduct, and
+  GitHub publication runbook, so alpha users do not infer a broad support forum
+  or public vulnerability-reporting surface.
 - `scripts/check-privacy-decision.sh` validates that the approved
   privacy/telemetry posture matches the README, security policy, architecture
   notes, issue template, and release notes template.

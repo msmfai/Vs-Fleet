@@ -113,8 +113,8 @@ section_block() {
 
 require_binary_sections_decided() {
   for section in \
-    "### 15. macOS Signing and Notarization" \
-    "### 16. Update Channel"
+    "### 16. macOS Signing and Notarization" \
+    "### 17. Update Channel"
   do
     local block
     if ! block="$(section_block "$section")"; then

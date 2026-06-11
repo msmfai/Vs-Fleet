@@ -26,7 +26,7 @@ if ! rg -q '^Decision record status: APPROVED$' "$owner_record"; then
 fi
 
 branding_block="$(
-  sed -n '/^### 13\. Branding Stability$/,/^## Required Before Binary Distribution$/p' "$owner_record"
+  sed -n '/^### 13\. Branding Stability$/,/^### 14\. Versioning And Compatibility$/p' "$owner_record"
 )"
 
 checked_count="$(printf '%s\n' "$branding_block" | rg -c '^- \[x\] ' || true)"
