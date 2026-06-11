@@ -21,6 +21,7 @@ write_record() {
   local community_checked='x'
   local custody_checked='x'
   local ai_checked='x'
+  local platform_checked='x'
 
   case "$distribution" in
     source) source_checked='x' ;;
@@ -152,14 +153,19 @@ Decision record status: $status
 - [$ai_checked] Allow AI-assisted contributions if the contributor certifies human review, right to submit, and no private prompts, logs, or generated artifacts.
 - [ ] Other: \`TODO\`
 
+### 18. Supported Platform And Toolchain
+
+- [$platform_checked] macOS source alpha only. Supported toolchain: Rust 1.78 or newer, Node.js 20/npm, Git, and user-provided VS Code code CLI/serve-web.
+- [ ] Other: \`TODO\`
+
 ## Required Before Binary Distribution
 
-### 18. macOS Signing and Notarization
+### 19. macOS Signing and Notarization
 
 - [$signing_checked] No public binaries until Developer ID signing and notarization are automated.
 - [ ] Other: \`TODO\`
 
-### 19. Update Channel
+### 20. Update Channel
 
 - [$update_checked] No auto-update in alpha.
 - [ ] Other: \`TODO\`
@@ -230,6 +236,12 @@ write_record "$ai_missing" APPROVED source decided undecided
 perl -0pi -e 's/- \[x\] Allow AI-assisted contributions/- [ ] Allow AI-assisted contributions/' "$ai_missing"
 expect_fail_contains "source-only alpha requires an AI contribution decision" "$ai_missing" \
   "### 17\\. AI-Assisted Contribution Provenance must have exactly one checked choice; found 0"
+
+platform_missing="$TMPDIR/platform-missing.md"
+write_record "$platform_missing" APPROVED source decided undecided
+perl -0pi -e 's/- \[x\] macOS source alpha only\./- [ ] macOS source alpha only./' "$platform_missing"
+expect_fail_contains "source-only alpha requires a platform support decision" "$platform_missing" \
+  "### 18\\. Supported Platform And Toolchain must have exactly one checked choice; found 0"
 
 binary_missing="$TMPDIR/binary-missing.md"
 write_record "$binary_missing" APPROVED unsigned decided undecided

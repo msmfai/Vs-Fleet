@@ -93,6 +93,9 @@ jobs:
       - name: AI contribution decision gate self-test
         run: ./scripts/test-ai-contribution-decision-check.sh
 
+      - name: Platform support decision gate self-test
+        run: ./scripts/test-platform-support-decision-check.sh
+
       - name: GitHub publication evidence gate self-test
         run: ./scripts/test-github-publication-evidence-check.sh
 

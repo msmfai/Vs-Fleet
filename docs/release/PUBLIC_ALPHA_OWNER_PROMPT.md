@@ -159,17 +159,24 @@ is still `TODO`, ambiguous, or only a recommendation.
     Follow-up: run `./scripts/check-ai-contribution-decision.sh` after copying
     this choice into `OWNER_DECISION_RECORD.md`.
 
+18. Supported platform and toolchain:
+    Recommended alpha default: macOS source alpha only, with Rust 1.78 or newer,
+    Node.js 20/npm, Git, and user-provided VS Code `code` CLI/serve-web.
+    Owner answer:
+    Follow-up: run `./scripts/check-platform-support-decision.sh` after copying
+    this choice into `OWNER_DECISION_RECORD.md`.
+
 ## Binary-Only Decisions
 
 These are not required for a source-only alpha. They become required before any
 public app bundle.
 
-18. macOS signing and notarization:
+19. macOS signing and notarization:
     Recommended default: no public binaries until Developer ID signing and
     notarization are automated.
     Owner answer:
 
-19. Update channel:
+20. Update channel:
     Recommended default: no auto-update in alpha.
     Owner answer:
 

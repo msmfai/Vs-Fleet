@@ -63,6 +63,7 @@ jobs:
       - run: ./scripts/test-community-intake-decision-check.sh
       - run: ./scripts/test-release-custody-decision-check.sh
       - run: ./scripts/test-ai-contribution-decision-check.sh
+      - run: ./scripts/test-platform-support-decision-check.sh
       - run: ./scripts/test-github-publication-evidence-check.sh
       - run: ./scripts/test-dependency-review-runner.sh
       - run: ./scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md
