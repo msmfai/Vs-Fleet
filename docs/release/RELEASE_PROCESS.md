@@ -46,6 +46,9 @@ Do not publish a public alpha until these are true:
   passes.
 - `./scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"`
   passes.
+- `./scripts/check-dependabot-config.sh .github/dependabot.yml` passes, so the
+  first public branch has dependency update coverage for GitHub Actions, Cargo,
+  and npm surfaces.
 - `./scripts/check-support-decision.sh docs/release/OWNER_DECISION_RECORD.md SUPPORT.md .`
   passes.
 - Dependency review has been run for the exact public commit, or the approved
@@ -114,6 +117,7 @@ Do not publish a public alpha until these are true:
    ./scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"
    ./scripts/check-privacy-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"
+   ./scripts/check-dependabot-config.sh .github/dependabot.yml
    ./scripts/check-support-decision.sh docs/release/OWNER_DECISION_RECORD.md SUPPORT.md .
    ./scripts/release-check.sh
    ```

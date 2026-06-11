@@ -56,6 +56,8 @@ Set these before public visibility:
   VSIX, npm package, crate, Open VSX package, or container image is attached
   unless distribution scope explicitly changes.
 - GitHub Actions is enabled for the release-readiness and source-check workflows.
+- `.github/dependabot.yml` is present and `./scripts/check-dependabot-config.sh
+  .github/dependabot.yml` passes before public visibility.
 
 ## Security Settings
 

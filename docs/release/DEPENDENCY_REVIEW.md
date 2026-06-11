@@ -62,6 +62,9 @@ before approving the owner decision record.
 ## Current Known Gaps
 
 - No automated cargo/npm license allowlist is enforced yet.
+- Dependabot version-update coverage is configured in `.github/dependabot.yml`
+  and validated by `scripts/check-dependabot-config.sh`, but that is not a
+  substitute for the exact-commit dependency review evidence required here.
 - npm audit requires network access and may report advisory data that changes
   over time.
 - The release gate currently enforces project license readiness, but not

@@ -67,6 +67,7 @@ for doc in \
   docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md \
   docs/release/ALPHA_RELEASE_CHECKLIST.md \
   docs/release/PUBLIC_ALPHA_DECISIONS.md \
+  .github/dependabot.yml \
   docs/release/OWNER_DECISION_RECORD.md \
   .github/PULL_REQUEST_TEMPLATE.md \
   .github/ISSUE_TEMPLATE/bug_report.yml \
@@ -87,6 +88,7 @@ for script in \
   scripts/check-ci-evidence-decision.sh \
   scripts/check-privacy-decision.sh \
   scripts/check-dependency-review-decision.sh \
+  scripts/check-dependabot-config.sh \
   scripts/check-support-decision.sh \
   scripts/test-owner-decision-gate.sh \
   scripts/test-history-release-check.sh \
@@ -100,6 +102,7 @@ for script in \
   scripts/test-ci-evidence-decision-check.sh \
   scripts/test-privacy-decision-check.sh \
   scripts/test-dependency-review-decision-check.sh \
+  scripts/test-dependabot-config-check.sh \
   scripts/test-support-decision-check.sh \
   scripts/test-release-check.sh \
   scripts/check-release-notes.sh \
