@@ -1,6 +1,6 @@
 //! Fleet Hub library (PLAN S2).
 //!
-//! The Hub is the single authoritative broker (README §4.3, §6): reporters push
+//! The Hub is the single authoritative broker (engineering spec §4.3, §6): reporters push
 //! session/run deltas in; faces subscribe and receive a snapshot followed by a
 //! live delta stream. This crate provides:
 //!

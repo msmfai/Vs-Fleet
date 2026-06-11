@@ -5,11 +5,11 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Fleet end-to-end integration tests — composes the REAL Hub + reporter adapters + host-core view-model + CLI face into the §21 v1 Definition-of-Done acceptance suite"
+description = "Fleet end-to-end integration tests — composes the REAL Hub + reporter adapters + host-core view-model + CLI face into the engineering-spec v1 Definition-of-Done acceptance suite"
 publish = false
 
 # A library of shared harness/fixture helpers, exercised by the `tests/` suite
-# (one named #[test] per DoD item, README §21 items 1–11). The crate COMPOSES the
+# (one named #[test] per DoD item, engineering spec §21 items 1–11). The crate COMPOSES the
 # already-built, gated components — it never reimplements them.
 [lib]
 name = "fleet_e2e"

@@ -1,6 +1,6 @@
 # Fleet — Top-Down Work Graph & Phase-Gated Build
 
-> Companion to `PLAN.md` (decisions + vertical slices S0–S26) and `README.md` (spec).
+> Companion to `PLAN.md` (decisions + vertical slices S0-S26) and `docs/ENGINEERING_SPEC.md` (spec).
 > This document re-expresses the build **top-down** — goal → phases → nodes — as an **explicit
 > dependency DAG** with **phase gates whose exit criterion is heavy unit testing**, designed to be
 > executed by a **dynamic workflow** whose parallelism **widens after each gate** and converges at
@@ -214,7 +214,7 @@ const byId = Object.fromEntries(G.map(n => [n.id, n]))
 
 async function buildNode(n) {
   return agent(
-    `Implement node ${n.id} — ${n.brief} — per main/PLAN.md (+ README.md spec). ` +
+    `Implement node ${n.id} — ${n.brief} — per main/PLAN.md (+ docs/ENGINEERING_SPEC.md spec). ` +
     `HEAVY UNIT TESTING IS MANDATORY AND PART OF DONE: write the unit tests WITH the code, cover ` +
     `happy path + edge cases + failure modes, and DO NOT return until this unit's own crate/package ` +
     `tests are green (cargo test / pnpm test). Respect the locked decisions (D1–D18) and invariants ` +
