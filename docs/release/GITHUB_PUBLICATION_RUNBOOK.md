@@ -159,9 +159,9 @@ Record the release custody evidence before the first public tag or pre-release:
    `docs/release/GITHUB_PUBLICATION_EVIDENCE.md`, including visibility review,
    issue/discussion/wiki settings, security settings, branch protection, and
    release custody.
-   These two files are release-control evidence: after committing them, their
-   checkers allow only the evidence file itself to differ from the reviewed
-   commit.
+   These files are release-control evidence: after committing them, their
+   checkers allow only known release-control evidence files under
+   `docs/release/*_EVIDENCE.md` to differ from the reviewed commit.
 7. Run:
 
    ```sh
@@ -195,8 +195,8 @@ Abort publication if any of these are true:
 - `./scripts/check-lockfile-policy.sh` fails.
 - `./scripts/check-workflow-supply-chain-decision.sh` fails.
 - The exact public commit differs from the commit recorded in CI or dependency
-  review evidence, except for the release-control evidence file currently being
-  checked.
+  review evidence, except for known release-control evidence files under
+  `docs/release/*_EVIDENCE.md`.
 - The selected security reporting channel is not actually available.
 - The release notes imply binary, package, remote/container, or production
   support that the owner decision record did not approve.

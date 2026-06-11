@@ -33,14 +33,15 @@ Do not publish a public alpha until these are true:
 - `./scripts/generate-public-ci-evidence.sh` records the exact commit, branch,
   CI workflow run, and Release Readiness workflow run in
   `docs/release/PUBLIC_CI_EVIDENCE.md` for the first public GitHub alpha. This
-  evidence is a release-control artifact; it may differ between the checked
-  commit and the final release-prep commit because committing the evidence
-  changes the commit hash.
+  evidence is a release-control artifact; the verifier permits known
+  release-control evidence files under `docs/release/*_EVIDENCE.md` to differ
+  from the checked commit, but no product/docs/source payload drift.
 - `docs/release/GITHUB_PUBLICATION_EVIDENCE.md` records the exact GitHub
   repository URL, visibility review, repository settings, security settings,
   and branch-protection review for the first public GitHub alpha. This evidence
-  is also a release-control artifact and may differ from the reviewed commit
-  only by its own evidence file.
+  is also a release-control artifact; the verifier permits known
+  release-control evidence files under `docs/release/*_EVIDENCE.md` to differ
+  from the reviewed commit, but no product/docs/source payload drift.
 - Generated artifacts, local logs, screenshots, VSIX files, app bundles, and
   machine-specific paths are not tracked.
 - `./scripts/secret-release-check.sh` passes for the tracked tree and git
@@ -51,9 +52,11 @@ Do not publish a public alpha until these are true:
   used to create a single-commit public branch from the approved source tree.
 - If current history is not accepted, `docs/release/PUBLIC_BRANCH_EVIDENCE.md`
   records the source commit, public branch, public root commit, and passing
-  history check. This evidence is a release-control artifact; it may differ
-  between the private release-prep branch and the clean public branch because a
-  public commit cannot contain evidence naming its own future commit hash.
+  history check. This evidence is a release-control artifact; the verifier
+  permits known release-control evidence files under
+  `docs/release/*_EVIDENCE.md` to differ between the private release-prep
+  branch and the clean public branch because a public commit cannot contain
+  evidence naming its own future commit hash.
 - Rust crate manifests retain `publish = false` and extension package manifests
   retain `"private": true` unless the owner decision record explicitly changes
   distribution scope away from source-only alpha.
@@ -93,8 +96,9 @@ Do not publish a public alpha until these are true:
 - `./scripts/run-dependency-review.sh` generates
   `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` for the exact public commit when
   the owner chooses to run dependency review. This evidence is a release-control
-  artifact; it may differ between the reviewed commit and the final release-prep
-  commit because committing the evidence changes the commit hash.
+  artifact; the verifier permits known release-control evidence files under
+  `docs/release/*_EVIDENCE.md` to differ from the reviewed commit, but no
+  product/docs/source payload drift.
 - `./scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"`
   passes.
 - `./scripts/check-dependabot-config.sh .github/dependabot.yml` passes, so the
@@ -239,14 +243,16 @@ Do not publish a public alpha until these are true:
 
    Release Readiness is expected to fail until the owner decision record is
    approved and the license metadata is applied. If you commit this evidence
-   after the workflows run, the checker permits only this evidence file to
-   differ from the checked commit.
+   after the workflows run, the checker permits known release-control evidence
+   files under `docs/release/*_EVIDENCE.md` to differ from the checked commit.
 
 12. Fill `docs/release/GITHUB_PUBLICATION_EVIDENCE.md` with the exact GitHub
    repository URL, repository settings, security settings, and branch-protection
-   evidence for the public repo. If you commit this evidence after reviewing the
-   settings, the checker permits only this evidence file to differ from the
-   reviewed commit.
+   evidence for the public repo.
+
+   If you commit this evidence after reviewing the settings, the checker permits
+   known release-control evidence files under `docs/release/*_EVIDENCE.md` to
+   differ from the reviewed commit.
 
    At any point during evidence collection, run:
 
@@ -294,9 +300,9 @@ not acceptable, create a single-commit public branch.
 The public branch evidence file is intentionally treated as release-control
 evidence. Create the clean public branch from the reviewed source commit, then
 generate/update `docs/release/PUBLIC_BRANCH_EVIDENCE.md` on the release-prep
-branch. The verifier allows that evidence file to differ between the source
-commit, the evidence commit, and the clean public branch; every other tracked
-path must match.
+branch. The verifier allows known release-control evidence files under
+`docs/release/*_EVIDENCE.md` to differ between the source commit, the evidence
+commit, and the clean public branch; every other tracked path must match.
 
 ```sh
 ./scripts/prepare-public-branch.sh public-alpha HEAD

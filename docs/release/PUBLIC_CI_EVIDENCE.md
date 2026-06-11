@@ -8,7 +8,8 @@ until this file is concrete and `scripts/check-ci-evidence-decision.sh` passes.
 
 This is release-control evidence. It may be updated after the checked commit is
 selected; the verifier compares the checked commit to the release-prep commit
-while allowing this evidence file itself to differ.
+while allowing only the known release-control evidence files under
+`docs/release/*_EVIDENCE.md` to differ.
 
 ## GitHub Actions Evidence
 
