@@ -140,17 +140,27 @@ is still `TODO`, ambiguous, or only a recommendation.
     Follow-up: run `./scripts/check-community-intake-decision.sh` after copying
     this choice into `OWNER_DECISION_RECORD.md`.
 
+16. Release custody and maintainer authority:
+    Recommended alpha default: single-maintainer alpha. Only the repository
+    owner or named maintainer may push release tags, create GitHub releases,
+    change repository settings, or publish packages. No package publishing
+    credentials for source-only alpha.
+    Owner answer:
+    Follow-up: fill the Release Custody section of
+    `GITHUB_PUBLICATION_EVIDENCE.md` and run
+    `./scripts/check-release-custody-decision.sh`.
+
 ## Binary-Only Decisions
 
 These are not required for a source-only alpha. They become required before any
 public app bundle.
 
-16. macOS signing and notarization:
+17. macOS signing and notarization:
     Recommended default: no public binaries until Developer ID signing and
     notarization are automated.
     Owner answer:
 
-17. Update channel:
+18. Update channel:
     Recommended default: no auto-update in alpha.
     Owner answer:
 

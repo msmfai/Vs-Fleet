@@ -27,6 +27,7 @@ required_sections=$(
 ### 13. Branding Stability
 ### 14. Versioning And Compatibility
 ### 15. Community Intake And Moderation
+### 16. Release Custody And Maintainer Authority
 EOF
 )
 
@@ -120,7 +121,7 @@ fi
 
 distribution_block="$(section_block "$required_block" "### 6. Distribution Scope" || true)"
 if printf '%s\n' "$distribution_block" | rg -q '^- \[x\] Source plus|^- \[x\] Other:'; then
-  for section in "### 16. macOS Signing and Notarization" "### 17. Update Channel"; do
+  for section in "### 17. macOS Signing and Notarization" "### 18. Update Channel"; do
     if ! block="$(section_block "$binary_block" "$section")"; then
       echo "- ${section#'### '}: missing section required for public binary distribution"
       missing_any=1
@@ -152,6 +153,7 @@ echo "- CI: GitHub Actions green on the exact public commit."
 echo "- Support: best-effort alpha support only."
 echo "- Versioning: alpha pre-release tags only; no stable compatibility promise."
 echo "- Community intake: scoped public bug and alpha-feedback issues only; no blank issues."
+echo "- Release custody: single-maintainer alpha; no package publishing credentials."
 
 echo
 echo "Mechanical next commands after recording choices:"
@@ -173,6 +175,7 @@ fi
 echo "  ./scripts/run-dependency-review.sh"
 echo "  ./scripts/check-versioning-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo "  ./scripts/check-community-intake-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
+echo "  ./scripts/check-release-custody-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md ."
 echo '  ./scripts/check-github-publication-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md "$(git rev-parse HEAD)"'
 
 echo

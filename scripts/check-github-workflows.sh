@@ -62,6 +62,8 @@ require_text "$release" './scripts/test-versioning-decision-check.sh' \
   "versioning decision self-test"
 require_text "$release" './scripts/test-community-intake-decision-check.sh' \
   "community intake decision self-test"
+require_text "$release" './scripts/test-release-custody-decision-check.sh' \
+  "release custody decision self-test"
 require_text "$release" './scripts/test-github-publication-evidence-check.sh' \
   "GitHub publication evidence self-test"
 require_text "$release" './scripts/test-dependency-review-runner.sh' \

@@ -22,7 +22,8 @@ for pattern in \
   '^- \[x\] Source-only alpha\.' \
   '^- \[x\] `Fleet` name and current icon are alpha placeholders\.$' \
   '^- \[x\] Alpha pre-release tags only\.' \
-  '^- \[x\] Open public issues only for scoped bug reports and alpha feedback;'
+  '^- \[x\] Open public issues only for scoped bug reports and alpha feedback;' \
+  '^- \[x\] Single-maintainer alpha\.'
 do
   if ! rg -q "$pattern" "$stdout"; then
     echo "FAIL: stdout draft missing expected pattern: $pattern" >&2
