@@ -53,6 +53,15 @@ EOF
   cat >"$root/docs/release/PUBLIC_ALPHA_DECISIONS.md" <<'EOF'
 | Branding stability | Generated icon and possibly temporary `Fleet` name. | Public assets become recognizable quickly. | The release notes checker requires the decision to be stated. |
 EOF
+  cat >"$root/docs/release/ASSET_PROVENANCE.md" <<'EOF'
+# Asset Provenance
+
+Asset: crates/fleet-host/icons/icon.png
+Type: app icon source PNG
+Status: owner affirmed for alpha distribution
+Provenance: generated original icon candidate from project prompt
+Redistribution decision: distribute under the chosen project license for alpha, or replace in a later release.
+EOF
   cat >"$root/docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md" <<'EOF'
 # Fleet Alpha Release Notes Template
 
@@ -130,6 +139,12 @@ missing_icon="$TMPDIR/missing-icon-root"
 write_tree "$missing_icon"
 rm "$missing_icon/crates/fleet-host/icons/icon.png"
 expect_fail "missing replaceable icon source is rejected" "$owner_placeholders" "$missing_icon"
+
+pending_provenance="$TMPDIR/pending-provenance-root"
+write_tree "$pending_provenance"
+perl -0pi -e 's/Status: owner affirmed for alpha distribution/Status: pending owner affirmation/; s/Redistribution decision: distribute under the chosen project license for alpha, or replace in a later release\./Redistribution decision: pending; replace or affirm before release./' \
+  "$pending_provenance/docs/release/ASSET_PROVENANCE.md"
+expect_fail "pending asset provenance is rejected" "$owner_placeholders" "$pending_provenance"
 
 owner_pending="$TMPDIR/owner-pending.md"
 write_owner_record "$owner_pending" PENDING placeholders
