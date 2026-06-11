@@ -83,6 +83,27 @@ if ! (cd "$repo" && FLEET_PUBLIC_BRANCH_EVIDENCE_FORCE=1 ./scripts/generate-publ
   exit 1
 fi
 
+git -C "$repo" add docs/release/PUBLIC_BRANCH_EVIDENCE.md
+git -C "$repo" commit -q -m "record public branch evidence"
+evidence_commit="$(git -C "$repo" rev-parse HEAD)"
+
+if ! (cd "$repo" && ./scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md "$evidence" "$evidence_commit") >"$TMPDIR/check-evidence-commit.out" 2>&1; then
+  echo "FAIL: evidence commit should pass when only the release-control evidence file differs" >&2
+  cat "$TMPDIR/check-evidence-commit.out" >&2
+  exit 1
+fi
+
+printf 'unexpected public payload drift\n' >"$repo/README.md"
+git -C "$repo" add README.md
+git -C "$repo" commit -q -m "drift public payload"
+drift_commit="$(git -C "$repo" rev-parse HEAD)"
+
+if (cd "$repo" && ./scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md "$evidence" "$drift_commit") >"$TMPDIR/check-drift.out" 2>&1; then
+  echo "FAIL: evidence check should reject source payload drift outside the evidence file" >&2
+  cat "$TMPDIR/check-drift.out" >&2
+  exit 1
+fi
+
 if (cd "$repo" && ./scripts/generate-public-branch-evidence.sh HEAD HEAD -) >"$TMPDIR/private.out" 2>&1; then
   echo "FAIL: multi-commit private branch evidence should fail" >&2
   cat "$TMPDIR/private.out" >&2
