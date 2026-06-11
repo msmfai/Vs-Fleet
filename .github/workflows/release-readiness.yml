@@ -27,11 +27,20 @@ jobs:
       - name: Owner decision gate self-test
         run: ./scripts/test-owner-decision-gate.sh
 
+      - name: Owner decision draft helper self-test
+        run: ./scripts/test-draft-owner-decisions.sh
+
+      - name: Public alpha decision packet self-test
+        run: ./scripts/test-public-alpha-decision-packet.sh
+
       - name: Owner release approval sheet self-test
         run: ./scripts/test-owner-release-approval-check.sh
 
       - name: License decision gate self-test
         run: ./scripts/test-license-decision-check.sh
+
+      - name: License decision apply helper self-test
+        run: ./scripts/test-apply-license-decision.sh
 
       - name: License intent gate self-test
         run: ./scripts/test-license-intent-check.sh
@@ -41,6 +50,9 @@ jobs:
 
       - name: Namespace decision gate self-test
         run: ./scripts/test-namespace-decision-check.sh
+
+      - name: Namespace decision apply helper self-test
+        run: ./scripts/test-apply-namespace-decision.sh
 
       - name: Alpha scope decision gate self-test
         run: ./scripts/test-alpha-scope-decision-check.sh

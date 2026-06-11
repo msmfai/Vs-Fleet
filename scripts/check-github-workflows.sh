@@ -60,10 +60,18 @@ require_text "$release" '^permissions:$' "top-level workflow permissions"
 require_text "$release" '^[[:space:]]+contents:[[:space:]]*read$' "read-only contents permission"
 require_text "$release" './scripts/test-release-check.sh' "release-check self-test"
 require_text "$release" './scripts/test-release-notes-check.sh' "release notes self-test"
+require_text "$release" './scripts/test-draft-owner-decisions.sh' \
+  "owner decision draft helper self-test"
+require_text "$release" './scripts/test-public-alpha-decision-packet.sh' \
+  "public alpha decision packet self-test"
 require_text "$release" './scripts/test-owner-release-approval-check.sh' \
   "owner release approval sheet self-test"
 require_text "$release" './scripts/test-license-intent-check.sh' "license intent self-test"
+require_text "$release" './scripts/test-apply-license-decision.sh' \
+  "license decision apply helper self-test"
 require_text "$release" './scripts/test-dco-signoff.sh' "DCO sign-off self-test"
+require_text "$release" './scripts/test-apply-namespace-decision.sh' \
+  "namespace decision apply helper self-test"
 require_text "$release" './scripts/test-dependabot-config-check.sh' "Dependabot config self-test"
 require_text "$release" './scripts/test-secret-release-check.sh' "secret exposure self-test"
 require_text "$release" './scripts/test-doc-link-check.sh' "documentation link self-test"
