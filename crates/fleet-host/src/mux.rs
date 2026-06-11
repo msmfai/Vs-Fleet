@@ -856,7 +856,6 @@ fn build_app_menu<M: Manager<tauri::Wry>>(
         .separator()
         .item(
             &MenuItemBuilder::with_id("cmd:workbench.action.openSettings", "Settings…")
-                .accelerator("CmdOrCtrl+,")
                 .build(manager)?,
         )
         .separator()
@@ -915,14 +914,9 @@ fn build_server_menu<M: Manager<tauri::Wry>>(
     let open_current_enabled = selected_server_has_url(servers, selected);
 
     let mut menu = SubmenuBuilder::new(manager, "Server")
-        .item(
-            &MenuItemBuilder::with_id("spawn:new", "New Server")
-                .accelerator("CmdOrCtrl+Shift+N")
-                .build(manager)?,
-        )
+        .item(&MenuItemBuilder::with_id("spawn:new", "New Server").build(manager)?)
         .item(
             &MenuItemBuilder::with_id("spawn:close-current", close_current.label)
-                .accelerator("CmdOrCtrl+Shift+W")
                 .enabled(close_current.enabled)
                 .build(manager)?,
         )
@@ -934,19 +928,16 @@ fn build_server_menu<M: Manager<tauri::Wry>>(
         .separator()
         .item(
             &MenuItemBuilder::with_id("rail:palette", "Session Palette")
-                .accelerator("CmdOrCtrl+K")
                 .enabled(rail_state.row_count > 0)
                 .build(manager)?,
         )
         .item(
             &MenuItemBuilder::with_id("rail:jump-unread", "Jump to Next Unread")
-                .accelerator("CmdOrCtrl+J")
                 .enabled(rail_state.openable_unread_count > 0)
                 .build(manager)?,
         )
         .item(
             &MenuItemBuilder::with_id("rail:cycle-unread", "Cycle Unread Without Marking Read")
-                .accelerator("CmdOrCtrl+Shift+J")
                 .enabled(rail_state.unread_count > 0)
                 .build(manager)?,
         )
@@ -962,15 +953,12 @@ fn build_server_menu<M: Manager<tauri::Wry>>(
             .build();
     }
 
-    for (idx, server) in servers.iter().enumerate() {
-        let mut item = CheckMenuItemBuilder::with_id(
+    for server in servers {
+        let item = CheckMenuItemBuilder::with_id(
             format!("server:{}", server.id),
             menu_server_label(server),
         )
         .checked(selected == Some(server.id.as_str()));
-        if let Some(accelerator) = server_switch_accelerator(idx) {
-            item = item.accelerator(accelerator);
-        }
         let item = item.build(manager)?;
         menu = menu.item(&item);
     }
@@ -1036,15 +1024,15 @@ fn sanitize_server_label(label: &str) -> Result<String, String> {
     Ok(sanitized)
 }
 
-fn server_switch_accelerator(index: usize) -> Option<String> {
-    (index < 9).then(|| format!("CmdOrCtrl+{}", index + 1))
-}
-
 /// One entry in a mirrored VS Code menu.
 enum MItem {
     /// Forward a VS Code command: `(label, command_id)`.
     Cmd(&'static str, &'static str),
-    /// Forward a VS Code command with a native menu accelerator.
+    /// Forward a VS Code command that has a conventional VS Code shortcut.
+    ///
+    /// The shortcut text is kept in the table as documentation only. Fleet does
+    /// not assign it as a native menu accelerator because app-wide accelerators
+    /// preempt keystrokes intended for the embedded VS Code terminal.
     CmdA(&'static str, &'static str, &'static str),
     Sep,
     /// Native clipboard items (reliable in the webview).
@@ -1071,10 +1059,8 @@ fn build_sub<M: Manager<tauri::Wry>>(
                 let mi = MenuItemBuilder::with_id(format!("cmd:{id}"), *label).build(manager)?;
                 b.item(&mi)
             }
-            MItem::CmdA(label, id, accelerator) => {
-                let mi = MenuItemBuilder::with_id(format!("cmd:{id}"), *label)
-                    .accelerator(*accelerator)
-                    .build(manager)?;
+            MItem::CmdA(label, id, _shortcut) => {
+                let mi = MenuItemBuilder::with_id(format!("cmd:{id}"), *label).build(manager)?;
                 b.item(&mi)
             }
         };
@@ -1402,7 +1388,7 @@ mod tests {
     use super::{
         close_current_menu_item, editor_label_for, external_open_command, keepalive_env_enabled,
         menu_server_label, merged_servers, rail_menu_state_from, sanitize_server_label,
-        selected_server_has_url, server_switch_accelerator, RailMenuState, Server,
+        selected_server_has_url, RailMenuState, Server,
     };
 
     #[cfg(target_os = "macos")]
@@ -1432,13 +1418,6 @@ mod tests {
             editor_label_for("host/ws 1@prod"),
             "editor:host~2fws~201~40prod"
         );
-    }
-
-    #[test]
-    fn server_switch_accelerators_cover_first_nine_servers() {
-        assert_eq!(server_switch_accelerator(0).as_deref(), Some("CmdOrCtrl+1"));
-        assert_eq!(server_switch_accelerator(8).as_deref(), Some("CmdOrCtrl+9"));
-        assert_eq!(server_switch_accelerator(9), None);
     }
 
     #[test]
