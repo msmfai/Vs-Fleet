@@ -153,7 +153,6 @@ fn run_rail_action(app: &tauri::AppHandle, function_name: &str) {
         mux::emit_host_status(app, "error", "menu", "rail unavailable");
         return;
     };
-    let _ = rail.set_focus();
     let script = format!(
         "if (window.{function_name}) {{ window.{function_name}(); }} else {{ throw new Error('rail action unavailable'); }}"
     );

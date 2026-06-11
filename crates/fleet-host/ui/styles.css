@@ -684,8 +684,3 @@ main { padding: 6px; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.row-menu-shortcut {
-  color: var(--faint);
-  font-size: 10px;
-  font-weight: 700;
-}

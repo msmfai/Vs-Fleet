@@ -1065,12 +1065,6 @@ fn sanitize_server_label(label: &str) -> Result<String, String> {
 enum MItem {
     /// Forward a VS Code command: `(label, command_id)`.
     Cmd(&'static str, &'static str),
-    /// Forward a VS Code command that has a conventional VS Code shortcut.
-    ///
-    /// The shortcut text is kept in the table as documentation only. Fleet does
-    /// not assign it as a native menu accelerator because app-wide accelerators
-    /// preempt keystrokes intended for the embedded VS Code terminal.
-    CmdA(&'static str, &'static str, &'static str),
     Sep,
     /// Native clipboard items (reliable in the webview).
     Cut,
@@ -1109,131 +1103,66 @@ fn build_sub<M: Manager<tauri::Wry>>(
                 let mi = MenuItemBuilder::with_id(format!("cmd:{id}"), *label).build(manager)?;
                 b.item(&mi)
             }
-            MItem::CmdA(label, id, _shortcut) => {
-                let mi = MenuItemBuilder::with_id(format!("cmd:{id}"), *label).build(manager)?;
-                b.item(&mi)
-            }
         };
     }
     b.build()
 }
 
 // ── VS Code's default menu structure (real command ids, forwarded) ───────────
-use MItem::{Cmd, CmdA, Copy as MCopy, Cut as MCut, Paste as MPaste, Sep};
+use MItem::{Cmd, Copy as MCopy, Cut as MCut, Paste as MPaste, Sep};
 
 const FILE: &[MItem] = &[
-    CmdA(
-        "New Text File",
-        "workbench.action.files.newUntitledFile",
-        "CmdOrCtrl+N",
-    ),
+    Cmd("New Text File", "workbench.action.files.newUntitledFile"),
     Cmd("New Window", "workbench.action.newWindow"),
     Sep,
-    CmdA(
-        "Open File…",
-        "workbench.action.files.openFile",
-        "CmdOrCtrl+O",
-    ),
+    Cmd("Open File…", "workbench.action.files.openFile"),
     Cmd("Open Folder…", "workbench.action.files.openFolder"),
     Cmd("Open Recent…", "workbench.action.openRecent"),
     Sep,
-    CmdA("Save", "workbench.action.files.save", "CmdOrCtrl+S"),
-    CmdA(
-        "Save As…",
-        "workbench.action.files.saveAs",
-        "CmdOrCtrl+Shift+S",
-    ),
-    CmdA(
-        "Save All",
-        "workbench.action.files.saveAll",
-        "CmdOrCtrl+Alt+S",
-    ),
+    Cmd("Save", "workbench.action.files.save"),
+    Cmd("Save As…", "workbench.action.files.saveAs"),
+    Cmd("Save All", "workbench.action.files.saveAll"),
     Cmd("Auto Save", "workbench.action.toggleAutoSave"),
     Sep,
     Cmd("Revert File", "workbench.action.files.revert"),
-    CmdA(
-        "Close Editor",
-        "workbench.action.closeActiveEditor",
-        "CmdOrCtrl+W",
-    ),
+    Cmd("Close Editor", "workbench.action.closeActiveEditor"),
     Cmd("Close Folder", "workbench.action.closeFolder"),
 ];
 
 const EDIT: &[MItem] = &[
-    CmdA("Undo", "undo", "CmdOrCtrl+Z"),
-    CmdA("Redo", "redo", "CmdOrCtrl+Shift+Z"),
+    Cmd("Undo", "undo"),
+    Cmd("Redo", "redo"),
     Sep,
     MCut,
     MCopy,
     MPaste,
     Sep,
-    CmdA("Find", "actions.find", "CmdOrCtrl+F"),
-    CmdA(
-        "Replace",
-        "editor.action.startFindReplaceAction",
-        "CmdOrCtrl+Alt+F",
-    ),
+    Cmd("Find", "actions.find"),
+    Cmd("Replace", "editor.action.startFindReplaceAction"),
     Sep,
-    CmdA(
-        "Find in Files",
-        "workbench.action.findInFiles",
-        "CmdOrCtrl+Shift+F",
-    ),
-    CmdA(
-        "Replace in Files",
-        "workbench.action.replaceInFiles",
-        "CmdOrCtrl+Shift+H",
-    ),
+    Cmd("Find in Files", "workbench.action.findInFiles"),
+    Cmd("Replace in Files", "workbench.action.replaceInFiles"),
     Sep,
-    CmdA(
-        "Toggle Line Comment",
-        "editor.action.commentLine",
-        "CmdOrCtrl+/",
-    ),
-    CmdA(
-        "Toggle Block Comment",
-        "editor.action.blockComment",
-        "CmdOrCtrl+Shift+/",
-    ),
+    Cmd("Toggle Line Comment", "editor.action.commentLine"),
+    Cmd("Toggle Block Comment", "editor.action.blockComment"),
 ];
 
 const SELECTION: &[MItem] = &[
-    CmdA("Select All", "editor.action.selectAll", "CmdOrCtrl+A"),
+    Cmd("Select All", "editor.action.selectAll"),
     Cmd("Expand Selection", "editor.action.smartSelect.expand"),
     Cmd("Shrink Selection", "editor.action.smartSelect.shrink"),
     Sep,
-    CmdA(
-        "Copy Line Up",
-        "editor.action.copyLinesUpAction",
-        "Shift+Alt+Up",
-    ),
-    CmdA(
-        "Copy Line Down",
-        "editor.action.copyLinesDownAction",
-        "Shift+Alt+Down",
-    ),
-    CmdA("Move Line Up", "editor.action.moveLinesUpAction", "Alt+Up"),
-    CmdA(
-        "Move Line Down",
-        "editor.action.moveLinesDownAction",
-        "Alt+Down",
-    ),
+    Cmd("Copy Line Up", "editor.action.copyLinesUpAction"),
+    Cmd("Copy Line Down", "editor.action.copyLinesDownAction"),
+    Cmd("Move Line Up", "editor.action.moveLinesUpAction"),
+    Cmd("Move Line Down", "editor.action.moveLinesDownAction"),
     Cmd("Duplicate Selection", "editor.action.duplicateSelection"),
     Sep,
-    CmdA(
-        "Add Cursor Above",
-        "editor.action.insertCursorAbove",
-        "CmdOrCtrl+Alt+Up",
-    ),
-    CmdA(
-        "Add Cursor Below",
-        "editor.action.insertCursorBelow",
-        "CmdOrCtrl+Alt+Down",
-    ),
-    CmdA(
+    Cmd("Add Cursor Above", "editor.action.insertCursorAbove"),
+    Cmd("Add Cursor Below", "editor.action.insertCursorBelow"),
+    Cmd(
         "Add Next Occurrence",
         "editor.action.addSelectionToNextFindMatch",
-        "CmdOrCtrl+D",
     ),
     Cmd(
         "Column Selection Mode",
@@ -1242,14 +1171,10 @@ const SELECTION: &[MItem] = &[
 ];
 
 const VIEW: &[MItem] = &[
-    CmdA(
-        "Command Palette…",
-        "workbench.action.showCommands",
-        "CmdOrCtrl+Shift+P",
-    ),
+    Cmd("Command Palette…", "workbench.action.showCommands"),
     Cmd("Open View…", "workbench.action.openView"),
     Sep,
-    CmdA("Explorer", "workbench.view.explorer", "CmdOrCtrl+Shift+E"),
+    Cmd("Explorer", "workbench.view.explorer"),
     Cmd("Search", "workbench.view.search"),
     Cmd("Source Control", "workbench.view.scm"),
     Cmd("Run and Debug", "workbench.view.debug"),
@@ -1259,83 +1184,49 @@ const VIEW: &[MItem] = &[
     Cmd("Output", "workbench.action.output.toggleOutput"),
     Cmd("Terminal", "workbench.action.terminal.toggleTerminal"),
     Sep,
-    CmdA("Word Wrap", "editor.action.toggleWordWrap", "Alt+Z"),
-    CmdA(
+    Cmd("Word Wrap", "editor.action.toggleWordWrap"),
+    Cmd(
         "Toggle Side Bar",
         "workbench.action.toggleSidebarVisibility",
-        "CmdOrCtrl+B",
     ),
-    CmdA(
-        "Toggle Panel",
-        "workbench.action.togglePanel",
-        "CmdOrCtrl+J",
-    ),
-    CmdA("Zoom In", "workbench.action.zoomIn", "CmdOrCtrl+="),
-    CmdA("Zoom Out", "workbench.action.zoomOut", "CmdOrCtrl+-"),
+    Cmd("Toggle Panel", "workbench.action.togglePanel"),
+    Cmd("Zoom In", "workbench.action.zoomIn"),
+    Cmd("Zoom Out", "workbench.action.zoomOut"),
 ];
 
 const GO: &[MItem] = &[
-    CmdA(
-        "Back",
-        "workbench.action.navigateBack",
-        "CmdOrCtrl+Alt+Left",
-    ),
-    CmdA(
-        "Forward",
-        "workbench.action.navigateForward",
-        "CmdOrCtrl+Alt+Right",
-    ),
+    Cmd("Back", "workbench.action.navigateBack"),
+    Cmd("Forward", "workbench.action.navigateForward"),
     Sep,
-    CmdA("Go to File…", "workbench.action.quickOpen", "CmdOrCtrl+P"),
-    CmdA(
+    Cmd("Go to File…", "workbench.action.quickOpen"),
+    Cmd(
         "Go to Symbol in Workspace…",
         "workbench.action.showAllSymbols",
-        "CmdOrCtrl+T",
     ),
-    CmdA(
-        "Go to Symbol in Editor…",
-        "workbench.action.gotoSymbol",
-        "CmdOrCtrl+Shift+O",
-    ),
+    Cmd("Go to Symbol in Editor…", "workbench.action.gotoSymbol"),
     Sep,
-    CmdA("Go to Definition", "editor.action.revealDefinition", "F12"),
+    Cmd("Go to Definition", "editor.action.revealDefinition"),
     Cmd("Go to References", "editor.action.goToReferences"),
-    CmdA(
-        "Go to Line/Column…",
-        "workbench.action.gotoLine",
-        "CmdOrCtrl+G",
-    ),
+    Cmd("Go to Line/Column…", "workbench.action.gotoLine"),
     Sep,
-    CmdA("Next Problem", "editor.action.marker.next", "F8"),
-    CmdA("Previous Problem", "editor.action.marker.prev", "Shift+F8"),
+    Cmd("Next Problem", "editor.action.marker.next"),
+    Cmd("Previous Problem", "editor.action.marker.prev"),
 ];
 
 const RUN: &[MItem] = &[
-    CmdA("Start Debugging", "workbench.action.debug.start", "F5"),
-    CmdA(
-        "Run Without Debugging",
-        "workbench.action.debug.run",
-        "Ctrl+F5",
-    ),
-    CmdA("Stop Debugging", "workbench.action.debug.stop", "Shift+F5"),
+    Cmd("Start Debugging", "workbench.action.debug.start"),
+    Cmd("Run Without Debugging", "workbench.action.debug.run"),
+    Cmd("Stop Debugging", "workbench.action.debug.stop"),
     Cmd("Restart Debugging", "workbench.action.debug.restart"),
     Sep,
     Cmd("Open Configurations", "workbench.action.debug.configure"),
     Cmd("Add Configuration…", "debug.addConfiguration"),
     Sep,
-    CmdA(
-        "Toggle Breakpoint",
-        "editor.debug.action.toggleBreakpoint",
-        "F9",
-    ),
+    Cmd("Toggle Breakpoint", "editor.debug.action.toggleBreakpoint"),
 ];
 
 const TERMINAL: &[MItem] = &[
-    CmdA(
-        "New Terminal",
-        "workbench.action.terminal.new",
-        "Ctrl+Shift+`",
-    ),
+    Cmd("New Terminal", "workbench.action.terminal.new"),
     Cmd("Split Terminal", "workbench.action.terminal.split"),
     Sep,
     Cmd("Run Task…", "workbench.action.tasks.runTask"),

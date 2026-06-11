@@ -47,8 +47,7 @@ const sessionActions = new Set();
 let paletteOpen = false;
 let paletteQuery = "";
 let paletteIndex = 0;
-let paletteRestoreEl = null;
-let rowMenu = { open: false, serverId: null, x: 0, y: 0, index: 0, restoreEl: null };
+let rowMenu = { open: false, serverId: null, x: 0, y: 0, index: 0 };
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -112,25 +111,6 @@ function canRenameServerRow(srv) {
 
 function serverById(id) {
   return displayed().find((srv) => srv.id === id);
-}
-
-function focusedServerId() {
-  const active = document.activeElement;
-  return active && active.closest ? active.closest(".srv")?.dataset.serverId || null : null;
-}
-
-function adjacentDisplayId(id) {
-  const list = displayed();
-  const index = list.findIndex((srv) => srv.id === id);
-  if (index < 0 || list.length <= 1) return null;
-  const nextIndex = index < list.length - 1 ? index + 1 : index - 1;
-  return list[nextIndex]?.id || null;
-}
-
-function focusBestServerRow(...ids) {
-  const visible = new Set(displayed().map((srv) => srv.id));
-  const target = ids.find((id) => id && visible.has(id)) || displayed()[0]?.id;
-  if (target) focusServerRow(target);
 }
 
 function clearLocalSelection(id) {
@@ -482,26 +462,6 @@ function sessionActionButton(action, text, title, active, disabled, toggle = tru
   return btn;
 }
 
-function rowKeyboardShortcuts(model) {
-  const shortcuts = ["Enter", "Space", "ContextMenu", "Shift+F10", "ArrowDown", "ArrowUp", "Home", "End"];
-  if (sessionActionBusy(model.srv.id)) return shortcuts.join(" ");
-  if (model.agent && inbox.connected) shortcuts.push("M", "S");
-  if (model.srv.url) shortcuts.push("B");
-  if (canRenameServerRow(model.srv)) shortcuts.push("N");
-  if (canRetryServer(model.srv, model.pendingState)) shortcuts.push("R");
-  if (canDismissAgent(model.agent, model.state) || canForgetAgentOnly(model.srv, model.agent)) {
-    shortcuts.push("D");
-  }
-  if (
-    canCloseServerRow(model.srv)
-    || canDismissAgent(model.agent, model.state)
-    || canForgetAgentOnly(model.srv, model.agent)
-  ) {
-    shortcuts.push("Delete", "Backspace");
-  }
-  return shortcuts.join(" ");
-}
-
 function rowMenuItems(id) {
   const srv = displayed().find((item) => item.id === id);
   if (!srv) return [];
@@ -511,20 +471,17 @@ function rowMenuItems(id) {
   const items = [{
     id: "open",
     label: model.srv.agentOnly ? "Show Session" : "Open",
-    shortcut: "Enter",
     action: () => activateServer(id),
   }];
   items.push({
     id: "copy-id",
     label: "Copy Session ID",
-    shortcut: "I",
     action: () => copyRowValue("session id", id),
   });
   if (canRenameServerRow(model.srv)) {
     items.push({
       id: "rename",
       label: "Rename",
-      shortcut: "N",
       action: () => renameRow(id),
     });
   }
@@ -532,13 +489,11 @@ function rowMenuItems(id) {
     items.push({
       id: "copy-url",
       label: "Copy URL",
-      shortcut: "U",
       action: () => copyRowValue("url", model.srv.url),
     });
     items.push({
       id: "open-browser",
       label: "Open in Browser",
-      shortcut: "B",
       action: () => openRowInBrowser(id),
     });
   }
@@ -547,14 +502,12 @@ function rowMenuItems(id) {
     items.push({
       id: "mute",
       label: model.agent.muted ? "Unmute" : "Mute",
-      shortcut: "M",
       disabled: busy || !inbox.connected,
       action: () => toggleMuteRow(id),
     });
     items.push({
       id: "solo",
       label: model.agent.soloed ? "Clear Solo" : "Solo",
-      shortcut: "S",
       disabled: busy || !inbox.connected,
       action: () => toggleSoloRow(id),
     });
@@ -564,7 +517,6 @@ function rowMenuItems(id) {
     items.push({
       id: "retry",
       label: "Retry",
-      shortcut: "R",
       disabled: busy || spawning,
       action: () => retryRow(id),
     });
@@ -574,7 +526,6 @@ function rowMenuItems(id) {
     items.push({
       id: "dismiss",
       label: "Dismiss",
-      shortcut: "D",
       disabled: busy || !inbox.connected,
       action: () => dismissRow(id),
     });
@@ -582,7 +533,6 @@ function rowMenuItems(id) {
     items.push({
       id: "forget-session",
       label: "Forget Session",
-      shortcut: "D",
       disabled: busy || !inbox.connected,
       action: () => forgetAgentOnlyRow(id),
     });
@@ -592,7 +542,6 @@ function rowMenuItems(id) {
     items.push({
       id: "close",
       label: closeVerb,
-      shortcut: "Delete",
       disabled: busy || closing.has(id),
       action: () => closeServer(id),
     });
@@ -685,14 +634,10 @@ function countPhrase(count, noun) {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-function withShortcut(label, shortcut) {
-  return shortcut ? `${label} (${shortcut})` : label;
-}
-
 function setToolButtonState(btn, options) {
   if (!btn) return;
   btn.disabled = Boolean(options.disabled);
-  btn.title = withShortcut(options.title, options.shortcut);
+  btn.title = options.title;
   btn.setAttribute("aria-label", options.title);
   btn.classList.toggle("attention", Boolean(options.attention));
   const count = countBadge(options.count || 0);
@@ -794,7 +739,7 @@ function renderEmptyState(status) {
 function render() {
   const list = displayed();
   if (rowMenu.open && rowMenu.serverId && !list.some((srv) => srv.id === rowMenu.serverId)) {
-    closeRowMenu({ restoreFocus: false });
+    closeRowMenu();
   }
   const status = railStatus(list);
   statusEl.textContent = status.message;
@@ -805,18 +750,10 @@ function render() {
   updateToolbarButtons();
   renderStatusDetail();
 
-  const activeEl = document.activeElement;
-  const activeServerId = activeEl && activeEl.closest
-    ? activeEl.closest(".srv")?.dataset.serverId
-    : null;
-  const activeWasClose = activeEl && activeEl.classList && activeEl.classList.contains("close");
-  const activeAction = activeEl && activeEl.dataset ? activeEl.dataset.action : null;
-  let focusAfterRender = null;
-
   railEl.replaceChildren();
   if (!list.length) {
-    if (paletteOpen) closePalette({ restoreFocus: false });
-    closeRowMenu({ restoreFocus: false });
+    if (paletteOpen) closePalette();
+    closeRowMenu();
     renderEmptyState(status);
     return;
   }
@@ -831,7 +768,6 @@ function render() {
       `srv ${state}${pinging ? " attention" : ""}${flags.includes("muted") ? " muted-state" : ""}${suppressed ? " suppressed-state" : ""}${flags.includes("solo") ? " soloed-state" : ""}${srv.id === selected ? " selected" : ""}${srv.pending ? " pending" : ""}${srv.agentOnly ? " agent-only" : ""}${pendingState && pendingState.level ? ` ${pendingState.level}` : ""}${isClosing ? " closing" : ""}${actionBusy ? " action-pending" : ""}`
     );
     row.dataset.serverId = srv.id;
-    row.tabIndex = 0;
     row.setAttribute("role", "listitem");
     row.setAttribute("aria-current", srv.id === selected ? "true" : "false");
     row.setAttribute("aria-busy", actionBusy ? "true" : "false");
@@ -839,14 +775,12 @@ function render() {
       "aria-label",
       [title, state, preview, ...flags.map(stateFlagTitle)].filter(Boolean).join(", ")
     );
-    row.setAttribute("aria-keyshortcuts", rowKeyboardShortcuts(model));
     if (srv.agentOnly) row.title = bridgeState(srv);
     row.onclick = () => activateServer(srv.id);
-    row.onkeydown = (ev) => handleRowKeydown(ev, row, srv.id);
     row.oncontextmenu = (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
-      openRowMenu(srv.id, ev.clientX, ev.clientY, row);
+      openRowMenu(srv.id, ev.clientX, ev.clientY);
     };
 
     if (srv.pending && pendingState.state !== "error") row.appendChild(el("span", "glyph spinner", ""));
@@ -876,10 +810,9 @@ function render() {
     actions.onclick = (ev) => {
       ev.stopPropagation();
       const rect = actions.getBoundingClientRect();
-      openRowMenu(srv.id, rect.right - 4, rect.bottom + 4, actions);
+      openRowMenu(srv.id, rect.right - 4, rect.bottom + 4);
     };
     right.appendChild(actions);
-    if (srv.id === activeServerId && activeAction === "menu") focusAfterRender = actions;
 
     if (a) {
       const mutePending = sessionActions.has(actionKey(srv.id, "mute"));
@@ -909,8 +842,6 @@ function render() {
       };
       right.appendChild(mute);
       right.appendChild(solo);
-      if (srv.id === activeServerId && activeAction === "mute") focusAfterRender = mute;
-      if (srv.id === activeServerId && activeAction === "solo") focusAfterRender = solo;
       if (canDismissAgent(a, state)) {
         const dismissPending = sessionActions.has(actionKey(srv.id, "dismiss"));
         const dismiss = sessionActionButton(
@@ -926,7 +857,6 @@ function render() {
           dismissSession(srv.id);
         };
         right.appendChild(dismiss);
-        if (srv.id === activeServerId && activeAction === "dismiss") focusAfterRender = dismiss;
       }
     }
     if (canRetryServer(srv, pendingState)) {
@@ -944,7 +874,6 @@ function render() {
         retryServer(srv.id);
       };
       right.appendChild(retry);
-      if (srv.id === activeServerId && activeAction === "retry") focusAfterRender = retry;
     }
     let close = null;
     if (canCloseServerRow(srv)) {
@@ -963,19 +892,10 @@ function render() {
     row.appendChild(right);
 
     railEl.appendChild(row);
-    if (srv.id === activeServerId && !focusAfterRender) focusAfterRender = activeWasClose && close ? close : row;
   }
 
-  if (focusAfterRender) focusAfterRender.focus({ preventScroll: true });
   if (paletteOpen) renderPalette();
   if (rowMenu.open) renderRowMenu();
-}
-
-function focusServerRow(id) {
-  requestAnimationFrame(() => {
-    const row = Array.from(railEl.querySelectorAll(".srv")).find((item) => item.dataset.serverId === id);
-    if (row) row.focus({ preventScroll: true });
-  });
 }
 
 async function activateServer(id, options = {}) {
@@ -986,7 +906,6 @@ async function activateServer(id, options = {}) {
     desiredSelection = id;
     desiredAcknowledge = options.acknowledge !== false;
     render();
-    focusServerRow(id);
     showHostStatus({
       level: "info",
       source: "rail",
@@ -996,7 +915,6 @@ async function activateServer(id, options = {}) {
   }
 
   const selectedOk = await selectServer(id);
-  if (options.keepRailFocus) focusServerRow(id);
   if (selectedOk && options.acknowledge !== false && agentFor(id)) focusSession(id);
 }
 
@@ -1031,8 +949,6 @@ function openPalette(query = "") {
     });
     return;
   }
-  const active = document.activeElement;
-  paletteRestoreEl = active && active !== document.body && active.focus ? active : null;
   paletteOpen = true;
   paletteQuery = query;
   paletteIndex = 0;
@@ -1046,7 +962,7 @@ function openPalette(query = "") {
   });
 }
 
-function closePalette(options = {}) {
+function closePalette() {
   if (!paletteOpen) return;
   paletteOpen = false;
   paletteQuery = "";
@@ -1056,12 +972,6 @@ function closePalette(options = {}) {
   if (paletteInput) {
     paletteInput.setAttribute("aria-expanded", "false");
     paletteInput.removeAttribute("aria-activedescendant");
-  }
-  const restoreEl = paletteRestoreEl;
-  paletteRestoreEl = null;
-  if (options.restoreFocus !== false) {
-    if (restoreEl && restoreEl.isConnected && restoreEl.focus) restoreEl.focus({ preventScroll: true });
-    else focusServerRow(selected);
   }
 }
 
@@ -1084,7 +994,6 @@ function renderPalette() {
     const item = el("div", `palette-item${active ? " active" : ""}`, "");
     const optionId = `palette-option-${index}`;
     item.id = optionId;
-    item.tabIndex = -1;
     item.setAttribute("role", "option");
     item.setAttribute("aria-selected", active ? "true" : "false");
     if (active && paletteInput) paletteInput.setAttribute("aria-activedescendant", optionId);
@@ -1115,44 +1024,30 @@ function renderPalette() {
 }
 
 function choosePalette(id) {
-  closePalette({ restoreFocus: false });
+  closePalette();
   activateServer(id);
 }
 
-function movePalette(delta) {
-  const count = paletteCandidates().slice(0, 12).length;
-  if (!count) return;
-  paletteIndex = (paletteIndex + delta + count) % count;
-  renderPalette();
-}
-
-function openRowMenu(id, x, y, restoreEl = null) {
+function openRowMenu(id, x, y) {
   if (!rowMenuEl) return;
-  if (paletteOpen) closePalette({ restoreFocus: false });
+  if (paletteOpen) closePalette();
   rowMenu = {
     open: true,
     serverId: id,
     x,
     y,
     index: 0,
-    restoreEl: restoreEl || document.activeElement,
   };
   renderRowMenu();
-  requestAnimationFrame(() => focusRowMenuItem());
 }
 
-function closeRowMenu(options = {}) {
+function closeRowMenu() {
   if (!rowMenu.open) return;
-  const restoreEl = rowMenu.restoreEl;
-  rowMenu = { open: false, serverId: null, x: 0, y: 0, index: 0, restoreEl: null };
+  rowMenu = { open: false, serverId: null, x: 0, y: 0, index: 0 };
   if (rowMenuEl) {
     rowMenuEl.classList.add("hidden");
     rowMenuEl.replaceChildren();
     rowMenuEl.removeAttribute("aria-activedescendant");
-  }
-  if (options.restoreFocus !== false) {
-    if (restoreEl && restoreEl.isConnected && restoreEl.focus) restoreEl.focus({ preventScroll: true });
-    else focusServerRow(selected);
   }
 }
 
@@ -1165,17 +1060,11 @@ function positionRowMenu() {
   rowMenuEl.style.top = `${top}px`;
 }
 
-function focusRowMenuItem() {
-  if (!rowMenuEl || !rowMenu.open) return;
-  const item = rowMenuEl.querySelector(".row-menu-item.active");
-  if (item) item.focus({ preventScroll: true });
-}
-
 function renderRowMenu() {
   if (!rowMenuEl || !rowMenu.open) return;
   const items = visibleRowMenuItems();
   if (!items.length) {
-    closeRowMenu({ restoreFocus: false });
+    closeRowMenu();
     return;
   }
   if (rowMenu.index >= items.length) rowMenu.index = Math.max(0, items.length - 1);
@@ -1190,10 +1079,8 @@ function renderRowMenu() {
     const itemId = `row-menu-${item.id}`;
     btn.id = itemId;
     btn.type = "button";
-    btn.tabIndex = active ? 0 : -1;
     btn.setAttribute("role", "menuitem");
     if (item.disabled) btn.setAttribute("aria-disabled", "true");
-    if (item.shortcut) btn.setAttribute("aria-keyshortcuts", item.shortcut);
     btn.onmouseenter = () => {
       if (rowMenu.index === index) return;
       rowMenu.index = index;
@@ -1202,29 +1089,17 @@ function renderRowMenu() {
     btn.onmousedown = (ev) => ev.preventDefault();
     btn.onclick = () => chooseRowMenuItem(index);
     btn.appendChild(el("span", "row-menu-label", item.label));
-    if (item.shortcut) btn.appendChild(el("span", "row-menu-shortcut", item.shortcut));
     rowMenuEl.appendChild(btn);
-    if (active) rowMenuEl.setAttribute("aria-activedescendant", itemId);
   });
 
-  requestAnimationFrame(() => {
-    positionRowMenu();
-    focusRowMenuItem();
-  });
-}
-
-function moveRowMenu(delta) {
-  const items = visibleRowMenuItems();
-  if (!items.length) return;
-  rowMenu.index = (rowMenu.index + delta + items.length) % items.length;
-  renderRowMenu();
+  requestAnimationFrame(() => positionRowMenu());
 }
 
 function chooseRowMenuItem(index = rowMenu.index) {
   const item = visibleRowMenuItems()[index];
   if (!item || item.disabled) return;
   const action = item.action;
-  closeRowMenu({ restoreFocus: false });
+  closeRowMenu();
   action();
 }
 
@@ -1402,8 +1277,6 @@ async function dismissSession(id) {
   const key = actionKey(id, "dismiss");
   if (sessionActions.has(key)) return;
   const target = serverById(id);
-  const shouldRestoreFocus = focusedServerId() === id;
-  const focusFallback = adjacentDisplayId(id);
   sessionActions.add(key);
   render();
   try {
@@ -1419,9 +1292,6 @@ async function dismissSession(id) {
   } finally {
     sessionActions.delete(key);
     render();
-    if (shouldRestoreFocus) {
-      focusBestServerRow(target && target.agentOnly ? focusFallback : selected, focusFallback);
-    }
   }
 }
 
@@ -1472,8 +1342,6 @@ async function closeServer(id) {
   const target = displayed().find((srv) => srv.id === id);
   const owned = isOwned(target);
   const wasPending = pending.some((p) => p.id === id);
-  const shouldRestoreFocus = focusedServerId() === id;
-  const focusFallback = adjacentDisplayId(id);
   closing.add(id);
   render();
   try {
@@ -1493,14 +1361,12 @@ async function closeServer(id) {
   } finally {
     closing.delete(id);
     render();
-    if (shouldRestoreFocus) focusBestServerRow(selected, focusFallback);
   }
 }
 
 async function retryServer(id) {
   const key = actionKey(id, "retry");
   if (sessionActions.has(key) || spawning) return;
-  const shouldRestoreFocus = focusedServerId() === id;
   sessionActions.add(key);
   closing.add(id);
   pending = pending.filter((p) => p.id !== id);
@@ -1517,7 +1383,6 @@ async function retryServer(id) {
     closing.delete(id);
     sessionActions.delete(key);
     render();
-    if (shouldRestoreFocus) focusBestServerRow(selected);
   }
 }
 
@@ -1550,52 +1415,6 @@ async function selectServer(id) {
     return false;
   } finally {
     render();
-  }
-}
-
-function handleRowKeydown(ev, row, id) {
-  if (ev.target && ev.target.closest && ev.target.closest("button")) return;
-  const plainKey = ev.metaKey || ev.ctrlKey || ev.altKey ? "" : ev.key.toLowerCase();
-  if (ev.key === "Enter" || ev.key === " ") {
-    ev.preventDefault();
-    activateServer(id);
-  } else if (ev.key === "ContextMenu" || (ev.shiftKey && ev.key === "F10")) {
-    ev.preventDefault();
-    const rect = row.getBoundingClientRect();
-    openRowMenu(id, rect.left + 24, rect.top + Math.min(rect.height - 4, 32), row);
-  } else if (plainKey === "m") {
-    ev.preventDefault();
-    toggleMuteRow(id);
-  } else if (plainKey === "s") {
-    ev.preventDefault();
-    toggleSoloRow(id);
-  } else if (plainKey === "b") {
-    ev.preventDefault();
-    openRowInBrowser(id);
-  } else if (plainKey === "n") {
-    ev.preventDefault();
-    renameRow(id);
-  } else if (plainKey === "r") {
-    ev.preventDefault();
-    retryRow(id);
-  } else if (plainKey === "d") {
-    ev.preventDefault();
-    dismissRow(id);
-  } else if (ev.key === "Backspace" || ev.key === "Delete") {
-    ev.preventDefault();
-    removeRow(id);
-  } else if (ev.key === "ArrowDown") {
-    ev.preventDefault();
-    focusAdjacent(row, 1);
-  } else if (ev.key === "ArrowUp") {
-    ev.preventDefault();
-    focusAdjacent(row, -1);
-  } else if (ev.key === "Home") {
-    ev.preventDefault();
-    focusBoundary("first");
-  } else if (ev.key === "End") {
-    ev.preventDefault();
-    focusBoundary("last");
   }
 }
 
@@ -1704,23 +1523,6 @@ function removeRow(id) {
   }
 }
 
-function focusAdjacent(row, delta) {
-  const rows = serverRows();
-  const index = rows.indexOf(row);
-  if (index < 0 || !rows.length) return;
-  rows[(index + delta + rows.length) % rows.length].focus();
-}
-
-function focusBoundary(edge) {
-  const rows = serverRows();
-  const target = edge === "last" ? rows[rows.length - 1] : rows[0];
-  if (target) target.focus();
-}
-
-function serverRows() {
-  return Array.from(railEl.querySelectorAll(".srv"));
-}
-
 async function refreshServers() {
   const generation = ++refreshGeneration;
   let nextServers = [];
@@ -1800,31 +1602,10 @@ init();
 setInterval(render, 1000); // tick the "waiting Nm" age
 
 if (paletteInput) {
-  const handlePaletteKey = (ev) => {
-    ev.preventDefault();
-    ev.stopPropagation();
-  };
-
   paletteInput.addEventListener("input", () => {
     paletteQuery = paletteInput.value;
     paletteIndex = 0;
     renderPalette();
-  });
-  paletteInput.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape") {
-      handlePaletteKey(ev);
-      closePalette();
-    } else if (ev.key === "ArrowDown") {
-      handlePaletteKey(ev);
-      movePalette(1);
-    } else if (ev.key === "ArrowUp") {
-      handlePaletteKey(ev);
-      movePalette(-1);
-    } else if (ev.key === "Enter") {
-      handlePaletteKey(ev);
-      const choice = paletteCandidates().slice(0, 12)[paletteIndex];
-      if (choice) choosePalette(choice.srv.id);
-    }
   });
 }
 
@@ -1834,67 +1615,11 @@ if (paletteEl) {
   });
 }
 
-if (rowMenuEl) {
-  rowMenuEl.addEventListener("keydown", (ev) => {
-    ev.stopPropagation();
-    const key = ev.key.toLowerCase();
-    if (ev.key === "Escape") {
-      ev.preventDefault();
-      closeRowMenu();
-    } else if (ev.key === "ArrowDown") {
-      ev.preventDefault();
-      moveRowMenu(1);
-    } else if (ev.key === "ArrowUp") {
-      ev.preventDefault();
-      moveRowMenu(-1);
-    } else if (ev.key === "Home") {
-      ev.preventDefault();
-      rowMenu.index = 0;
-      renderRowMenu();
-    } else if (ev.key === "End") {
-      ev.preventDefault();
-      rowMenu.index = Math.max(0, visibleRowMenuItems().length - 1);
-      renderRowMenu();
-    } else if (ev.key === "Enter" || ev.key === " ") {
-      ev.preventDefault();
-      chooseRowMenuItem();
-    } else if (!ev.metaKey && !ev.ctrlKey && !ev.altKey) {
-      const index = visibleRowMenuItems().findIndex((item) => token(item.shortcut) === key);
-      if (index >= 0) {
-        ev.preventDefault();
-        chooseRowMenuItem(index);
-      }
-    }
-  });
-}
-
 document.addEventListener("mousedown", (ev) => {
   if (!rowMenu.open || !rowMenuEl) return;
-  if (!rowMenuEl.contains(ev.target)) closeRowMenu({ restoreFocus: false });
+  if (!rowMenuEl.contains(ev.target)) closeRowMenu();
 });
 
 window.addEventListener("resize", () => {
-  if (rowMenu.open) closeRowMenu({ restoreFocus: false });
-});
-
-document.addEventListener("keydown", (ev) => {
-  const key = ev.key.toLowerCase();
-  if (rowMenu.open) {
-    if (ev.key === "Escape") {
-      ev.preventDefault();
-      closeRowMenu();
-    }
-    return;
-  }
-  if (paletteOpen) {
-    if (ev.key === "Escape") {
-      ev.preventDefault();
-      closePalette();
-    }
-    return;
-  }
-
-  if (ev.key === "Escape" && statusOverride) {
-    clearStatusOverride();
-  }
+  if (rowMenu.open) closeRowMenu();
 });
