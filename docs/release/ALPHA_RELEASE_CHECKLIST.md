@@ -80,6 +80,8 @@ closed or explicitly accepted.
   `./scripts/check-support-decision.sh`.
 - [ ] Choose whether the `Fleet` name and icon are alpha placeholders or stable
   public assets in `docs/release/OWNER_DECISION_RECORD.md`.
+- [ ] Run `./scripts/check-branding-decision.sh` to verify the branding choice,
+  release-notes Branding field, and replaceable source-icon contract agree.
 - [ ] Draft GitHub pre-release notes from
   `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` and remove all placeholders.
 - [ ] Run the release-notes checker with the expected commit:
@@ -215,8 +217,10 @@ closed or explicitly accepted.
   results or an accepted skipped-review risk.
 - `scripts/check-support-decision.sh` validates that the approved support
   commitment matches `SUPPORT.md`, the README, and the release notes template.
-- The release-notes checker requires a concrete branding line, so the first
-  GitHub pre-release cannot leave name/icon stability as an unresolved choice.
+- `scripts/check-branding-decision.sh` validates the approved branding
+  stability choice against the release-notes Branding field and the replaceable
+  source-icon contract. The release-notes checker then requires the final
+  GitHub pre-release to use a concrete branding value.
 - Root `README.md` is now a public alpha front door; the long engineering spec
   was moved to `docs/ENGINEERING_SPEC.md`.
 - `crates/fleet-host/artifacts/**` is now a local ignored artifact area; raw

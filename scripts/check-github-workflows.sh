@@ -56,6 +56,8 @@ require_text "$release" './scripts/test-secret-release-check.sh' "secret exposur
 require_text "$release" './scripts/test-doc-link-check.sh' "documentation link self-test"
 require_text "$release" './scripts/test-public-tree-size-check.sh' "public tree size self-test"
 require_text "$release" './scripts/test-lockfile-policy-check.sh' "lockfile policy self-test"
+require_text "$release" './scripts/test-branding-decision-check.sh' \
+  "branding decision self-test"
 require_text "$release" './scripts/test-dependency-review-runner.sh' \
   "dependency review runner self-test"
 require_text "$release" './scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md' \

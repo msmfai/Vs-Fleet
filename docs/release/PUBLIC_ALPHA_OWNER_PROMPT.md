@@ -119,6 +119,8 @@ is still `TODO`, ambiguous, or only a recommendation.
     Recommended alpha default: decide whether `Fleet` is stable now; treat the
     icon as an alpha asset unless you want to freeze it publicly.
     Owner answer:
+    Follow-up: run `./scripts/check-branding-decision.sh` after copying this
+    choice into `OWNER_DECISION_RECORD.md`.
 
 ## Binary-Only Decisions
 

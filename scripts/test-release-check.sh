@@ -103,6 +103,7 @@ for script in \
   scripts/run-dependency-review.sh \
   scripts/check-dependabot-config.sh \
   scripts/check-support-decision.sh \
+  scripts/check-branding-decision.sh \
   scripts/test-owner-decision-gate.sh \
   scripts/test-draft-owner-decisions.sh \
   scripts/test-public-alpha-decision-packet.sh \
@@ -131,6 +132,7 @@ for script in \
   scripts/test-dependency-review-runner.sh \
   scripts/test-dependabot-config-check.sh \
   scripts/test-support-decision-check.sh \
+  scripts/test-branding-decision-check.sh \
   scripts/test-release-check.sh \
   scripts/check-release-notes.sh \
   scripts/test-release-notes-check.sh
