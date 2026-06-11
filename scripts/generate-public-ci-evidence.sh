@@ -48,6 +48,13 @@ for pair in "CI workflow run:$ci_run" "Release Readiness workflow run:$release_r
   fi
 done
 
+ci_repo="${ci_run%/actions/runs/*}"
+release_repo="${release_run%/actions/runs/*}"
+if [ "$ci_repo" != "$release_repo" ]; then
+  echo "FAIL: CI and Release Readiness workflow run URLs must belong to the same GitHub repository" >&2
+  exit 1
+fi
+
 if [ "$output" != "-" ] && [ -f "$output" ] &&
   ! rg -q 'Public CI evidence status: PENDING|TODO|TBD|PLACEHOLDER|not yet run' "$output" &&
   [ "${FLEET_PUBLIC_CI_EVIDENCE_FORCE:-0}" != "1" ]; then

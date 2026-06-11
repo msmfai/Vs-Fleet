@@ -22,6 +22,15 @@ Decision record status: APPROVED
 
 ## Required Before Public GitHub Visibility
 
+### 3. Public Namespace
+
+| Surface | Decision |
+|---|---|
+| GitHub org/user | example |
+| GitHub repo name | fleet |
+
+### 4. Alpha Scope
+
 ### 9. Public CI Evidence
 
 - [x] Require GitHub Actions green on the exact branch/commit before public
@@ -122,6 +131,12 @@ fi
 if (cd "$repo" && ./scripts/generate-public-ci-evidence.sh public-alpha "https://gitlab.com/example/fleet/-/pipelines/123" "$readiness_url" HEAD -) >"$TMPDIR/bad-url.out" 2>&1; then
   echo "FAIL: non-GitHub CI run URL should be rejected" >&2
   cat "$TMPDIR/bad-url.out" >&2
+  exit 1
+fi
+
+if (cd "$repo" && ./scripts/generate-public-ci-evidence.sh public-alpha "$ci_url" "https://github.com/other/fleet/actions/runs/123456789" HEAD -) >"$TMPDIR/mixed-repo.out" 2>&1; then
+  echo "FAIL: mixed-repository CI evidence URLs should be rejected" >&2
+  cat "$TMPDIR/mixed-repo.out" >&2
   exit 1
 fi
 
