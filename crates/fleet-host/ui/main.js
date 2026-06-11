@@ -1284,6 +1284,22 @@ function showHostStatus(payload) {
   }, statusClearDelay(level));
 }
 
+function isRecoverableStatus(status) {
+  if (!status || !status.message) return false;
+  const message = status.message.toLowerCase();
+  return (
+    message === "session visible; editor bridge not connected yet"
+    || message === "server is not ready to open"
+    || message.includes("editor bridge not connected")
+    || message.startsWith("open failed:")
+  );
+}
+
+function clearRecoveredStatus() {
+  if (!isRecoverableStatus(statusOverride)) return;
+  clearStatusOverride();
+}
+
 async function setSessionMuted(id, muted) {
   const key = actionKey(id, "mute");
   if (sessionActions.has(key)) return;
@@ -1465,7 +1481,10 @@ async function selectServer(id) {
   render();
   try {
     const opened = await invoke("select_server", { id });
-    if (opened) return true;
+    if (opened) {
+      clearRecoveredStatus();
+      return true;
+    }
     selected = previousSelected;
     desiredSelection = previousDesired;
     desiredAcknowledge = previousDesiredAcknowledge;
@@ -1690,6 +1709,7 @@ window.__fleetSyncSelection = async () => {
     selected = await invoke("selected_server");
     desiredSelection = null;
     desiredAcknowledge = true;
+    if (selected) clearRecoveredStatus();
     render();
   } catch (e) { /* ignore */ }
 };
