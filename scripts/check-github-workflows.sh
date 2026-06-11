@@ -88,12 +88,16 @@ require_text "$release" './scripts/test-workflow-supply-chain-decision-check.sh'
   "workflow supply-chain decision self-test"
 require_text "$release" './scripts/test-github-publication-evidence-check.sh' \
   "GitHub publication evidence self-test"
+require_text "$release" './scripts/test-public-branch-evidence-check.sh' \
+  "public branch evidence self-test"
 require_text "$release" './scripts/test-dependency-review-runner.sh' \
   "dependency review runner self-test"
 require_text "$release" './scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md' \
   "owner decision gate"
 require_text "$release" './scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md' \
   "history exposure gate"
+require_text "$release" './scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md' \
+  "public branch evidence gate"
 require_text "$release" './scripts/secret-release-check.sh' "secret exposure gate"
 require_text "$release" './scripts/check-doc-links.sh' "documentation link gate"
 require_text "$release" './scripts/check-license-intent.sh' "license intent gate"

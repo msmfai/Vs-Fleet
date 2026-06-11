@@ -123,6 +123,9 @@ jobs:
       - name: History release gate self-test
         run: ./scripts/test-history-release-check.sh
 
+      - name: Public branch evidence gate self-test
+        run: ./scripts/test-public-branch-evidence-check.sh
+
       - name: Secret release gate self-test
         run: ./scripts/test-secret-release-check.sh
 
@@ -131,6 +134,9 @@ jobs:
 
       - name: History exposure gate
         run: ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md
+
+      - name: Public branch evidence gate
+        run: ./scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md "$(git rev-parse HEAD)"
 
       - name: Secret exposure gate
         run: ./scripts/secret-release-check.sh

@@ -94,6 +94,7 @@ for required in \
   docs/release/DEPENDENCY_REVIEW_EVIDENCE.md \
   docs/release/GITHUB_PUBLICATION_RUNBOOK.md \
   docs/release/GITHUB_PUBLICATION_EVIDENCE.md \
+  docs/release/PUBLIC_BRANCH_EVIDENCE.md \
   docs/release/PUBLIC_CI_EVIDENCE.md \
   docs/release/ASSET_PROVENANCE.md \
   docs/release/NAME_COLLISION_REVIEW.md \
@@ -124,6 +125,8 @@ for required in \
   scripts/test-public-alpha-decision-packet.sh \
   scripts/history-release-check.sh \
   scripts/test-history-release-check.sh \
+  scripts/check-public-branch-evidence.sh \
+  scripts/test-public-branch-evidence-check.sh \
   scripts/prepare-public-branch.sh \
   scripts/test-prepare-public-branch.sh \
   scripts/secret-release-check.sh \
@@ -242,6 +245,9 @@ else
   if ! scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md; then
     fail=1
   else
+    if ! scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md "$(git rev-parse HEAD)"; then
+      fail=1
+    fi
     if ! scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
       fail=1
     fi

@@ -38,6 +38,9 @@ Do not publish a public alpha until these are true:
   record explicitly accepts current branch history exposure.
 - If current history is not accepted, `./scripts/prepare-public-branch.sh` is
   used to create a single-commit public branch from the approved source tree.
+- If current history is not accepted, `docs/release/PUBLIC_BRANCH_EVIDENCE.md`
+  records the source commit, public branch, public root commit, and passing
+  history check.
 - Rust crate manifests retain `publish = false` and extension package manifests
   retain `"private": true` unless the owner decision record explicitly changes
   distribution scope away from source-only alpha.
@@ -254,6 +257,7 @@ not acceptable, create a single-commit public branch:
 ```sh
 ./scripts/prepare-public-branch.sh public-alpha HEAD
 ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md public-alpha
+./scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md "$(git rev-parse HEAD)"
 FLEET_RELEASE_HISTORY_REF=public-alpha ./scripts/release-check.sh
 ```
 
