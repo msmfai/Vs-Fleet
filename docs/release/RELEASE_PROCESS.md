@@ -25,6 +25,8 @@ Do not publish a public alpha until these are true:
   history.
 - `./scripts/history-release-check.sh` passes, or the approved owner decision
   record explicitly accepts current branch history exposure.
+- If current history is not accepted, `./scripts/prepare-public-branch.sh` is
+  used to create a single-commit public branch from the approved source tree.
 - Rust crate manifests retain `publish = false` and extension package manifests
   retain `"private": true` unless the owner decision record explicitly changes
   distribution scope away from source-only alpha.
@@ -170,7 +172,8 @@ Do not publish a public alpha until these are true:
    ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md
    ```
 
-   If it fails, either publish a cleaned/squashed first public branch or approve
+   If it fails, either publish a cleaned/squashed first public branch using
+   `./scripts/prepare-public-branch.sh <public-branch> <source-ref>` or approve
    the owner decision record choice that accepts current branch history exposure.
 
 10. Run the secret exposure audit:
@@ -222,7 +225,14 @@ Do not publish a public alpha until these are true:
 Before making a previously private branch public, decide whether to squash or
 rewrite history. Raw artifacts were removed from the current tree, but prior
 commits may still contain local paths or failed visual/eval evidence. If that is
-not acceptable, publish a cleaned history rather than the full working branch.
+not acceptable, create a single-commit public branch:
+
+```sh
+./scripts/prepare-public-branch.sh public-alpha HEAD
+./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md public-alpha
+FLEET_RELEASE_HISTORY_REF=public-alpha ./scripts/release-check.sh
+```
+
 Use `./scripts/history-release-check.sh` as the mechanical audit before first
 public visibility.
 

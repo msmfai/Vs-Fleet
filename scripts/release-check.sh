@@ -2,6 +2,7 @@
 set -euo pipefail
 
 fail=0
+history_ref="${FLEET_RELEASE_HISTORY_REF:---all}"
 
 check_tracked_absent() {
   local pattern=$1
@@ -103,6 +104,8 @@ for required in \
   scripts/test-owner-decision-gate.sh \
   scripts/history-release-check.sh \
   scripts/test-history-release-check.sh \
+  scripts/prepare-public-branch.sh \
+  scripts/test-prepare-public-branch.sh \
   scripts/secret-release-check.sh \
   scripts/test-secret-release-check.sh \
   scripts/check-license-decision.sh \
@@ -179,7 +182,7 @@ if [ ! -f docs/release/OWNER_DECISION_RECORD.md ]; then
   echo "FAIL: missing docs/release/OWNER_DECISION_RECORD.md"
   fail=1
 else
-  if ! scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md; then
+  if ! scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md "$history_ref"; then
     fail=1
   fi
   if ! scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md; then

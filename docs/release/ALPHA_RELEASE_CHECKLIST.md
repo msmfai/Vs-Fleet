@@ -49,6 +49,12 @@ closed or explicitly accepted.
   `./scripts/history-release-check.sh`, `./scripts/secret-release-check.sh`,
   and requires either cleaned history or explicit owner acceptance of current
   branch history exposure.
+- [ ] If current history is not accepted, create the public branch with
+  `./scripts/prepare-public-branch.sh <public-branch> <source-ref>` and run
+  `./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md <public-branch>`.
+  In the same private clone, run
+  `FLEET_RELEASE_HISTORY_REF=<public-branch> ./scripts/release-check.sh` for the
+  aggregate gate.
 - [ ] Run `./scripts/run-dependency-review.sh` for the exact public branch, or
   explicitly accept skipping dependency review in the owner decision record.
 - [ ] Record dependency review evidence in

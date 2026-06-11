@@ -66,4 +66,9 @@ EOF
 
 expect_pass "accepted current history exposure" "$owner"
 
+clean_branch="$(git -C "$repo" commit-tree HEAD^{tree} -m "clean public snapshot")"
+git -C "$repo" branch public-alpha "$clean_branch"
+
+expect_pass "specific clean public ref ignores private branch history" "$owner" public-alpha
+
 echo "History release gate tests passed."
