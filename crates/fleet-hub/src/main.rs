@@ -1,4 +1,4 @@
-//! Fleet Hub binary entry-point (PLAN S2).
+//! Fleet Hub binary entry-point (the engineering spec).
 //!
 //! Starts the Hub daemon: acquires the single-instance lock (D2), binds a
 //! WebSocket listener (always) plus a unix socket on `cfg(unix)` (D7), and
@@ -30,7 +30,7 @@ async fn main() -> std::process::ExitCode {
         return std::process::ExitCode::SUCCESS;
     }
 
-    // Structured logging (PLAN S2 "structured logging"). Honors RUST_LOG.
+    // Structured logging (the engineering spec "structured logging"). Honors RUST_LOG.
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()

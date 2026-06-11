@@ -1,13 +1,12 @@
-//! Integration tests: the S17 shim-aware Claude adapter (node CLUSETERM) vs
-//! **recorded hook-event JSON fixtures** on disk (gate G2 "each adapter vs
-//! recorded fixtures").
+//! Integration tests: the S17 shim-aware Claude adapter  vs
+//! **recorded hook-event JSON fixtures** on disk (//! recorded fixtures").
 //!
 //! These do NOT require a real claude/VS Code install — the fixtures under
 //! `tests/fixtures/claude_shim/` are recorded Claude `PermissionRequest` hook
 //! payloads (request + allow/deny/structured responses) plus the lifecycle hooks
 //! around them.
 //!
-//! The acceptance asserted here (PLAN S17 / §21.3): the **same** recorded
+//! The acceptance asserted here (the engineering spec / §21.3): the **same** recorded
 //! `PermissionRequest` approval fixture yields **`confidence: inferred`** when the
 //! run is in the native-UI surface and **`confidence: high`** when it is launched
 //! via the integrated-terminal shim (Use-Terminal mode). State + urgency are

@@ -1,4 +1,4 @@
-//! Transport abstraction for the real reporter (PLAN S5, D7).
+//! Transport abstraction for the real reporter (the engineering spec).
 //!
 //! The reporter's reconnect/backoff/buffer logic must be testable without real
 //! sockets, while production uses a WebSocket (always) or a unix-domain socket

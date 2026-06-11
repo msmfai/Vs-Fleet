@@ -1,4 +1,4 @@
-// Track C — repo / scale / language scenarios (§7 of PLAN.md).
+// Track C — repo / scale / language scenarios (§7 of the local eval plan).
 //
 // One self-contained file; the registry auto-discovers it via `scenarios/*.mjs`.
 // Each scenario only resets an env into a known state — behaviours (Track B) assert.

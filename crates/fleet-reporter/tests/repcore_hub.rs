@@ -1,11 +1,11 @@
-//! Integration tests for the real reporter framework (REPCORE / PLAN S5)
+//! Integration tests for the real reporter framework (REPCORE / the engineering spec)
 //! against the **actual** `fleet-hub` server — not the in-memory transport.
 //!
 //! These prove the framework rides the existing Hub APIs:
 //! - registration handshake (session appears in the Hub's projection),
 //! - run deltas land and the rollup updates,
 //! - **kill + restore the Hub → the reporter reconnects and reconciles** (the
-//!   session reappears after a Hub restart, PLAN S5 demo),
+//!   session reappears after a Hub restart, demo),
 //! - a confirmed exit yields a `dead` run (never declared dead just because the
 //!   Hub link dropped).
 
@@ -169,7 +169,7 @@ impl HubHandle {
 
 #[tokio::test]
 async fn reconnects_and_reconciles_after_hub_restart() {
-    // PLAN S5 demo: "kill+restore Hub → reconciles". Bind the Hub on a fixed
+    // demo: "kill+restore Hub → reconciles". Bind the Hub on a fixed
     // port, register, KILL the Hub (drop its whole runtime), restart on the SAME
     // port, and assert the reporter reconnects (with backoff), re-registers, and
     // replays its buffered delta — never giving up, never reporting the run dead.

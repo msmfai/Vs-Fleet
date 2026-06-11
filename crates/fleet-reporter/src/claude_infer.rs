@@ -1,4 +1,4 @@
-//! Claude **inferred waiting** detection (PLAN S16 / node `CLINFER`).
+//! Claude **inferred waiting** detection.
 //!
 //! Native-UI / no-shim path. In the native extension UI panel Claude's
 //! `PermissionRequest` / `Notification` hooks do **not** fire (PLAN s1; reproduced
@@ -34,7 +34,7 @@
 //! inference's *quality*, not its confidence (invariant 5). The JSONL schema is
 //! community-documented/version-sensitive, so the parser is **best-effort behind a
 //! schema-drift guard** that degrades to [`Corroboration::Unknown`] rather than
-//! panicking or overstating (PLAN S16). `Unknown` never suppresses a real waiting;
+//! panicking or overstating. `Unknown` never suppresses a real waiting;
 //! only the positive `Resolved` verdict vetoes the debounce.
 //!
 //! ## Confidence honesty (invariant 5), structural

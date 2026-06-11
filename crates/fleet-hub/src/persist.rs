@@ -1,4 +1,4 @@
-//! Durable persistence for the Hub (PLAN S7, D3).
+//! Durable persistence for the Hub (the engineering spec).
 //!
 //! The Hub is an in-memory authority (the [`MergeEngine`](crate::merge)), but a
 //! restart must restore every session/run exactly as it stood. We do that with
@@ -47,7 +47,7 @@ use serde::{Deserialize, Serialize};
 use crate::merge::MergeEngine;
 use crate::reclaim::{Decision, DurableId, ReclaimTable};
 
-/// Default reap grace before a `dead` run is GC'd (PLAN D17: 1 hour).
+/// Default reap grace before a `dead` run is GC'd (the design: 1 hour).
 pub const DEFAULT_REAP_GRACE: Duration = Duration::from_secs(60 * 60);
 
 /// One persisted mutation. Mirrors the merge-engine vocabulary so replay is a
@@ -504,7 +504,7 @@ impl StateStore {
     }
 
     /// Reap `dead` runs whose `updated_at` is older than `grace` relative to
-    /// `now` (PLAN D17). Each reaped run is appended as a `run.remove` so the GC
+    /// `now`. Each reaped run is appended as a `run.remove` so the GC
     /// survives restart. `now`/`updated_at` are ISO-8601 lexicographic — UTC
     /// `Z` timestamps compare correctly as strings, which is the format the
     /// protocol emits.

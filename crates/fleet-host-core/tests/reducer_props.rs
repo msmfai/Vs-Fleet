@@ -1,5 +1,4 @@
-//! Property tests for the inbox reducer (PLAN S19, WORK_GRAPH `◆G3`:
-//! "UI reducer determinism (snapshot+delta→view)").
+//! Property tests for inbox reducer determinism (snapshot+delta→view).
 //!
 //! These complement the in-module unit tests with randomized event sequences:
 //! 1. **Determinism** — folding the *same* sequence twice yields identical views.
@@ -116,7 +115,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(400))]
 
     /// Determinism: the same event sequence yields identical views — the core
-    /// `◆G3` reducer-determinism criterion, independent of any window.
+    /// the reducer test reducer-determinism criterion, independent of any window.
     #[test]
     fn reduce_is_deterministic(seq in arb_event_seq()) {
         let mut a = InboxModel::new();

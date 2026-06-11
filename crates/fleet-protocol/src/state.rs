@@ -1,4 +1,4 @@
-//! Core state / urgency / confidence enums (README §7.2, §7.3; PLAN D9).
+//! Core state / urgency / confidence enums (README §7.2, §7.3;.
 //!
 //! Wire encoding: lowercase, kebab-cased strings (e.g. `idle-done`). Every
 //! variant is exhaustively round-trip tested in the crate test suite.

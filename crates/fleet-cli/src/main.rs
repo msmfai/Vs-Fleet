@@ -1,4 +1,4 @@
-//! Fleet CLI binary — `fleet ls` (PLAN S3, CLI node).
+//! Fleet CLI binary — `fleet ls` (the engineering spec).
 //!
 //! **Transport (D7):** connects to the Hub via unix socket (`cfg(unix)` fast
 //! path) or WebSocket fallback, sends `subscribe`, and renders the snapshot +

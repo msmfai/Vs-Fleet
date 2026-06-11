@@ -1,4 +1,4 @@
-//! Reporter-side durable identity (PLAN S6 / node IDENTITY).
+//! Reporter-side durable identity.
 //!
 //! This is the agent-side half of Fleet's **custom durable identity** (D4 — no
 //! external broker). Each run declares a **fixed durable id** anchored on its
@@ -108,7 +108,7 @@ pub struct Stamp {
 /// run's epoch. A reporter that observes a *genuinely new* run — a relaunch that
 /// reuses a durable id (`clean_start`) — calls [`Self::fresh_start`], which bumps
 /// the epoch so the Hub wipes the prior series. Distinguishing the two is what
-/// PLAN S6 means by "distinguish reconnect (reclaim, clean-start=false) from
+/// the engineering spec describes by "distinguish reconnect (reclaim, clean-start=false) from
 /// fresh-start (new id, wipe)".
 #[derive(Debug, Default)]
 pub struct IdentityLedger {

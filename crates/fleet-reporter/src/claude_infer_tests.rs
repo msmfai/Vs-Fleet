@@ -1,4 +1,4 @@
-// Inline unit tests for the S16 inferred-waiting Claude adapter (node CLINFER),
+// Inline unit tests for the S16 inferred-waiting Claude adapter ,
 // `include!`d from `claude_infer.rs`. Cover the locked S16 acceptance --
 // PreToolUse-without-Stop debounce -> inferred waiting+approval, confidence:
 // inferred, with exact debounce timing -- plus the transcript-JSONL drift-guard

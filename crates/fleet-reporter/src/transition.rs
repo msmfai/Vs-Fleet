@@ -1,4 +1,4 @@
-//! Pure, sync scripted-transition generator for the fake reporter (PLAN S4).
+//! Pure, sync scripted-transition generator for the fake reporter (the engineering spec).
 //!
 //! This module is completely free of async, network I/O, and hub-crate
 //! dependencies. It operates solely on [`fleet_protocol`] types — the shared
@@ -6,12 +6,12 @@
 //! module maps to hub wire messages.
 //!
 //! Being pure makes it exhaustively unit-testable without standing up a Hub or
-//! tokio runtime: the tests here are the "heavy unit tests" the PLAN S4 node
+//! tokio runtime: the tests here are the "heavy unit tests" the the engineering spec node
 //! requires for the scripted-transition generator.
 //!
 //! ## Scripted lifecycle
 //!
-//! The spec (PLAN S4) requires:
+//! The spec (the engineering spec) requires:
 //! ```text
 //! working → waiting(approval) → working → dead
 //! ```

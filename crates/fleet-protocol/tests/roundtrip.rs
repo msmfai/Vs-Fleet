@@ -1,4 +1,4 @@
-//! Heavy round-trip property tests (G0 gate criterion: proptest round-trip on
+//! Heavy round-trip property tests (test criterion: proptest round-trip on
 //! EVERY `Session`/`AgentRun`/event/command variant).
 //!
 //! For each generated value `v`, we assert two invariants:

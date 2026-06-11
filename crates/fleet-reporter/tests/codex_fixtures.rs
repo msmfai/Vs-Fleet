@@ -1,6 +1,5 @@
 //! Integration tests: the Codex detection adapter vs **recorded hook-event JSON
-//! fixtures** on disk (PLAN S11–S13 / node CODEX; gate G2 "each adapter vs
-//! recorded fixtures").
+//! fixtures** on disk (the engineering spec ;//! recorded fixtures").
 //!
 //! These do NOT require a real codex/VS Code install — the fixtures under
 //! `tests/fixtures/codex/` are recorded Codex hook payloads (shapes validated

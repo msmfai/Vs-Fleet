@@ -1,5 +1,5 @@
 //! Async fake reporter: connects outbound to the Hub and drives the scripted
-//! transition sequence with configurable inter-step delays (PLAN S4).
+//! transition sequence with configurable inter-step delays (the engineering spec).
 //!
 //! This is the runtime component of the fake reporter. The *generation* of the
 //! sequence lives in [`crate::transition::TransitionScript`] (pure, sync) so

@@ -1,8 +1,7 @@
-//! Mute / solo command derivation — slice S25 (node `MUTE`).
+//! Mute / solo command derivation.
 //!
 //! S25 lets the inbox **mute** a session (state still shown, pings silenced) or
-//! **solo** it (mute all others), consistent across CLI + GUI (PLAN S25,
-//! WORK_GRAPH §3 gate `◆G3`: "mute/solo command round-trips"). The Hub owns the
+//! **solo** it (mute all others), consistent across CLI + GUI. The Hub owns the
 //! authoritative `muted`/`soloed` flags (they live on [`fleet_protocol::Session`])
 //! and broadcasts a `session.updated` whenever they change; faces only issue the
 //! command and reflect the echoed state.
@@ -14,7 +13,7 @@
 //! "Mute silences a session" means its pings (notifications, badge, attention
 //! signal) are suppressed. **State is still visible** — a muted waiting session
 //! still shows `⏸` in the list; it just never fires a desktop notification or
-//! raises the inbox badge (PLAN S25, README §15.4). This is a *display*
+//! raises the inbox badge. This is a *display*
 //! decision, not a protocol decision: the Hub stores the flag; the face decides
 //! whether to fire a ping.
 //!
@@ -45,7 +44,7 @@
 //! factored here (not in the window code) so they are unit-testable and
 //! consistent across CLI + GUI.
 //!
-//! ## Unit tests (mandatory per the node brief and `◆G3`)
+//! ## Unit tests
 //!
 //! - Mute hides pings but not state.
 //! - Solo inverts: only the soloed session pings; all others are suppressed.

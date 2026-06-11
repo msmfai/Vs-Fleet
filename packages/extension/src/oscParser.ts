@@ -10,7 +10,7 @@
  *
  * The VS Code terminal renderer can drop OSC frames (e.g. OSC 9/777 shell
  * integration sequences) under certain timing conditions — the renderer and the
- * extension host are in separate processes and the data races. PLAN §1 job 3:
+ * extension host are in separate processes and the data races. engineering spec §1 job 3:
  * "recover dropped OSC 9/777 via the stable shell-integration read-stream".
  * OSC 99 is included for future-proofing (vscode #294247).
  *
@@ -19,7 +19,7 @@
  * This module is PURE (no I/O, no vscode imports). The caller (`readStream.ts`)
  * subscribes to `onDidStartTerminalShellExecution` and passes chunks from
  * `execution.createStream().read()` into `OscParser`. No `onDidWriteTerminalData`
- * (permanently proposed — PLAN §1 / D14). Engine ^1.93.0, Open-VSX-publishable.
+ * (permanently proposed — engineering spec §1 / D14). Engine ^1.93.0, Open-VSX-publishable.
  *
  * ── OSC SEQUENCE GRAMMAR ───────────────────────────────────────────────────────
  *
@@ -55,11 +55,11 @@
  *
  *   OSC 99  — future VS Code shell integration (vscode #294247); treated as an
  *             opaque payload delivered to the caller for forward-compatibility.
- *             (This issues the "future-proof for OSC 99" requirement from PLAN §1.)
+ *             (This issues the "future-proof for OSC 99" requirement from engineering spec §1.)
  *
  * ── ERROR HANDLING ─────────────────────────────────────────────────────────────
  *
- * Malformed frames are silently skipped (never panic, never mis-state — PLAN §2
+ * Malformed frames are silently skipped (never panic, never mis-state — engineering spec §2
  * G2 criterion: "schema-drift fuzz → degrades gracefully"). Each frame is parsed
  * independently; a bad frame does not corrupt subsequent parsing.
  *

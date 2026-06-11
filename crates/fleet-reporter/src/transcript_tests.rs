@@ -1,10 +1,9 @@
-// Inline unit tests for the Claude transcript-JSONL corroboration reader
-// (PLAN S16 / node CLINFER). Included from `transcript.rs` via `include!`.
+// Inline unit tests for the Claude transcript-JSONL corroboration reader.
+// Included from `transcript.rs` via `include!`.
 //
-// This is the **S16 JSONL channel** drift-guard — the test surface the G2 gate
-// criterion names explicitly ("schema-drift fuzz: malformed JSONL → degrades,
-// never panics or overstates"). It is distinct from the hook-JSON channel drift
-// tests (`claude_fixtures::malformed_line_creates_no_ghost`,
+// This is the JSONL channel drift-guard: malformed JSONL degrades, never panics
+// or overstates. It is distinct from the hook-JSON channel drift tests
+// (`claude_fixtures::malformed_line_creates_no_ghost`,
 // `codex_tests::malformed_json_is_error_not_panic`), which guard a different wire
 // surface.
 //

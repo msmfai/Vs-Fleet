@@ -1,4 +1,4 @@
-//! Durable-identity reclaim + per-run sequence gating (PLAN S6 / node IDENTITY).
+//! Durable-identity reclaim + per-run sequence gating.
 //!
 //! This is the Hub-side half of Fleet's **custom durable identity** (D4 — no
 //! external broker). A reporter run declares a **fixed durable id** anchored on

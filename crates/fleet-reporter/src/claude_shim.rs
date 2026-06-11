@@ -1,4 +1,4 @@
-//! Claude high-confidence detection in the **shim terminal** (PLAN S17 / node
+//! Claude high-confidence detection in the **shim terminal** (the engineering spec / node
 //! CLUSETERM).
 //!
 //! This is the *Use-Terminal mode* Claude adapter. It is the high-confidence
@@ -7,7 +7,7 @@
 //! (S15). What S15 deliberately *cannot* do — model `waiting`/approval — this
 //! module does, but **only when the launch context proves the shim is in force**.
 //!
-//! ## Why a launch-context-aware adapter (PLAN §1, the confidence boundary)
+//! ## Why a launch-context-aware adapter (engineering spec §1, the confidence boundary)
 //!
 //! Claude's hook surface is **surface-dependent** (reproduced through ext
 //! v2.1.143, May 2026):
@@ -15,12 +15,12 @@
 //! - **Integrated-terminal, launched via the Fleet PATH shim** (= "Use-Terminal
 //!   mode", S17). The shim launches the *real* `claude` with injected
 //!   `--session-id` / `--settings` (and any opt-in reliability flags surfaced to
-//!   the user, never silent — §3 invariant 3 / PLAN §1). In this surface Claude's
+//!   the user, never silent — §3 invariant 3 / engineering spec §1). In this surface Claude's
 //!   **`PermissionRequest` hook fires** and is an authoritative "I am blocked on
 //!   you" signal. ⇒ `waiting` + `approval`, **[`Confidence::High`]**.
 //! - **Native extension UI panel** (no shell, no shim) or **outside the editor**.
 //!   `Notification`, `PermissionRequest`, *and* `PostToolUse` do **not** fire
-//!   (anthropics/claude-code #31285 / PLAN §1). So waiting cannot be observed
+//!   (anthropics/claude-code #31285 / engineering spec §1). So waiting cannot be observed
 //!   authoritatively; it is *inferred* by S16 ([`crate::claude_infer`], `CLINFER`)
 //!   ⇒ **[`Confidence::Inferred`]**.
 //!
@@ -53,7 +53,7 @@ use crate::claude::{ClaudeHookEvent, ClaudeHookKind, ClaudeParseError};
 use crate::reporter::ReporterCommand;
 
 /// How a Claude run was launched, which **determines whether `PermissionRequest`
-/// is an authoritative signal** (PLAN §1 confidence boundary).
+/// is an authoritative signal** (engineering spec §1 confidence boundary).
 ///
 /// This is supplied out-of-band by the extension/shim (S9/S10): the integrated
 /// terminal that ran the PATH-shim `claude` wrapper is `ShimTerminal`; everything
@@ -226,7 +226,7 @@ fn is_permission_request(kind: &ClaudeHookKind) -> bool {
 /// **plus** the `waiting`/approval path S15 cannot — and stamps the approval's
 /// confidence from the launch context, which is the entire point of S17.
 ///
-/// Guarantees (gate G2 + invariant 5):
+/// Guarantees (invariant 5):
 /// - **No illegal transition** — every edge is modelled; an inapplicable event is
 ///   an idempotent no-op.
 /// - **Confidence honesty (structural)** — [`Confidence::High`] for `waiting` is

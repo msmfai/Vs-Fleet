@@ -1,7 +1,7 @@
-//! Fleet end-to-end integration harness (node `E2E`, engineering spec §21 / WORK_GRAPH §3 `◆G4`).
+//! Fleet end-to-end integration harness for the engineering spec acceptance tests.
 //!
 //! This crate is the v1 **acceptance** layer. It owns no product logic of its own:
-//! it **composes the already-built, gate-green components** — the real Hub
+//! it **composes the already-built components** — the real Hub
 //! (`fleet_hub`: merge engine + SQLite persistence + WebSocket server), the real
 //! detection adapters (`fleet_reporter`: `CodexAdapter`, `ClaudeAdapter`,
 //! `ClaudeInferAdapter`/machine, `ClaudeShimAdapter`), the real host-face

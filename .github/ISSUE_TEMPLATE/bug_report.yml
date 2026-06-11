@@ -1,21 +1,21 @@
 name: Bug report
-description: Report a reproducible problem in the supported local alpha path.
+description: Report a reproducible problem in the supported local path.
 title: "[bug]: "
-labels: ["bug", "alpha"]
+labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Fleet is pre-release alpha software. Please scrub workspace paths, local URLs, logs, screenshots, and command lines before posting.
+        Fleet is experimental software. Please scrub workspace paths, local URLs, logs, screenshots, and command lines before posting.
         Do not report vulnerabilities or exploit details in public issues; use SECURITY.md.
   - type: checkboxes
     id: scope
     attributes:
-      label: Alpha scope
+      label: Supported scope
       options:
         - label: This is about the local macOS Fleet host, local code serve-web sessions, reporter, bridge, or CLI.
           required: true
-        - label: I understand remote/container deployment and binary distribution are experimental unless explicitly documented.
+        - label: I understand remote/container deployment and binary distribution are not currently supported user workflows unless explicitly documented.
           required: true
   - type: input
     id: version
@@ -35,7 +35,7 @@ body:
         - Reporter
         - Hub/protocol
         - CLI
-        - Build/test/release tooling
+        - Build/test tooling
         - Documentation
     validations:
       required: true

@@ -1,4 +1,4 @@
-//! Fleet host core — the **pure-Rust inbox view-model** (PLAN S19, node `UISHELL`).
+//! Fleet host core — the **pure-Rust inbox view-model**.
 //!
 //! The Tauri host face (the GUI inbox) is, like every Fleet face, a *pure
 //! projection* of Hub state (README §4.3 — "all faces see the same thing").
@@ -15,10 +15,9 @@
 //! state, both reuse [`fleet_protocol::rollup`] for the rollup ordering), but
 //! the GUI needs a richer, **window-independent** view-model: glyphs, agent
 //! icons, and the seams (sort / notify / confidence / focus / palette / mute)
-//! that later P3 slices (S20–S25) fill in. Keeping it pure-Rust and free of any
+//! that extend the base view. Keeping it pure-Rust and free of any
 //! `tauri`/window dependency means the **reducer determinism** unit tests run
-//! with no window at all (WORK_GRAPH §3, gate `◆G3`: "UI reducer determinism
-//! (snapshot+delta→view)").
+//! with no window at all.
 //!
 //! ## The stable ViewModel API (what later slices extend)
 //!
@@ -29,8 +28,7 @@
 //!   [`InboxModel::view`] produces the current [`InboxView`]. Determinism: the
 //!   same event sequence always yields the same view, independent of any window.
 //! - The seam modules — [`sort`], [`notify`], [`confidence`], [`focus`],
-//!   [`palette`], [`mute`] — are scaffolded **empty** so the P3 slices fill
-//!   *disjoint files* and never collide. Each states the slice it belongs to.
+//!   [`palette`], [`mute`] — keep view-specific behavior in disjoint files.
 //!
 //! ## Locked decisions honored
 //!
@@ -71,8 +69,7 @@
 
 mod view;
 
-// Seam modules — scaffolded for the P3 face slices (S20–S25). Each is currently
-// an empty stub so the later slices fill *disjoint files* without colliding.
+// Seam modules. Each is pure and unit-testable; the Tauri shell is deliberately thin.
 pub mod confidence;
 pub mod focus;
 pub mod mute;
@@ -80,9 +77,8 @@ pub mod notify;
 pub mod palette;
 pub mod sort;
 
-// Multi-editor descriptor table + launch/focus (PLAN S26, node `EDITORS`). A
-// data-driven table (one row per editor) + a single launcher that **reuses** the
-// per-OS [`focus`] seam — no per-editor branching.
+// Multi-editor descriptor table + launch/focus. A data-driven table (one row
+// per editor) plus a single launcher that reuses the per-OS [`focus`] seam.
 pub mod editors;
 
 pub use view::{AgentIcon, InboxModel, InboxView, SessionTab, TabState};

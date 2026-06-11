@@ -1,4 +1,4 @@
-// Inline unit tests for the S17 shim-aware Claude adapter (node CLUSETERM),
+// Inline unit tests for the S17 shim-aware Claude adapter ,
 // `include!`d from `claude_shim.rs`. They assert the one locked S17 acceptance —
 // the SAME PermissionRequest approval yields `inferred` in the native-UI surface
 // and `high` under the shim terminal — plus the full lifecycle, auto-resolve, the

@@ -1,10 +1,10 @@
-//! Claude Code detection adapter (PLAN S15 / node CLHOOK).
+//! Claude Code detection adapter.
 //!
 //! This is the **hooks-first** Claude Code integration for `working`/`idle`/`done`
 //! detection. It is the sibling of [`crate::codex`] in the same crate and reuses
 //! the same gated reporter framework verbatim (REPCORE/IDENTITY commands), but the
 //! Claude hook surface and its reliability boundary differ in ways the spec calls
-//! out explicitly (PLAN §1, S15):
+//! out explicitly (engineering spec §1, S15):
 //!
 //! ### The hooks Fleet consumes (reliable in **all** surfaces, incl. native UI)
 //!
@@ -25,7 +25,7 @@
 //!   accepted as a pure liveness ping (it is harmless corroboration when it *does*
 //!   fire), but it never flips state.
 //! - **`PermissionRequest` / `Notification`** — these do **not** fire in the
-//!   native extension UI either (PLAN §1; reproduced through ext v2.1.143). So this
+//!   native extension UI either (engineering spec §1; reproduced through ext v2.1.143). So this
 //!   S15 adapter does **not** model `waiting`/approval at all — that is the job of
 //!   [`crate::claude_infer`] (`CLINFER` / S16, inferred from
 //!   `PreToolUse`-without-`Stop` + JSONL drift-guard) and
@@ -47,7 +47,7 @@
 //! ## Durable identity (D4 / §7.5)
 //!
 //! Every Claude hook payload carries `session_id`, validated stable across
-//! `--continue`/`--resume` on the current CLI (PLAN S6). We use it verbatim as the
+//! `--continue`/`--resume` on the current CLI. We use it verbatim as the
 //! run's [`AgentRun::native_id`] durable anchor. No broker, no derived id.
 //!
 //! The module is pure and sync (no I/O, no async, no Hub dependency at the

@@ -1,4 +1,4 @@
-//! Integration tests for durable Hub state (PLAN S7, D3, D17).
+//! Integration tests for durable Hub state (the engineering spec, D3, D17).
 //!
 //! These drive the *public* `HubState` API — the same surface the server's
 //! connection tasks use — proving that a Hub restart (a fresh `HubState::with_db`

@@ -1,6 +1,6 @@
 //! Fleet Reporter library.
 //!
-//! ## The real reporter framework (S5 / node REPCORE)
+//! ## The real reporter framework (S5 )
 //!
 //! The core of this crate is the **real reporter framework**: an outbound
 //! connection to the Hub that **registers** a session, **assigns fleet

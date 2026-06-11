@@ -1,4 +1,4 @@
-//! The inbox view-model and its reducer (PLAN S19).
+//! The inbox view-model and its reducer (the engineering spec).
 //!
 //! [`InboxModel`] holds the host face's authoritative copy of Hub state — a map
 //! of [`Session`]s keyed by `session_id`, plus their insertion order — and folds
@@ -7,7 +7,7 @@
 //!
 //! Everything here is pure: no I/O, no async, no window. The reduce is
 //! deterministic — `apply`ing the same event sequence always yields the same
-//! [`InboxView`] — which is exactly the `◆G3` gate criterion ("UI reducer
+//! [`InboxView`] — which is exactly the the reducer test gate criterion ("UI reducer
 //! determinism (snapshot+delta→view)").
 
 use std::collections::HashMap;
@@ -112,7 +112,7 @@ impl AgentIcon {
     }
 }
 
-/// One vertical session tab in the inbox (PLAN S19: "glyph, agent icon, title,
+/// One vertical session tab in the inbox (the engineering spec: "glyph, agent icon, title,
 /// state").
 ///
 /// This is the **stable view-model row** the host window renders and later
@@ -289,7 +289,7 @@ impl InboxModel {
     ///
     /// Pure and deterministic: the tabs come out in insertion order, each a
     /// projection of its session via [`session_to_tab`]. This is the function
-    /// the `◆G3` reducer-determinism tests pin.
+    /// the the reducer test reducer-determinism tests pin.
     pub fn view(&self) -> InboxView {
         let tabs = self
             .order
@@ -797,7 +797,7 @@ mod tests {
         assert_eq!(t.agent_icon, AgentIcon::Claude);
     }
 
-    // ── reducer determinism (the ◆G3 gate criterion) ─────────────────────────
+    // ── reducer determinism (the test gate criterion) ─────────────────────────
 
     #[test]
     fn reducer_is_deterministic_for_a_fixed_sequence() {

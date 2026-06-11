@@ -1,6 +1,6 @@
-//! Liveness / "dead-decision" state machine (PLAN S5).
+//! Liveness / "dead-decision" state machine (the engineering spec).
 //!
-//! A core REPCORE invariant (PLAN S5): a run is declared **`dead` only on a
+//! A core REPCORE invariant (the engineering spec): a run is declared **`dead` only on a
 //! confirmed exit or a heartbeat timeout** — *never* merely because the Hub
 //! connection dropped. When the transport to the Hub goes down, the reporter is
 //! still observing its agent; it **reconciles on reconnect** rather than
@@ -12,7 +12,7 @@
 //! monotonic logical clock (caller-supplied — no wall-clock, for testability)
 //! and answers one question: **is the agent run confirmed dead?**
 //!
-//! # The two — and only two — ways a run dies (PLAN S5 / §7.3)
+//! # The two — and only two — ways a run dies (the engineering spec / §7.3)
 //! 1. **Confirmed exit** — an authoritative signal that the agent process ended
 //!    (a hook `SessionEnd`, an observed process exit). Immediate.
 //! 2. **Heartbeat timeout** — no agent-liveness signal for longer than the

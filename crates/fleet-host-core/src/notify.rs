@@ -1,13 +1,12 @@
-//! Notification derivation — slice S21 (node `UINOTIFY`).
+//! Notification derivation.
 //!
 //! Maps [`crate::SessionTab`] state transitions to [`NotificationIntent`]s for
-//! the Tauri host shell's notification plugin (PLAN S21 / D16: "OS-native via
-//! Tauri, urgency-tiered"). The trigger is the pure transition
+//! the Tauri host shell's notification plugin. The trigger is the pure transition
 //! `old_tab → new_tab`; the Tauri notification-plugin *call* lives in the host
 //! shell, not here — this module is a pure function, unit-testable with no OS or
 //! window dependency.
 //!
-//! ## Urgency→sound mapping (PLAN S21)
+//! ## Urgency→sound mapping
 //!
 //! Urgency tiers drive **distinct desktop sound names** (not iOS `silent` /
 //! Android Importance channels — those are per-platform APIs not available in the
@@ -26,7 +25,7 @@
 //! is called with no `sound` argument (platform default silence for that
 //! notification).
 //!
-//! ## Auto-resolve (PLAN S21, §21.4)
+//! ## Auto-resolve
 //!
 //! When a tab transitions *out* of `Waiting` (the user answered in the terminal),
 //! [`tab_transition`] returns [`NotificationOutcome::AutoResolve`] — a signal for
@@ -78,7 +77,7 @@ impl NotificationSound {
     ///
     /// These are **distinct** names, not the same system sound, so the OS can play
     /// different audio for each urgency tier. Using the same name for two tiers
-    /// would violate the PLAN S21 requirement for DISTINCT sounds.
+    /// would violate the distinct-sound requirement.
     pub fn as_str(self) -> &'static str {
         match self {
             NotificationSound::Approval => "Fleet.Approval",
@@ -139,7 +138,7 @@ pub enum NotificationOutcome {
 ///
 /// The `IdleDone` tier is intentionally **silent** (returns `None`). The
 /// `Approval` and `Question` tiers return their respective distinct sound names.
-/// This is the tier→sound mapping table required by PLAN S21 / WORK_GRAPH G3.
+/// This is the tier→sound mapping table used by Fleet notifications.
 ///
 /// # Sound distinctness invariant
 ///
@@ -395,7 +394,7 @@ mod tests {
 
     // ── urgency_to_sound mapping table ────────────────────────────────────────
 
-    /// PLAN S21 and WORK_GRAPH G3: approval tier maps to a distinct sound name.
+    /// Approval tier maps to a distinct sound name.
     #[test]
     fn approval_maps_to_approval_sound() {
         assert_eq!(
@@ -413,7 +412,7 @@ mod tests {
         );
     }
 
-    /// PLAN S21: IdleDone is the **silent tier** — no sound.
+    /// IdleDone is the **silent tier** — no sound.
     #[test]
     fn idle_done_maps_to_no_sound() {
         assert_eq!(urgency_to_sound(Urgency::IdleDone), None);
@@ -431,19 +430,19 @@ mod tests {
         assert_eq!(tab_urgency_to_sound(None), None);
     }
 
-    /// Approval sound string is "Fleet.Approval" (PLAN S21 distinct sound name).
+    /// Approval sound string is "Fleet.Approval".
     #[test]
     fn approval_sound_name_is_distinct() {
         assert_eq!(NotificationSound::Approval.as_str(), "Fleet.Approval");
     }
 
-    /// Question sound string is "Fleet.Question" (PLAN S21 distinct sound name).
+    /// Question sound string is "Fleet.Question".
     #[test]
     fn question_sound_name_is_distinct() {
         assert_eq!(NotificationSound::Question.as_str(), "Fleet.Question");
     }
 
-    /// All sound names are DISTINCT strings (PLAN S21 "distinct desktop sound names").
+    /// All sound names are distinct strings.
     #[test]
     fn all_sound_names_are_distinct() {
         let names: Vec<&str> = NotificationSound::ALL.iter().map(|s| s.as_str()).collect();
@@ -567,7 +566,7 @@ mod tests {
 
     // ── tab_transition — auto-resolve cases ───────────────────────────────────
 
-    /// PLAN §21.4 auto-resolve: Waiting → Working clears the notification.
+    /// Auto-resolve: Waiting → Working clears the notification.
     #[test]
     fn waiting_to_working_auto_resolves() {
         let old = waiting("s1", Urgency::Approval);

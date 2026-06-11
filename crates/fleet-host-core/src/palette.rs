@@ -1,7 +1,7 @@
 //! Fuzzy command palette + cycle-unread — slice S24 (node `PALETTE`).
 //!
 //! S24 adds a Cmd/Ctrl-K fuzzy match over all sessions (by title and cwd) and a
-//! cycle-without-clearing keybind (PLAN S24 / §21.6). The matcher is a pure
+//! cycle-without-clearing keybind (the engineering spec / §21.6). The matcher is a pure
 //! function over the view's tab titles/cwds → a ranked candidate list, so it is
 //! fully unit-testable here without a window; the keybind wiring lives in the host
 //! shell (the Tauri layer).
@@ -23,7 +23,7 @@
 //!    target is ranked higher (a precise match beats a fuzzy substring hit in a
 //!    longer string).
 //!
-//! The score is deterministic and window-independent, so the `◆G3` gate's
+//! The score is deterministic and window-independent, so the the reducer test gate's
 //! "palette fuzzy-match" criterion is fully covered by the unit tests below.
 //!
 //! ## Cycle-unread ordering

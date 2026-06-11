@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the Fleet language-variant images (Track G, §7 of eval/PLAN.md):
+# Build the Fleet language-variant images (Track G, §7 of eval/the local eval plan):
 #   fleet-env-python:latest  fleet-env-node:latest  fleet-env-rust:latest
 #
 # Each variant is `FROM fleet-env:latest` + a language toolchain + a matching

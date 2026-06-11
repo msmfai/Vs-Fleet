@@ -1,5 +1,5 @@
 //! Hub connection for `fleet ls` — WebSocket (always) or unix socket
-//! (`cfg(unix)`) fast path (PLAN D7).
+//! (`cfg(unix)`) fast path.
 //!
 //! The connection module is intentionally kept thin: it opens the transport,
 //! sends a `subscribe` message, and hands back an async stream of [`Event`]s.
@@ -8,7 +8,7 @@
 //!
 //! Protocol: the CLI sends one JSON text frame `{"type":"subscribe"}` and then
 //! receives a `fleet.snapshot` followed by a live stream of delta events. This
-//! matches the Hub's `server.rs` implementation (PLAN S2).
+//! matches the Hub's `server.rs` implementation (the engineering spec).
 
 use anyhow::{Context, Result};
 use fleet_protocol::Event;
