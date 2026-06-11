@@ -164,6 +164,23 @@ if ! (cd "$repo" && "$ROOT/scripts/check-github-publication-evidence.sh" \
   exit 1
 fi
 
+cat >"$repo/docs/release/PUBLIC_CI_EVIDENCE.md" <<'EOF'
+# Public CI Evidence
+Public CI evidence status: PASS
+EOF
+git -C "$repo" add docs/release/PUBLIC_CI_EVIDENCE.md
+git -C "$repo" commit -q -m "record another release-control evidence file"
+other_evidence_commit="$(git -C "$repo" rev-parse HEAD)"
+
+if ! (cd "$repo" && "$ROOT/scripts/check-github-publication-evidence.sh" \
+  docs/release/OWNER_DECISION_RECORD.md \
+  docs/release/GITHUB_PUBLICATION_EVIDENCE.md \
+  "$other_evidence_commit") >"$TMPDIR/publication-other-evidence-commit.out" 2>&1; then
+  echo "FAIL: publication evidence should allow other release-control evidence files to differ" >&2
+  cat "$TMPDIR/publication-other-evidence-commit.out" >&2
+  exit 1
+fi
+
 printf 'unexpected publication-reviewed payload drift\n' >"$repo/README.md"
 git -C "$repo" add README.md
 git -C "$repo" commit -q -m "drift publication payload"

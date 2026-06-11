@@ -163,6 +163,23 @@ if ! (cd "$repo" && "$ROOT/scripts/check-ci-evidence-decision.sh" \
   exit 1
 fi
 
+cat >"$repo/docs/release/DEPENDENCY_REVIEW_EVIDENCE.md" <<'EOF'
+# Dependency Review Evidence
+Dependency review status: PASS
+EOF
+git -C "$repo" add docs/release/DEPENDENCY_REVIEW_EVIDENCE.md
+git -C "$repo" commit -q -m "record another release-control evidence file"
+other_evidence_commit="$(git -C "$repo" rev-parse HEAD)"
+
+if ! (cd "$repo" && "$ROOT/scripts/check-ci-evidence-decision.sh" \
+  docs/release/OWNER_DECISION_RECORD.md \
+  docs/release/PUBLIC_CI_EVIDENCE.md \
+  "$other_evidence_commit") >"$TMPDIR/ci-other-evidence-commit.out" 2>&1; then
+  echo "FAIL: CI evidence should allow other release-control evidence files to differ" >&2
+  cat "$TMPDIR/ci-other-evidence-commit.out" >&2
+  exit 1
+fi
+
 printf 'unexpected CI-checked payload drift\n' >"$repo/README.md"
 git -C "$repo" add README.md
 git -C "$repo" commit -q -m "drift checked payload"

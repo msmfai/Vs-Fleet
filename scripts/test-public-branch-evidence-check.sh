@@ -104,6 +104,43 @@ write_owner_record "$owner_clean" APPROVED clean
 write_evidence "$evidence_pass" PASS "$source_commit" public-alpha "$public_commit"
 expect_pass "clean public branch evidence is accepted" "$owner_clean" "$evidence_pass"
 
+mkdir -p "$repo/docs/release"
+write_evidence "$repo/docs/release/PUBLIC_BRANCH_EVIDENCE.md" PASS "$source_commit" public-alpha "$public_commit"
+git -C "$repo" add docs/release/PUBLIC_BRANCH_EVIDENCE.md
+git -C "$repo" commit -q -m "record public branch evidence"
+public_branch_evidence_commit="$(git -C "$repo" rev-parse HEAD)"
+
+cat >"$repo/docs/release/DEPENDENCY_REVIEW_EVIDENCE.md" <<'EOF'
+# Dependency Review Evidence
+Dependency review status: PASS
+EOF
+git -C "$repo" add docs/release/DEPENDENCY_REVIEW_EVIDENCE.md
+git -C "$repo" commit -q -m "record another release-control evidence file"
+other_evidence_commit="$(git -C "$repo" rev-parse HEAD)"
+
+if ! (cd "$repo" && "$ROOT/scripts/check-public-branch-evidence.sh" \
+  "$owner_clean" \
+  docs/release/PUBLIC_BRANCH_EVIDENCE.md \
+  "$other_evidence_commit") >"$TMPDIR/public-branch-other-evidence-commit.out" 2>&1; then
+  echo "FAIL: public branch evidence should allow other release-control evidence files to differ" >&2
+  cat "$TMPDIR/public-branch-other-evidence-commit.out" >&2
+  exit 1
+fi
+
+printf 'unexpected public-branch payload drift\n' >"$repo/README.md"
+git -C "$repo" add README.md
+git -C "$repo" commit -q -m "drift public branch payload"
+drift_commit="$(git -C "$repo" rev-parse HEAD)"
+
+if (cd "$repo" && "$ROOT/scripts/check-public-branch-evidence.sh" \
+  "$owner_clean" \
+  docs/release/PUBLIC_BRANCH_EVIDENCE.md \
+  "$drift_commit") >"$TMPDIR/public-branch-drift.out" 2>&1; then
+  echo "FAIL: public branch evidence should reject payload drift outside release-control evidence files" >&2
+  cat "$TMPDIR/public-branch-drift.out" >&2
+  exit 1
+fi
+
 evidence_pending="$TMPDIR/public-branch-pending.md"
 write_evidence "$evidence_pending" PENDING "$source_commit" public-alpha "$public_commit"
 expect_fail "pending public branch evidence is rejected" "$owner_clean" "$evidence_pending"
