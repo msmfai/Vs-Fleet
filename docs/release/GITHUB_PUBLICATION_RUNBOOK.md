@@ -47,7 +47,9 @@ branch.
    history exposure, create a cleaned branch with
    `./scripts/prepare-public-branch.sh <public-branch> <source-ref>` and publish
    that branch instead.
-   Fill `docs/release/PUBLIC_BRANCH_EVIDENCE.md`, then run
+   Generate `docs/release/PUBLIC_BRANCH_EVIDENCE.md` with
+   `./scripts/generate-public-branch-evidence.sh <public-branch> <source-ref> docs/release/PUBLIC_BRANCH_EVIDENCE.md`,
+   then run
    `./scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md <source-ref-sha>`
    to prove the branch is a one-commit tree snapshot of the approved source.
    In the same private clone, run the aggregate gate with
@@ -171,7 +173,7 @@ Record the release custody evidence before the first public tag or pre-release:
    ```
 
 8. Create the public branch with `./scripts/prepare-public-branch.sh` if the
-   owner selected cleaned/squashed history, fill
+   owner selected cleaned/squashed history, generate
    `docs/release/PUBLIC_BRANCH_EVIDENCE.md`, then publish that branch or change
    repository visibility.
 9. Push the alpha source tag.

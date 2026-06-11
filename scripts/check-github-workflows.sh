@@ -92,6 +92,8 @@ require_text "$release" './scripts/test-github-publication-evidence-check.sh' \
   "GitHub publication evidence self-test"
 require_text "$release" './scripts/test-public-branch-evidence-check.sh' \
   "public branch evidence self-test"
+require_text "$release" './scripts/test-generate-public-branch-evidence.sh' \
+  "public branch evidence generator self-test"
 require_text "$release" './scripts/test-dependency-review-runner.sh' \
   "dependency review runner self-test"
 require_text "$release" './scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md' \

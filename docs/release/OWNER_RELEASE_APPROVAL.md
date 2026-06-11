@@ -80,7 +80,8 @@ Use these as the recommended source-alpha choices:
 2. Review every checked choice in the draft against this sheet.
 3. Copy approved choices into `docs/release/OWNER_DECISION_RECORD.md`.
 4. Fill namespace, public branch, CI, GitHub publication, and dependency review
-   evidence.
+   evidence. Generate public branch evidence with
+   `./scripts/generate-public-branch-evidence.sh`.
 5. Change `OWNER_DECISION_RECORD.md` to `Decision record status: APPROVED`.
 6. Run the release gate for the public branch:
 
