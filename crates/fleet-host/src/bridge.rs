@@ -7,7 +7,7 @@
 //! same connection can carry harness/probe command frames. A server vanishes
 //! from the rail when its bridge drops.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::{
@@ -31,19 +31,23 @@ const BRIDGE_DROP_GRACE: Duration = Duration::from_secs(8);
 type Tx = tokio::sync::mpsc::UnboundedSender<String>;
 
 /// What Fleet knows about one connected server.
-struct Conn {
-    #[allow(dead_code)]
-    tx: Tx,
+struct ServerConnSet {
     url: String,
     label: String,
+    conns: BTreeMap<u64, Tx>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Registration {
     generation: u64,
+    changed: bool,
 }
 
 /// Registry of connected (registered) servers, keyed by server id. This is the
 /// authoritative, push-driven server list — populated only by phone-home.
 #[derive(Clone, Default)]
 pub struct BridgeRegistry {
-    inner: Arc<Mutex<HashMap<String, Conn>>>,
+    inner: Arc<Mutex<HashMap<String, ServerConnSet>>>,
     next_generation: Arc<AtomicU64>,
 }
 
@@ -79,7 +83,12 @@ impl BridgeRegistry {
         if let Ok(map) = self.inner.lock() {
             match map.get(server_id) {
                 Some(c) => {
-                    let sent = c.tx.send(frame).is_ok();
+                    let sent = c
+                        .conns
+                        .iter()
+                        .next_back()
+                        .map(|(_, tx)| tx.send(frame).is_ok())
+                        .unwrap_or(false);
                     tracing::info!(%server_id, %command, sent, "forwarding command to bridge");
                     sent
                 }
@@ -117,32 +126,58 @@ impl BridgeRegistry {
         false
     }
 
-    fn register(&self, id: String, tx: Tx, url: String, label: String) -> u64 {
+    fn register(&self, id: String, tx: Tx, url: String, label: String) -> Registration {
         let generation = self.next_generation.fetch_add(1, Ordering::SeqCst);
+        let mut changed = false;
         if let Ok(mut map) = self.inner.lock() {
-            map.insert(
-                id.clone(),
-                Conn {
-                    tx,
-                    url,
-                    label,
-                    generation,
-                },
-            );
+            match map.get_mut(&id) {
+                Some(entry) => {
+                    changed = entry.url != url || entry.label != label;
+                    entry.url = url;
+                    entry.label = label;
+                    entry.conns.insert(generation, tx);
+                }
+                None => {
+                    changed = true;
+                    map.insert(
+                        id.clone(),
+                        ServerConnSet {
+                            url,
+                            label,
+                            conns: BTreeMap::from([(generation, tx)]),
+                        },
+                    );
+                }
+            }
         }
-        tracing::info!(server_id = %id, generation, "server registered (phone-home)");
-        generation
+        tracing::info!(server_id = %id, generation, changed, "server registered (phone-home)");
+        Registration {
+            generation,
+            changed,
+        }
     }
 
     fn unregister(&self, id: &str, generation: u64) -> bool {
         if let Ok(mut map) = self.inner.lock() {
-            if map
-                .get(id)
-                .is_some_and(|conn| conn.generation == generation)
-            {
-                map.remove(id);
-                tracing::info!(server_id = %id, generation, "server deregistered (bridge dropped)");
-                return true;
+            if let Some(entry) = map.get_mut(id) {
+                if entry.conns.remove(&generation).is_some() {
+                    if entry.conns.is_empty() {
+                        map.remove(id);
+                        tracing::info!(
+                            server_id = %id,
+                            generation,
+                            "server deregistered (last bridge dropped)"
+                        );
+                        return true;
+                    }
+                    tracing::debug!(
+                        server_id = %id,
+                        generation,
+                        remaining = entry.conns.len(),
+                        "bridge dropped; server still has live bridge connections"
+                    );
+                    return false;
+                }
             }
         }
         tracing::debug!(server_id = %id, generation, "stale bridge drop ignored");
@@ -298,14 +333,16 @@ async fn handle_conn(
         }
     };
 
-    let generation = registry.register(
+    let registration = registry.register(
         hello.server_id.clone(),
         tx,
         hello.url.clone(),
         hello.label.clone(),
     );
-    let _ = app.emit(SERVERS_CHANGED, registry.servers());
-    crate::mux::refresh_menu(&app);
+    if registration.changed {
+        let _ = app.emit(SERVERS_CHANGED, registry.servers());
+        crate::mux::refresh_menu(&app);
+    }
 
     loop {
         tokio::select! {
@@ -322,7 +359,7 @@ async fn handle_conn(
     }
     tokio::spawn(async move {
         sleep(BRIDGE_DROP_GRACE).await;
-        if registry.unregister(&hello.server_id, generation) {
+        if registry.unregister(&hello.server_id, registration.generation) {
             let _ = app.emit(SERVERS_CHANGED, registry.servers());
             crate::mux::refresh_menu(&app);
         }
@@ -500,6 +537,63 @@ mod tests {
 
         drop(rx);
         assert!(!registry.send_command("server-1", "workbench.action.files.save"));
+    }
+
+    #[test]
+    fn duplicate_bridge_connections_do_not_churn_visible_server() {
+        let registry = BridgeRegistry::new();
+        let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
+        let first = registry.register(
+            "server-1".into(),
+            tx1,
+            "http://127.0.0.1:9000/".into(),
+            "server-1".into(),
+        );
+        assert!(first.changed);
+
+        let (tx2, mut rx2) = tokio::sync::mpsc::unbounded_channel();
+        let second = registry.register(
+            "server-1".into(),
+            tx2,
+            "http://127.0.0.1:9000/".into(),
+            "server-1".into(),
+        );
+        assert!(!second.changed);
+        assert_eq!(registry.servers().len(), 1);
+
+        assert!(!registry.unregister("server-1", first.generation));
+        assert_eq!(registry.servers().len(), 1);
+
+        assert!(registry.send_command("server-1", "workbench.action.files.save"));
+        let frame = rx2.try_recv().unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&frame).unwrap();
+        assert_eq!(parsed["id"], "workbench.action.files.save");
+
+        assert!(registry.unregister("server-1", second.generation));
+        assert!(registry.servers().is_empty());
+    }
+
+    #[test]
+    fn bridge_metadata_change_reports_visible_server_change() {
+        let registry = BridgeRegistry::new();
+        let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
+        let first = registry.register(
+            "server-1".into(),
+            tx1,
+            "http://127.0.0.1:9000/".into(),
+            "server-1".into(),
+        );
+        assert!(first.changed);
+
+        let (tx2, _rx2) = tokio::sync::mpsc::unbounded_channel();
+        let second = registry.register(
+            "server-1".into(),
+            tx2,
+            "http://127.0.0.1:9000/".into(),
+            "Project API".into(),
+        );
+        assert!(second.changed);
+        assert_eq!(registry.servers()[0].label, "Project API");
     }
 
     #[test]
