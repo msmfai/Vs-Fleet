@@ -167,6 +167,7 @@ else
   echo "  ./scripts/release-check.sh"
 fi
 echo "  ./scripts/run-dependency-review.sh"
+echo '  ./scripts/check-github-publication-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md "$(git rev-parse HEAD)"'
 
 echo
 if [ "$fail" -eq 0 ]; then

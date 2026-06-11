@@ -120,23 +120,27 @@ Reference: <https://docs.github.com/en/repositories/configuring-branches-and-mer
    Readiness" workflow on the exact commit.
 5. Record exact CI and Release Readiness evidence in
    `docs/release/PUBLIC_CI_EVIDENCE.md`.
-6. Run:
+6. Record exact repository settings evidence in
+   `docs/release/GITHUB_PUBLICATION_EVIDENCE.md`, including visibility review,
+   issue/discussion/wiki settings, security settings, and branch protection.
+7. Run:
 
    ```sh
    ./scripts/secret-release-check.sh
    ./scripts/check-doc-links.sh
    ./scripts/check-public-tree-size.sh
    ./scripts/check-lockfile-policy.sh
+   ./scripts/check-github-publication-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md "$(git rev-parse HEAD)"
    ./scripts/release-check.sh
    ./scripts/check-release-notes.sh path/to/release-notes.md "$(git rev-parse HEAD)"
    ```
 
-7. Create the public branch with `./scripts/prepare-public-branch.sh` if the
+8. Create the public branch with `./scripts/prepare-public-branch.sh` if the
    owner selected cleaned/squashed history, then publish that branch or change
    repository visibility.
-8. Push the alpha source tag.
-9. Create a GitHub pre-release using checked release notes.
-10. Re-run `./scripts/release-check.sh` on the public checkout.
+9. Push the alpha source tag.
+10. Create a GitHub pre-release using checked release notes.
+11. Re-run `./scripts/release-check.sh` on the public checkout.
 
 ## Abort Conditions
 

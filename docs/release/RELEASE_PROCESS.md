@@ -30,6 +30,9 @@ Do not publish a public alpha until these are true:
 - `docs/release/PUBLIC_CI_EVIDENCE.md` records the exact commit, branch, CI
   workflow run, and Release Readiness workflow run for the first public GitHub
   alpha.
+- `docs/release/GITHUB_PUBLICATION_EVIDENCE.md` records the exact GitHub
+  repository URL, visibility review, repository settings, security settings,
+  and branch-protection review for the first public GitHub alpha.
 - Generated artifacts, local logs, screenshots, VSIX files, app bundles, and
   machine-specific paths are not tracked.
 - `./scripts/secret-release-check.sh` passes for the tracked tree and git
@@ -66,6 +69,8 @@ Do not publish a public alpha until these are true:
 - `./scripts/check-public-tree-size.sh` passes, so the public branch does not
   contain accidental large tracked artifacts.
 - `./scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"`
+  passes.
+- `./scripts/check-github-publication-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md "$(git rev-parse HEAD)"`
   passes.
 - `./scripts/check-github-workflows.sh .github/workflows/ci.yml .github/workflows/release-readiness.yml`
   passes, so the workflows referenced by public CI evidence still contain the
@@ -153,6 +158,7 @@ Do not publish a public alpha until these are true:
    ./scripts/check-doc-links.sh
    ./scripts/check-public-tree-size.sh
    ./scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"
+   ./scripts/check-github-publication-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md "$(git rev-parse HEAD)"
    ./scripts/check-github-workflows.sh .github/workflows/ci.yml .github/workflows/release-readiness.yml
    ./scripts/check-privacy-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/run-dependency-review.sh
@@ -207,7 +213,11 @@ Do not publish a public alpha until these are true:
    Readiness is expected to fail until the owner decision record is approved and
    the license metadata is applied.
 
-12. Create a signed git tag after checks pass:
+12. Fill `docs/release/GITHUB_PUBLICATION_EVIDENCE.md` with the exact GitHub
+   repository URL, repository settings, security settings, and branch-protection
+   evidence for the public repo.
+
+13. Create a signed git tag after checks pass:
 
    ```sh
    git tag -s v0.1.0-alpha.1 -m "Fleet v0.1.0-alpha.1"
@@ -216,19 +226,19 @@ Do not publish a public alpha until these are true:
    Use an annotated tag if signing is not configured, but record that choice in
    the release notes.
 
-13. Draft release notes from
+14. Draft release notes from
    [ALPHA_RELEASE_NOTES_TEMPLATE.md](ALPHA_RELEASE_NOTES_TEMPLATE.md). Replace
    every placeholder with exact commit, scope, branding status, verification,
    dependency review, history exposure, security, support, and known-rough-edge
    evidence.
 
-14. Validate the drafted release notes:
+15. Validate the drafted release notes:
 
    ```sh
    ./scripts/check-release-notes.sh path/to/release-notes.md "$(git rev-parse HEAD)"
    ```
 
-15. Push the tag and create a GitHub release marked pre-release. The release
+16. Push the tag and create a GitHub release marked pre-release. The release
    should be source-only unless binary distribution has been explicitly approved.
    Before changing repository visibility or publishing the pre-release, walk
    [GITHUB_PUBLICATION_RUNBOOK.md](GITHUB_PUBLICATION_RUNBOOK.md) against the

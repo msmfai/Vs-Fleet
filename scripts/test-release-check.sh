@@ -63,6 +63,7 @@ for doc in \
   docs/release/DEPENDENCY_REVIEW.md \
   docs/release/DEPENDENCY_REVIEW_EVIDENCE.md \
   docs/release/GITHUB_PUBLICATION_RUNBOOK.md \
+  docs/release/GITHUB_PUBLICATION_EVIDENCE.md \
   docs/release/PUBLIC_CI_EVIDENCE.md \
   docs/release/PUBLIC_ALPHA_OWNER_PROMPT.md \
   docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md \
@@ -97,6 +98,7 @@ for script in \
   scripts/check-contribution-decision.sh \
   scripts/check-github-intake-templates.sh \
   scripts/check-ci-evidence-decision.sh \
+  scripts/check-github-publication-evidence.sh \
   scripts/check-github-workflows.sh \
   scripts/check-privacy-decision.sh \
   scripts/check-dependency-review-decision.sh \
@@ -126,6 +128,7 @@ for script in \
   scripts/test-contribution-decision-check.sh \
   scripts/test-github-intake-templates-check.sh \
   scripts/test-ci-evidence-decision-check.sh \
+  scripts/test-github-publication-evidence-check.sh \
   scripts/test-github-workflows-check.sh \
   scripts/test-privacy-decision-check.sh \
   scripts/test-dependency-review-decision-check.sh \

@@ -88,6 +88,10 @@ closed or explicitly accepted.
   `./scripts/check-release-notes.sh path/to/release-notes.md "$(git rev-parse HEAD)"`.
 - [ ] Walk through `docs/release/GITHUB_PUBLICATION_RUNBOOK.md` before changing
   repository visibility or creating the public pre-release.
+- [ ] Record GitHub repository settings evidence in
+  `docs/release/GITHUB_PUBLICATION_EVIDENCE.md` and run
+  `./scripts/check-github-publication-evidence.sh` before changing repository
+  visibility.
 - [x] State the alpha support boundary: best-effort, breaking changes expected,
   not production-ready.
 - [ ] Choose the privacy/telemetry posture in
@@ -209,6 +213,10 @@ closed or explicitly accepted.
 - `scripts/check-ci-evidence-decision.sh` validates that the approved public CI
   evidence choice has exact commit evidence and, for the recommended path,
   GitHub Actions run URLs for both normal CI and Release Readiness.
+- `scripts/check-github-publication-evidence.sh` validates the exact GitHub
+  repository URL against the approved namespace and requires concrete evidence
+  for visibility review, issues/discussions/wiki/releases/packages settings,
+  Actions, security settings, and branch protection.
 - `scripts/check-privacy-decision.sh` validates that the approved
   privacy/telemetry posture matches the README, security policy, architecture
   notes, issue template, and release notes template.
