@@ -225,10 +225,6 @@ function serverPreview(agent, state) {
   return meta ? `${meta} · ${state}` : state;
 }
 
-function bridgeState(srv) {
-  return srv && srv.agentOnly ? "editor still connecting" : "";
-}
-
 function canDismissAgent(agent, state) {
   return Boolean(agent && (state === "dead" || state === "error"));
 }
@@ -278,7 +274,6 @@ function searchableFields(model) {
     agent && agent.urgency,
     agent && agent.confidence,
     agent && agent.last_message,
-    bridgeState(model.srv),
   ].filter(Boolean).map((v) => String(v));
 }
 
@@ -382,29 +377,7 @@ function stateFlags(agent) {
 }
 
 function rowFlags(srv, agent) {
-  const flags = stateFlags(agent);
-  if (srv && srv.agentOnly) flags.push("bridge");
-  return flags;
-}
-
-function stateFlagLabel(flag) {
-  if (flag === "bridge") return "editor";
-  if (flag === "solo") return "focus";
-  return flag === "silenced" ? "silent" : flag;
-}
-
-function stateFlagTitle(flag) {
-  if (flag === "bridge") return "Editor still connecting";
-  if (flag === "solo") return "Only this session can raise alerts";
-  return stateFlagLabel(flag);
-}
-
-function appendStateFlagChips(parent, flags, extraClass = "") {
-  for (const flag of flags) {
-    const chip = el("span", `state-chip ${flag}${extraClass ? ` ${extraClass}` : ""}`, stateFlagLabel(flag));
-    chip.title = stateFlagTitle(flag);
-    parent.appendChild(chip);
-  }
+  return stateFlags(agent);
 }
 
 function appendAttentionBadges(parent, agent) {
@@ -449,17 +422,6 @@ function sessionActionBusy(id) {
     if (sessionActions.has(actionKey(id, action))) return true;
   }
   return false;
-}
-
-function sessionActionButton(action, text, title, active, disabled, toggle = true) {
-  const btn = el("button", `session-action ${action}${active ? " active" : ""}`, text);
-  btn.type = "button";
-  btn.title = title;
-  btn.dataset.action = action;
-  btn.setAttribute("aria-label", title);
-  if (toggle) btn.setAttribute("aria-pressed", active ? "true" : "false");
-  btn.disabled = disabled;
-  return btn;
 }
 
 function rowMenuItems(id) {
@@ -765,9 +727,8 @@ function render() {
     row.setAttribute("aria-busy", actionBusy ? "true" : "false");
     row.setAttribute(
       "aria-label",
-      [title, state, preview, ...flags.map(stateFlagTitle)].filter(Boolean).join(", ")
+      [title, state, preview].filter(Boolean).join(", ")
     );
-    if (srv.agentOnly) row.title = bridgeState(srv);
     row.onclick = () => activateServer(srv.id);
     row.oncontextmenu = (ev) => {
       ev.preventDefault();
@@ -789,98 +750,8 @@ function render() {
     row.appendChild(body);
 
     const right = el("div", "right");
-    appendStateFlagChips(right, flags);
     if (pinging) appendAttentionBadges(right, a);
     else if (a && a.unread && !a.ping_suppressed) right.appendChild(el("span", "dot"));
-
-    const actions = el("button", "row-actions", "...");
-    actions.type = "button";
-    actions.dataset.action = "menu";
-    actions.title = `Actions for ${title}`;
-    actions.setAttribute("aria-label", actions.title);
-    actions.setAttribute("aria-haspopup", "menu");
-    actions.onclick = (ev) => {
-      ev.stopPropagation();
-      const rect = actions.getBoundingClientRect();
-      openRowMenu(srv.id, rect.right - 4, rect.bottom + 4);
-    };
-    right.appendChild(actions);
-
-    if (a) {
-      const mutePending = sessionActions.has(actionKey(srv.id, "mute"));
-      const soloPending = sessionActions.has(actionKey(srv.id, "solo"));
-      const actionDisabled = !inbox.connected || actionBusy;
-      const mute = sessionActionButton(
-        "mute",
-        a.muted ? "U" : "M",
-        a.muted ? `Unmute ${title}` : `Mute ${title}`,
-        Boolean(a.muted),
-        actionDisabled || mutePending
-      );
-      mute.onclick = (ev) => {
-        ev.stopPropagation();
-        setSessionMuted(srv.id, !a.muted);
-      };
-      const solo = sessionActionButton(
-        "solo",
-        a.soloed ? "◉" : "◎",
-        a.soloed ? `Clear alert focus for ${title}` : `Only alert for ${title}`,
-        Boolean(a.soloed),
-        actionDisabled || soloPending
-      );
-      solo.onclick = (ev) => {
-        ev.stopPropagation();
-        setSessionSoloed(srv.id, !a.soloed);
-      };
-      right.appendChild(mute);
-      right.appendChild(solo);
-      if (canDismissAgent(a, state)) {
-        const dismissPending = sessionActions.has(actionKey(srv.id, "dismiss"));
-        const dismiss = sessionActionButton(
-          "dismiss",
-          "-",
-          `Dismiss ${title}`,
-          false,
-          actionDisabled || dismissPending,
-          false
-        );
-        dismiss.onclick = (ev) => {
-          ev.stopPropagation();
-          dismissSession(srv.id);
-        };
-        right.appendChild(dismiss);
-      }
-    }
-    if (canRetryServer(srv, pendingState)) {
-      const retryPending = sessionActions.has(actionKey(srv.id, "retry")) || spawning;
-      const retry = sessionActionButton(
-        "retry",
-        "↻",
-        `Retry ${title}`,
-        false,
-        retryPending || actionBusy,
-        false
-      );
-      retry.onclick = (ev) => {
-        ev.stopPropagation();
-        retryServer(srv.id);
-      };
-      right.appendChild(retry);
-    }
-    let close = null;
-    if (canCloseServerRow(srv)) {
-      const closeVerb = isOwned(srv) ? "Close" : "Forget";
-      close = el("button", `close${isClosing ? " busy" : ""}`, isClosing ? "" : "×");
-      close.type = "button";
-      close.disabled = isClosing || actionBusy;
-      close.title = isClosing
-        ? `${closeVerb === "Close" ? "Closing" : "Forgetting"} server`
-        : actionBusy ? "Action in progress"
-        : `${closeVerb} server`;
-      close.setAttribute("aria-label", `${close.title} ${title}`);
-      close.onclick = (ev) => { ev.stopPropagation(); closeServer(srv.id); };
-      right.appendChild(close);
-    }
     row.appendChild(right);
 
     railEl.appendChild(row);
@@ -1004,9 +875,6 @@ function renderPalette() {
     const meta = el("span", "palette-meta");
     if (candidate.pinging) meta.appendChild(el("span", "badge palette-badge", waitingAge(candidate.agent && candidate.agent.waiting_since)));
     else if (candidate.agent && candidate.agent.unread && !candidate.agent.ping_suppressed) meta.appendChild(el("span", "dot tiny"));
-    if (candidate.flags.length) appendStateFlagChips(meta, candidate.flags, "palette-state");
-    if (candidate.srv.id === selected) meta.appendChild(el("span", "state-chip selected-chip", "open"));
-
     item.appendChild(glyph);
     item.appendChild(body);
     item.appendChild(meta);
