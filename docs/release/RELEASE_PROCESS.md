@@ -119,7 +119,13 @@ Do not publish a public alpha until these are true:
    every placeholder with exact commit, scope, verification, dependency review,
    history exposure, security, support, and known-rough-edge evidence.
 
-13. Push the tag and create a GitHub release marked pre-release. The release
+13. Validate the drafted release notes:
+
+   ```sh
+   ./scripts/check-release-notes.sh path/to/release-notes.md
+   ```
+
+14. Push the tag and create a GitHub release marked pre-release. The release
    should be source-only unless binary distribution has been explicitly approved.
 
 ## First Public GitHub Publish

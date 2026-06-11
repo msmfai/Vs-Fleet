@@ -31,6 +31,8 @@ closed or explicitly accepted.
   skipping it in the owner decision record.
 - [ ] Draft GitHub pre-release notes from
   `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` and remove all placeholders.
+- [ ] Run `./scripts/check-release-notes.sh` on the drafted GitHub pre-release
+  notes.
 - [x] State the alpha support boundary: best-effort, breaking changes expected,
   not production-ready.
 - [ ] Confirm package namespaces before publishing anything to crates.io,
@@ -66,6 +68,9 @@ closed or explicitly accepted.
 - `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` is present so the first GitHub
   pre-release has a consistent scope, verification, history, dependency,
   security, and known-rough-edges disclosure.
+- `scripts/check-release-notes.sh` validates the filled release notes draft for
+  required sections and unresolved placeholders before a GitHub pre-release is
+  published.
 - `docs/release/OWNER_DECISION_RECORD.md` is present but still marked
   `PENDING`; `scripts/release-check.sh` requires `APPROVED` before public
   visibility.
