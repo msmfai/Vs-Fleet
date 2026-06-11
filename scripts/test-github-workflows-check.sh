@@ -94,6 +94,7 @@ jobs:
       - run: ./scripts/test-generate-public-branch-evidence.sh
       - run: ./scripts/test-check-public-release-branch.sh
       - run: ./scripts/test-generate-public-ci-evidence.sh
+      - run: ./scripts/test-release-evidence-status.sh
       - run: ./scripts/test-dependency-review-runner.sh
       - run: ./scripts/test-release-notes-check.sh
       - run: ./scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md
@@ -213,6 +214,11 @@ no_public_ci_generator="$TMPDIR/no-public-ci-generator.yml"
 write_release "$no_public_ci_generator"
 perl -0pi -e 's/\n      - run: \.\/scripts\/test-generate-public-ci-evidence\.sh\n//' "$no_public_ci_generator"
 expect_fail "Release Readiness must keep public CI evidence generator self-test" "$ci" "$no_public_ci_generator"
+
+no_evidence_status="$TMPDIR/no-evidence-status.yml"
+write_release "$no_evidence_status"
+perl -0pi -e 's/\n      - run: \.\/scripts\/test-release-evidence-status\.sh\n//' "$no_evidence_status"
+expect_fail "Release Readiness must keep release evidence status self-test" "$ci" "$no_evidence_status"
 
 no_release_notes="$TMPDIR/no-release-notes.yml"
 write_release "$no_release_notes"

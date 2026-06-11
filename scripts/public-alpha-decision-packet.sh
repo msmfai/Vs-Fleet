@@ -196,6 +196,7 @@ else
 fi
 echo "  ./scripts/run-dependency-review.sh"
 echo "  ./scripts/generate-public-ci-evidence.sh <branch> <ci-run-url> <release-readiness-run-url> <source-ref>"
+echo "  ./scripts/release-evidence-status.sh"
 echo "  ./scripts/check-versioning-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo "  ./scripts/check-community-intake-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo "  ./scripts/check-release-custody-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md ."

@@ -150,6 +150,9 @@ jobs:
       - name: Public CI evidence generator self-test
         run: ./scripts/test-generate-public-ci-evidence.sh
 
+      - name: Release evidence status self-test
+        run: ./scripts/test-release-evidence-status.sh
+
       - name: Secret release gate self-test
         run: ./scripts/test-secret-release-check.sh
 

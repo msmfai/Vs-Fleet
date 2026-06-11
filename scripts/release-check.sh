@@ -164,6 +164,8 @@ for required in \
   scripts/test-ci-evidence-decision-check.sh \
   scripts/generate-public-ci-evidence.sh \
   scripts/test-generate-public-ci-evidence.sh \
+  scripts/release-evidence-status.sh \
+  scripts/test-release-evidence-status.sh \
   scripts/check-github-publication-evidence.sh \
   scripts/test-github-publication-evidence-check.sh \
   scripts/check-privacy-decision.sh \

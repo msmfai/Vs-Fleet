@@ -166,6 +166,8 @@ visibility.
   `./scripts/generate-public-ci-evidence.sh <branch> <ci-run-url> <release-readiness-run-url> <source-ref>`
   and run
   `./scripts/check-ci-evidence-decision.sh`.
+- [ ] Run `./scripts/release-evidence-status.sh`; it must report
+  `Release evidence status: COMPLETE` before approval.
 
 ## Current evidence from the repository
 
