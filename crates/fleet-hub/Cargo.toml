@@ -20,7 +20,7 @@ fleet-protocol = { path = "../fleet-protocol" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tokio-tungstenite = "0.23"
+tokio-tungstenite = "0.29"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
@@ -33,7 +33,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 
 [dev-dependencies]
 tokio = { workspace = true }
-tokio-tungstenite = "0.23"
+tokio-tungstenite = "0.29"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 proptest = "1"
 tempfile = "3"
