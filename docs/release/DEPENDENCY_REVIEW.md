@@ -53,6 +53,9 @@ For the alpha release notes, record:
   alpha,
 - whether the release is source-only or includes any bundled binary artifacts.
 
+Use [ALPHA_RELEASE_NOTES_TEMPLATE.md](ALPHA_RELEASE_NOTES_TEMPLATE.md) so this
+evidence is captured in the public GitHub pre-release body.
+
 ## Current Known Gaps
 
 - No automated cargo/npm license allowlist is enforced yet.

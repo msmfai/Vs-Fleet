@@ -29,6 +29,8 @@ closed or explicitly accepted.
   history or explicitly accept current branch history exposure.
 - [ ] Run dependency review for the exact public branch, or explicitly accept
   skipping it in the owner decision record.
+- [ ] Draft GitHub pre-release notes from
+  `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` and remove all placeholders.
 - [x] State the alpha support boundary: best-effort, breaking changes expected,
   not production-ready.
 - [ ] Confirm package namespaces before publishing anything to crates.io,
@@ -61,6 +63,9 @@ closed or explicitly accepted.
   `docs/release/RELEASE_PROCESS.md` are present.
 - `.github/workflows/release-readiness.yml` and
   `docs/release/DEPENDENCY_REVIEW.md` are present.
+- `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` is present so the first GitHub
+  pre-release has a consistent scope, verification, history, dependency,
+  security, and known-rough-edges disclosure.
 - `docs/release/OWNER_DECISION_RECORD.md` is present but still marked
   `PENDING`; `scripts/release-check.sh` requires `APPROVED` before public
   visibility.

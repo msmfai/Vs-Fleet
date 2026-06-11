@@ -26,6 +26,9 @@ Do not publish a public alpha until these are true:
 - Public namespaces are confirmed, even if packages are not published yet.
 - Dependency review has been run for the exact public commit, or the approved
   owner decision record explicitly accepts publishing without it.
+- GitHub pre-release notes are drafted from
+  [ALPHA_RELEASE_NOTES_TEMPLATE.md](ALPHA_RELEASE_NOTES_TEMPLATE.md), with every
+  placeholder replaced.
 
 ## Source Alpha Steps
 
@@ -111,7 +114,12 @@ Do not publish a public alpha until these are true:
    Use an annotated tag if signing is not configured, but record that choice in
    the release notes.
 
-12. Push the tag and create a GitHub release marked pre-release. The release
+12. Draft release notes from
+   [ALPHA_RELEASE_NOTES_TEMPLATE.md](ALPHA_RELEASE_NOTES_TEMPLATE.md). Replace
+   every placeholder with exact commit, scope, verification, dependency review,
+   history exposure, security, support, and known-rough-edge evidence.
+
+13. Push the tag and create a GitHub release marked pre-release. The release
    should be source-only unless binary distribution has been explicitly approved.
 
 ## First Public GitHub Publish
