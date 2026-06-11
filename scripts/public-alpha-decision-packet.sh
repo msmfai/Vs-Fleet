@@ -31,6 +31,7 @@ required_sections=$(
 ### 17. AI-Assisted Contribution Provenance
 ### 18. Supported Platform And Toolchain
 ### 19. Public Roadmap And Non-Goals
+### 20. Public Name Collision And Trademark Posture
 EOF
 )
 
@@ -124,7 +125,7 @@ fi
 
 distribution_block="$(section_block "$required_block" "### 6. Distribution Scope" || true)"
 if printf '%s\n' "$distribution_block" | rg -q '^- \[x\] Source plus|^- \[x\] Other:'; then
-  for section in "### 20. macOS Signing and Notarization" "### 21. Update Channel"; do
+  for section in "### 21. macOS Signing and Notarization" "### 22. Update Channel"; do
     if ! block="$(section_block "$binary_block" "$section")"; then
       echo "- ${section#'### '}: missing section required for public binary distribution"
       missing_any=1
@@ -160,6 +161,7 @@ echo "- Release custody: single-maintainer alpha; no package publishing credenti
 echo "- AI contributions: human-reviewed, rights-certified, no private prompts/logs/artifacts."
 echo "- Platform: macOS source alpha only with Rust 1.78+, Node.js 20/npm, Git, and VS Code code CLI."
 echo "- Roadmap: no public roadmap commitments during alpha; issues/labels/milestones are triage only."
+echo "- Naming: Fleet is a provisional working name; no trademark claim or stable package/binary namespace promise."
 
 echo
 echo "Mechanical next commands after recording choices:"
@@ -185,6 +187,7 @@ echo "  ./scripts/check-release-custody-decision.sh docs/release/OWNER_DECISION_
 echo "  ./scripts/check-ai-contribution-decision.sh docs/release/OWNER_DECISION_RECORD.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md"
 echo "  ./scripts/check-platform-support-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo "  ./scripts/check-roadmap-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
+echo "  ./scripts/check-name-collision-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo '  ./scripts/check-github-publication-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md "$(git rev-parse HEAD)"'
 
 echo

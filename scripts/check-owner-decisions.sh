@@ -75,7 +75,8 @@ for section in \
   "### 16. Release Custody And Maintainer Authority" \
   "### 17. AI-Assisted Contribution Provenance" \
   "### 18. Supported Platform And Toolchain" \
-  "### 19. Public Roadmap And Non-Goals"
+  "### 19. Public Roadmap And Non-Goals" \
+  "### 20. Public Name Collision And Trademark Posture"
 do
   if ! block="$(section_block "$required_block" "$section")"; then
     echo "FAIL: owner decision record missing required section: $section"
@@ -102,8 +103,8 @@ fi
 if distribution_block="$(section_block "$required_block" "### 6. Distribution Scope")"; then
   if printf '%s\n' "$distribution_block" | rg -q '^- \[x\] Source plus|^- \[x\] Other:'; then
     for section in \
-      "### 20. macOS Signing and Notarization" \
-      "### 21. Update Channel"
+      "### 21. macOS Signing and Notarization" \
+      "### 22. Update Channel"
     do
       if ! block="$(section_block "$binary_block" "$section")"; then
         echo "FAIL: owner decision record missing binary distribution section: $section"

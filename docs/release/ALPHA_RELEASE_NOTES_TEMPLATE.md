@@ -45,6 +45,13 @@ Not supported as a public alpha commitment:
 - Remote/container workflows, binary packages, stable APIs, and production
   support remain non-goals unless a later owner decision approves them.
 
+## Naming And Trademark Posture
+
+- `Fleet` is a provisional source-alpha working name.
+- This release makes no trademark claim to the `Fleet` name.
+- Stable package or binary publication under Fleet namespaces is deferred until
+  the owner completes the public name decision.
+
 ## What Changed
 
 - `[one-line change]`

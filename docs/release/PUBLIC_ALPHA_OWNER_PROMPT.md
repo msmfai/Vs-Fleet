@@ -174,17 +174,26 @@ is still `TODO`, ambiguous, or only a recommendation.
     Follow-up: run `./scripts/check-roadmap-decision.sh` after copying this
     choice into `OWNER_DECISION_RECORD.md`.
 
+20. Public name collision and trademark posture:
+    Recommended alpha default: use `Fleet` only as a provisional source-alpha
+    working name, make no trademark claim, acknowledge collision review is not
+    clearance, and do not publish packages or binaries under stable Fleet
+    namespaces.
+    Owner answer:
+    Follow-up: run `./scripts/check-name-collision-decision.sh` after copying
+    this choice into `OWNER_DECISION_RECORD.md`.
+
 ## Binary-Only Decisions
 
 These are not required for a source-only alpha. They become required before any
 public app bundle.
 
-20. macOS signing and notarization:
+21. macOS signing and notarization:
     Recommended default: no public binaries until Developer ID signing and
     notarization are automated.
     Owner answer:
 
-21. Update channel:
+22. Update channel:
     Recommended default: no auto-update in alpha.
     Owner answer:
 

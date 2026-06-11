@@ -65,6 +65,7 @@ jobs:
       - run: ./scripts/test-ai-contribution-decision-check.sh
       - run: ./scripts/test-platform-support-decision-check.sh
       - run: ./scripts/test-roadmap-decision-check.sh
+      - run: ./scripts/test-name-collision-decision-check.sh
       - run: ./scripts/test-github-publication-evidence-check.sh
       - run: ./scripts/test-dependency-review-runner.sh
       - run: ./scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md

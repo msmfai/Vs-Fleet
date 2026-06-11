@@ -104,6 +104,9 @@ closed or explicitly accepted.
 - [ ] Choose public roadmap/non-goals posture in
   `docs/release/OWNER_DECISION_RECORD.md` and run
   `./scripts/check-roadmap-decision.sh`.
+- [ ] Choose public name collision/trademark posture in
+  `docs/release/OWNER_DECISION_RECORD.md` and run
+  `./scripts/check-name-collision-decision.sh`.
 - [ ] Draft GitHub pre-release notes from
   `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` and remove all placeholders.
 - [ ] Run the release-notes checker with the expected commit:
@@ -262,6 +265,10 @@ closed or explicitly accepted.
 - `scripts/check-roadmap-decision.sh` validates that public issues, labels, and
   milestones are not presented as delivery promises unless the owner publishes
   a concrete roadmap policy.
+- `scripts/check-name-collision-decision.sh` validates that `Fleet` is either
+  presented as a provisional working name with no trademark claim, replaced
+  before public visibility, or backed by a concrete owner-reviewed naming
+  clearance record.
 - `scripts/check-privacy-decision.sh` validates that the approved
   privacy/telemetry posture matches the README, security policy, architecture
   notes, issue template, and release notes template.

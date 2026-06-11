@@ -70,6 +70,8 @@ require_text "$release" './scripts/test-platform-support-decision-check.sh' \
   "platform support decision self-test"
 require_text "$release" './scripts/test-roadmap-decision-check.sh' \
   "roadmap decision self-test"
+require_text "$release" './scripts/test-name-collision-decision-check.sh' \
+  "name collision decision self-test"
 require_text "$release" './scripts/test-github-publication-evidence-check.sh' \
   "GitHub publication evidence self-test"
 require_text "$release" './scripts/test-dependency-review-runner.sh' \
