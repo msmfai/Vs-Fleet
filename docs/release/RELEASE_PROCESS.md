@@ -11,6 +11,9 @@ Do not publish a public alpha until these are true:
 - A project license is chosen.
 - A root `LICENSE` file exists.
 - Rust and npm package metadata no longer declare `UNLICENSED`.
+- If using recommended defaults, generate a PENDING review draft with
+  `./scripts/draft-owner-decisions.sh <github-owner> <github-repo> docs/release/OWNER_DECISION_RECORD.draft.md`
+  and copy only reviewed choices into `docs/release/OWNER_DECISION_RECORD.md`.
 - `./scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .`
   passes.
 - `./scripts/public-alpha-decision-packet.sh` reports
