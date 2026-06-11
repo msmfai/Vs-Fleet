@@ -228,6 +228,8 @@ expect_output "pending incomplete record" 'Decision record status: not APPROVED'
 expect_output "pending incomplete record" '2\. Public History'
 expect_output "pending incomplete record" '6\. Distribution Scope'
 expect_output "pending incomplete record" 'Owner review helper:'
+expect_output "pending incomplete record" 'Release evidence snapshot:'
+expect_output "pending incomplete record" 'Public branch evidence: MISSING'
 expect_output "pending incomplete record" './scripts/draft-owner-decisions.sh <github-owner> <github-repo>'
 expect_output "pending incomplete record" 'Choose Public History before selecting the release-check command'
 expect_output "pending incomplete record" 'Release readiness: BLOCKED'
@@ -241,6 +243,22 @@ expect_output "approved clean source-only record" 'check-public-release-branch\.
 expect_output "approved clean source-only record" 'generate-public-ci-evidence\.sh <branch> <ci-run-url> <release-readiness-run-url> <source-ref>'
 expect_output "approved clean source-only record" 'release-evidence-status\.sh'
 expect_output "approved clean source-only record" 'Contribution intake: require DCO sign-off'
+
+mkdir -p "$TMPDIR/release-docs"
+cp "$clean_source" "$TMPDIR/release-docs/OWNER_DECISION_RECORD.md"
+cat >"$TMPDIR/release-docs/PUBLIC_BRANCH_EVIDENCE.md" <<'EOF'
+# Public Branch Evidence
+Public branch evidence status: PASS
+Source commit: `0123456789abcdef0123456789abcdef01234567`
+EOF
+cat >"$TMPDIR/release-docs/PUBLIC_CI_EVIDENCE.md" <<'EOF'
+# Public CI Evidence
+Public CI evidence status: PENDING
+CI workflow run: `TODO`
+EOF
+expect_pass "approved record with adjacent evidence snapshot" "$TMPDIR/release-docs/OWNER_DECISION_RECORD.md"
+expect_output "approved record with adjacent evidence snapshot" 'Public branch evidence: PASS'
+expect_output "approved record with adjacent evidence snapshot" 'Public CI evidence: PENDING, placeholders remain'
 
 current_source="$TMPDIR/current-source.md"
 write_record "$current_source" APPROVED current source undecided

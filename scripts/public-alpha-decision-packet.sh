@@ -62,6 +62,31 @@ section_block() {
   fi
 }
 
+evidence_status() {
+  local file=$1
+  local label=$2
+  local status_label=$3
+
+  if [ ! -f "$file" ]; then
+    echo "- $label: MISSING ($file)"
+    return
+  fi
+
+  local status
+  status="$(rg -i "^${status_label}:" "$file" | head -n1 | sed 's/^[^:]*:[[:space:]]*//; s/[[:space:]]*$//; s/^`//; s/`$//' || true)"
+  if [ -z "$status" ]; then
+    echo "- $label: MISSING STATUS ($file)"
+    return
+  fi
+
+  if rg -q 'TODO|TBD|PLACEHOLDER|PENDING|not yet run|not yet reviewed|not yet configured' "$file"; then
+    echo "- $label: $status, placeholders remain ($file)"
+    return
+  fi
+
+  echo "- $label: $status ($file)"
+}
+
 required_start="$(rg -n '^## Required Before Public GitHub Visibility$' "$file" | cut -d: -f1 | head -n1 || true)"
 required_end="$(rg -n '^## Required Before Binary Distribution$' "$file" | cut -d: -f1 | head -n1 || true)"
 
@@ -167,6 +192,23 @@ echo "- Roadmap: no public roadmap commitments during alpha; issues/labels/miles
 echo "- Naming: Fleet is a provisional working name; no trademark claim or stable package/binary namespace promise."
 echo "- Local data: document ~/.fleet/run, ~/.fleet/mux, manual cleanup, and process ownership."
 echo "- Workflows: tagged third-party Actions accepted only with read-only token permissions and no secrets/publishing credentials."
+
+echo
+echo "Release evidence snapshot:"
+release_dir="$(cd "$(dirname "$file")" && pwd)"
+evidence_status "$release_dir/PUBLIC_BRANCH_EVIDENCE.md" \
+  "Public branch evidence" \
+  "Public branch evidence status"
+evidence_status "$release_dir/PUBLIC_CI_EVIDENCE.md" \
+  "Public CI evidence" \
+  "Public CI evidence status"
+evidence_status "$release_dir/GITHUB_PUBLICATION_EVIDENCE.md" \
+  "GitHub publication evidence" \
+  "GitHub publication evidence status"
+evidence_status "$release_dir/DEPENDENCY_REVIEW_EVIDENCE.md" \
+  "Dependency review evidence" \
+  "Dependency review status"
+echo "  Full gate: ./scripts/release-evidence-status.sh"
 
 echo
 echo "Owner review helper:"
