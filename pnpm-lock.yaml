@@ -43,6 +43,25 @@ importers:
         specifier: ^5.4.0
         version: 5.9.3
 
+  packages/fleet-bridge:
+    dependencies:
+      ws:
+        specifier: ^8.21.0
+        version: 8.21.0
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.42
+      '@types/vscode':
+        specifier: ^1.80.0
+        version: 1.120.0
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
 packages:
 
   '@babel/code-frame@7.29.7':
