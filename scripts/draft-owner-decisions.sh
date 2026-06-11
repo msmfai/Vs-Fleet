@@ -301,12 +301,29 @@ Current default recommendation: no public roadmap commitments during alpha.
 Release notes should list known rough edges and non-goals; issues, labels, and
 milestones are triage signals only.
 
+### 20. Public Name Collision And Trademark Posture
+
+Choose how the public alpha handles the \`Fleet\` name before users, package
+indexes, forks, or screenshots treat it as stable.
+
+- [x] Use \`Fleet\` only as a provisional source-alpha working name. Make no
+  trademark claim, acknowledge name-collision review is unresolved, and do not
+  publish packages or binaries under stable Fleet namespaces.
+- [ ] Rename the product and package namespaces before public visibility.
+- [ ] Owner has reviewed name/trademark clearance and accepts using \`Fleet\`
+  publicly.
+- [ ] Other: \`TODO\`
+
+Current default recommendation: treat \`Fleet\` as a provisional working name for
+source alpha, make no trademark claim, and defer stable package/binary namespace
+publication until the owner either clears the name or renames it.
+
 ## Required Before Binary Distribution
 
 These do not block a source-only alpha, but they must be decided before any
 public app bundle.
 
-### 20. macOS Signing and Notarization
+### 21. macOS Signing and Notarization
 
 - [ ] No public binaries until Developer ID signing and notarization are
   automated.
@@ -316,7 +333,7 @@ public app bundle.
 Current default recommendation: no public binaries until signing and notarization
 are automated.
 
-### 21. Update Channel
+### 22. Update Channel
 
 - [ ] No auto-update in alpha.
 - [ ] GitHub Releases only.

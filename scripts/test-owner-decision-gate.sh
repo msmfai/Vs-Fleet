@@ -23,6 +23,7 @@ write_record() {
   local ai_checked='x'
   local platform_checked='x'
   local roadmap_checked='x'
+  local name_collision_checked='x'
 
   case "$distribution" in
     source) source_checked='x' ;;
@@ -164,14 +165,19 @@ Decision record status: $status
 - [$roadmap_checked] No public roadmap commitments during alpha. Issues, labels, and milestones are triage hints only, not delivery promises.
 - [ ] Other: \`TODO\`
 
+### 20. Public Name Collision And Trademark Posture
+
+- [$name_collision_checked] Use \`Fleet\` only as a provisional source-alpha working name. Make no trademark claim, acknowledge name-collision review is unresolved, and do not publish packages or binaries under stable Fleet namespaces.
+- [ ] Other: \`TODO\`
+
 ## Required Before Binary Distribution
 
-### 20. macOS Signing and Notarization
+### 21. macOS Signing and Notarization
 
 - [$signing_checked] No public binaries until Developer ID signing and notarization are automated.
 - [ ] Other: \`TODO\`
 
-### 21. Update Channel
+### 22. Update Channel
 
 - [$update_checked] No auto-update in alpha.
 - [ ] Other: \`TODO\`
@@ -254,6 +260,12 @@ write_record "$roadmap_missing" APPROVED source decided undecided
 perl -0pi -e 's/- \[x\] No public roadmap commitments during alpha\./- [ ] No public roadmap commitments during alpha./' "$roadmap_missing"
 expect_fail_contains "source-only alpha requires a roadmap decision" "$roadmap_missing" \
   "### 19\\. Public Roadmap And Non-Goals must have exactly one checked choice; found 0"
+
+name_collision_missing="$TMPDIR/name-collision-missing.md"
+write_record "$name_collision_missing" APPROVED source decided undecided
+perl -0pi -e 's/- \[x\] Use `Fleet` only as a provisional source-alpha working name\./- [ ] Use `Fleet` only as a provisional source-alpha working name./' "$name_collision_missing"
+expect_fail_contains "source-only alpha requires a name collision decision" "$name_collision_missing" \
+  "### 20\\. Public Name Collision And Trademark Posture must have exactly one checked choice; found 0"
 
 binary_missing="$TMPDIR/binary-missing.md"
 write_record "$binary_missing" APPROVED unsigned decided undecided

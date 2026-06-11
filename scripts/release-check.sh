@@ -85,6 +85,7 @@ for required in \
   docs/release/GITHUB_PUBLICATION_EVIDENCE.md \
   docs/release/PUBLIC_CI_EVIDENCE.md \
   docs/release/ASSET_PROVENANCE.md \
+  docs/release/NAME_COLLISION_REVIEW.md \
   docs/release/PUBLIC_ALPHA_OWNER_PROMPT.md \
   docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md \
   .github/workflows/ci.yml \
@@ -158,6 +159,8 @@ for required in \
   scripts/test-platform-support-decision-check.sh \
   scripts/check-roadmap-decision.sh \
   scripts/test-roadmap-decision-check.sh \
+  scripts/check-name-collision-decision.sh \
+  scripts/test-name-collision-decision-check.sh \
   scripts/test-release-check.sh \
   scripts/check-release-notes.sh \
   scripts/test-release-notes-check.sh \
@@ -269,6 +272,9 @@ else
       fail=1
     fi
     if ! scripts/check-roadmap-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
+      fail=1
+    fi
+    if ! scripts/check-name-collision-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
       fail=1
     fi
   fi

@@ -28,6 +28,8 @@ choices in `docs/release/OWNER_DECISION_RECORD.md` before using this runbook:
 - Versioning and compatibility commitment.
 - Community intake and moderation posture.
 - Release custody and maintainer authority.
+- Public roadmap/non-goals posture.
+- Public name collision and trademark posture.
 
 ## Public Visibility
 
@@ -60,6 +62,8 @@ Reference: <https://docs.github.com/en/repositories/managing-your-repositorys-se
 Set these before public visibility:
 
 - Repository name matches the approved namespace table.
+- Public name collision/trademark posture has been recorded; if `Fleet` remains
+  provisional, public release notes must make no trademark claim.
 - Default branch is the exact public branch.
 - Issues are enabled only if the support commitment allows public issue intake.
 - Discussions and wiki are disabled unless deliberately supported.

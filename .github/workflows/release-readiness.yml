@@ -99,6 +99,9 @@ jobs:
       - name: Roadmap decision gate self-test
         run: ./scripts/test-roadmap-decision-check.sh
 
+      - name: Name collision decision gate self-test
+        run: ./scripts/test-name-collision-decision-check.sh
+
       - name: GitHub publication evidence gate self-test
         run: ./scripts/test-github-publication-evidence-check.sh
 

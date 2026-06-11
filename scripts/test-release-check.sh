@@ -66,6 +66,7 @@ for doc in \
   docs/release/GITHUB_PUBLICATION_EVIDENCE.md \
   docs/release/PUBLIC_CI_EVIDENCE.md \
   docs/release/ASSET_PROVENANCE.md \
+  docs/release/NAME_COLLISION_REVIEW.md \
   docs/release/PUBLIC_ALPHA_OWNER_PROMPT.md \
   docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md \
   docs/release/ALPHA_RELEASE_CHECKLIST.md \
@@ -113,6 +114,7 @@ for script in \
   scripts/check-ai-contribution-decision.sh \
   scripts/check-platform-support-decision.sh \
   scripts/check-roadmap-decision.sh \
+  scripts/check-name-collision-decision.sh \
   scripts/test-owner-decision-gate.sh \
   scripts/test-draft-owner-decisions.sh \
   scripts/test-public-alpha-decision-packet.sh \
@@ -149,6 +151,7 @@ for script in \
   scripts/test-ai-contribution-decision-check.sh \
   scripts/test-platform-support-decision-check.sh \
   scripts/test-roadmap-decision-check.sh \
+  scripts/test-name-collision-decision-check.sh \
   scripts/test-release-check.sh \
   scripts/check-release-notes.sh \
   scripts/test-release-notes-check.sh

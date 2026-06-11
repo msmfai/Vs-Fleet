@@ -20,7 +20,7 @@ if ! rg -q '^Decision record status: APPROVED$' "$owner_record"; then
 fi
 
 roadmap_block="$(
-  sed -n '/^### 19\. Public Roadmap And Non-Goals$/,/^## Required Before Binary Distribution$/p' "$owner_record"
+  sed -n '/^### 19\. Public Roadmap And Non-Goals$/,/^### 20\. Public Name Collision And Trademark Posture$/p' "$owner_record"
 )"
 
 checked_count="$(printf '%s\n' "$roadmap_block" | rg -c '^- \[x\] ' || true)"
