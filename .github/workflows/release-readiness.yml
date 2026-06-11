@@ -51,6 +51,9 @@ jobs:
       - name: Documentation link gate self-test
         run: ./scripts/test-doc-link-check.sh
 
+      - name: Public tree size gate self-test
+        run: ./scripts/test-public-tree-size-check.sh
+
       - name: Public CI evidence gate self-test
         run: ./scripts/test-ci-evidence-decision-check.sh
 
@@ -86,6 +89,9 @@ jobs:
 
       - name: Documentation link gate
         run: ./scripts/check-doc-links.sh
+
+      - name: Public tree size gate
+        run: ./scripts/check-public-tree-size.sh
 
       - name: Release hygiene gate
         run: ./scripts/release-check.sh

@@ -39,6 +39,7 @@ sessions.
 - JavaScript/package checks: passed locally.
 - Dependency review: completed, no accepted findings.
 - Documentation link audit: passed.
+- Public tree size audit: passed.
 - History exposure audit: cleaned public history.
 - Secret exposure audit: passed.
 - Release hygiene gate: passed.
@@ -138,6 +139,11 @@ missing_doc_links="$TMPDIR/missing-doc-links.md"
 write_valid_notes "$missing_doc_links"
 perl -0pi -e 's/\n- Documentation link audit: passed\.\n/\n/' "$missing_doc_links"
 expect_fail "missing documentation link audit is rejected" "$missing_doc_links"
+
+missing_tree_size="$TMPDIR/missing-tree-size.md"
+write_valid_notes "$missing_tree_size"
+perl -0pi -e 's/\n- Public tree size audit: passed\.\n/\n/' "$missing_tree_size"
+expect_fail "missing public tree size audit is rejected" "$missing_tree_size"
 
 exception="$TMPDIR/exception.md"
 write_valid_notes "$exception"

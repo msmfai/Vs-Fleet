@@ -92,6 +92,8 @@ for required in \
   scripts/test-github-intake-templates-check.sh \
   scripts/check-doc-links.sh \
   scripts/test-doc-link-check.sh \
+  scripts/check-public-tree-size.sh \
+  scripts/test-public-tree-size-check.sh \
   scripts/check-dependabot-config.sh \
   scripts/test-dependabot-config-check.sh \
   scripts/check-owner-decisions.sh \
@@ -153,6 +155,10 @@ if ! scripts/check-github-intake-templates.sh \
 fi
 
 if ! scripts/check-doc-links.sh; then
+  fail=1
+fi
+
+if ! scripts/check-public-tree-size.sh; then
   fail=1
 fi
 

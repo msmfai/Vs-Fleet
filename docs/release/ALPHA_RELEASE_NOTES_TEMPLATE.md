@@ -45,6 +45,7 @@ Record exact commands and where they ran.
 - JavaScript/package checks: `[commands/results]`
 - Dependency review: `[commands/results or owner-approved skip]`
 - Documentation link audit: `[./scripts/check-doc-links.sh result]`
+- Public tree size audit: `[./scripts/check-public-tree-size.sh result]`
 - History exposure audit: `[passed | cleaned history | owner-approved current history exposure]`
 - Secret exposure audit: `[./scripts/secret-release-check.sh result]`
 - Release hygiene gate: `[./scripts/release-check.sh result]`
