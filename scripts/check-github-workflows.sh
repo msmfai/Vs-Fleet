@@ -101,6 +101,8 @@ require_text "$release" './scripts/test-workflow-supply-chain-decision-check.sh'
   "workflow supply-chain decision self-test"
 require_text "$release" './scripts/test-github-publication-evidence-check.sh' \
   "GitHub publication evidence self-test"
+require_text "$release" './scripts/test-generate-github-publication-evidence.sh' \
+  "GitHub publication evidence generator self-test"
 require_text "$release" './scripts/test-public-branch-evidence-check.sh' \
   "public branch evidence self-test"
 require_text "$release" './scripts/test-generate-public-branch-evidence.sh' \

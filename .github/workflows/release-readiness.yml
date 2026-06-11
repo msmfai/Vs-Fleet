@@ -138,6 +138,9 @@ jobs:
       - name: GitHub publication evidence gate self-test
         run: ./scripts/test-github-publication-evidence-check.sh
 
+      - name: GitHub publication evidence generator self-test
+        run: ./scripts/test-generate-github-publication-evidence.sh
+
       - name: History release gate self-test
         run: ./scripts/test-history-release-check.sh
 

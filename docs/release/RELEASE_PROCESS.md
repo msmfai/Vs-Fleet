@@ -246,9 +246,17 @@ Do not publish a public alpha until these are true:
    after the workflows run, the checker permits known release-control evidence
    files under `docs/release/*_EVIDENCE.md` to differ from the checked commit.
 
-12. Fill `docs/release/GITHUB_PUBLICATION_EVIDENCE.md` with the exact GitHub
-   repository URL, repository settings, security settings, and branch-protection
-   evidence for the public repo.
+12. Generate `docs/release/GITHUB_PUBLICATION_EVIDENCE.md` from the exact
+   GitHub repository URL, repository settings, security settings,
+   branch-protection evidence, and release-custody owner:
+
+   ```sh
+   ./scripts/generate-github-publication-evidence.sh <repo-url> <default-branch> <source-ref> <emergency-removal-owner>
+   ```
+
+   Pass `field=value` overrides for any repository setting that differs from
+   the source-only alpha defaults printed by
+   `./scripts/generate-github-publication-evidence.sh --help`.
 
    If you commit this evidence after reviewing the settings, the checker permits
    known release-control evidence files under `docs/release/*_EVIDENCE.md` to
