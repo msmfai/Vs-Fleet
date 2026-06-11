@@ -74,6 +74,7 @@ done
 for required in \
   SECURITY.md \
   CONTRIBUTING.md \
+  DCO.md \
   SUPPORT.md \
   CODE_OF_CONDUCT.md \
   docs/QUICKSTART.md \
@@ -88,6 +89,7 @@ for required in \
   docs/release/ASSET_PROVENANCE.md \
   docs/release/NAME_COLLISION_REVIEW.md \
   docs/release/WORKFLOW_SUPPLY_CHAIN.md \
+  docs/release/LICENSE_INTENT.md \
   docs/release/PUBLIC_ALPHA_OWNER_PROMPT.md \
   docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md \
   .github/workflows/ci.yml \
@@ -119,8 +121,12 @@ for required in \
   scripts/test-secret-release-check.sh \
   scripts/check-license-decision.sh \
   scripts/test-license-decision-check.sh \
+  scripts/check-license-intent.sh \
+  scripts/test-license-intent-check.sh \
   scripts/apply-license-decision.sh \
   scripts/test-apply-license-decision.sh \
+  scripts/check-dco-signoff.sh \
+  scripts/test-dco-signoff.sh \
   scripts/apply-namespace-decision.sh \
   scripts/test-apply-namespace-decision.sh \
   scripts/check-namespace-decision.sh \
@@ -198,6 +204,10 @@ if ! scripts/check-github-intake-templates.sh \
 fi
 
 if ! scripts/check-doc-links.sh; then
+  fail=1
+fi
+
+if ! scripts/check-license-intent.sh; then
   fail=1
 fi
 

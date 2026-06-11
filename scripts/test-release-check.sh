@@ -55,6 +55,7 @@ for doc in \
   README.md \
   SECURITY.md \
   CONTRIBUTING.md \
+  DCO.md \
   SUPPORT.md \
   CODE_OF_CONDUCT.md \
   docs/QUICKSTART.md \
@@ -69,6 +70,7 @@ for doc in \
   docs/release/ASSET_PROVENANCE.md \
   docs/release/NAME_COLLISION_REVIEW.md \
   docs/release/WORKFLOW_SUPPLY_CHAIN.md \
+  docs/release/LICENSE_INTENT.md \
   docs/release/PUBLIC_ALPHA_OWNER_PROMPT.md \
   docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md \
   docs/release/ALPHA_RELEASE_CHECKLIST.md \
@@ -93,6 +95,7 @@ for script in \
   scripts/prepare-public-branch.sh \
   scripts/secret-release-check.sh \
   scripts/check-doc-links.sh \
+  scripts/check-license-intent.sh \
   scripts/check-public-tree-size.sh \
   scripts/check-lockfile-policy.sh \
   scripts/check-alpha-scope-decision.sh \
@@ -119,6 +122,7 @@ for script in \
   scripts/check-name-collision-decision.sh \
   scripts/check-local-data-decision.sh \
   scripts/check-workflow-supply-chain-decision.sh \
+  scripts/check-dco-signoff.sh \
   scripts/test-owner-decision-gate.sh \
   scripts/test-draft-owner-decisions.sh \
   scripts/test-public-alpha-decision-packet.sh \
@@ -126,6 +130,7 @@ for script in \
   scripts/test-prepare-public-branch.sh \
   scripts/test-secret-release-check.sh \
   scripts/test-doc-link-check.sh \
+  scripts/test-license-intent-check.sh \
   scripts/test-public-tree-size-check.sh \
   scripts/test-lockfile-policy-check.sh \
   scripts/apply-license-decision.sh \
@@ -158,6 +163,7 @@ for script in \
   scripts/test-name-collision-decision-check.sh \
   scripts/test-local-data-decision-check.sh \
   scripts/test-workflow-supply-chain-decision-check.sh \
+  scripts/test-dco-signoff.sh \
   scripts/test-release-check.sh \
   scripts/check-release-notes.sh \
   scripts/test-release-notes-check.sh

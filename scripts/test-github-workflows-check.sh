@@ -18,6 +18,14 @@ permissions:
   contents: read
 
 jobs:
+  dco:
+    name: DCO sign-off
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: ./scripts/check-dco-signoff.sh "origin/${{ github.base_ref }}..HEAD"
   rust:
     steps:
       - uses: actions/cache@v4
@@ -59,6 +67,8 @@ jobs:
   release-gate:
     steps:
       - run: ./scripts/test-release-check.sh
+      - run: ./scripts/test-license-intent-check.sh
+      - run: ./scripts/test-dco-signoff.sh
       - run: ./scripts/test-dependabot-config-check.sh
       - run: ./scripts/test-secret-release-check.sh
       - run: ./scripts/test-doc-link-check.sh
@@ -80,6 +90,7 @@ jobs:
       - run: ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md
       - run: ./scripts/secret-release-check.sh
       - run: ./scripts/check-doc-links.sh
+      - run: ./scripts/check-license-intent.sh
       - run: ./scripts/check-public-tree-size.sh
       - run: ./scripts/check-lockfile-policy.sh
       - run: ./scripts/release-check.sh

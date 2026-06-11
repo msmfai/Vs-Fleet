@@ -48,6 +48,9 @@ is still `TODO`, ambiguous, or only a recommendation.
 
 1. License:
    Recommended alpha default: `MIT OR Apache-2.0`.
+   Keep reusable library/API crates permissive. Reserve AGPL-3.0-only plus a
+   commercial exception as a future CLI/hosted-control-plane contingency only
+   after a concrete monetization trigger.
    Owner answer:
 
 2. First public history:
@@ -88,8 +91,9 @@ is still `TODO`, ambiguous, or only a recommendation.
    Owner answer:
 
 8. Contribution intake:
-   Recommended alpha default: accept small focused PRs under the chosen project
-   license using the PR template certification; no CLA for alpha.
+   Recommended alpha default: require DCO sign-off for outside code
+   contributions; no CLA for source alpha. Revisit CLA before accepting code if
+   commercial exceptions or proprietary relicensing become a goal.
    Owner answer:
 
 9. Public CI evidence:
