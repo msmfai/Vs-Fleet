@@ -8,12 +8,9 @@ VSX packages, or container images.
 
 Do not publish a public alpha until these are true:
 
-- A project license is chosen.
-- A root `LICENSE` file exists.
-- Rust and npm package metadata no longer declare `UNLICENSED`.
-- `./scripts/apply-license-decision.sh docs/release/OWNER_DECISION_RECORD.md . path/to/LICENSE`
-  has been run with the reviewed legal license text, unless the metadata and
-  root `LICENSE` were updated manually.
+- The `MIT OR Apache-2.0` project license is applied.
+- Root `LICENSE`, `LICENSE-MIT`, and `LICENSE-APACHE` files exist.
+- Rust and npm package metadata use `MIT OR Apache-2.0`.
 - If using recommended defaults, generate a PENDING review draft with
   `./scripts/draft-owner-decisions.sh <github-owner> <github-repo> docs/release/OWNER_DECISION_RECORD.draft.md`
   and copy only reviewed choices into `docs/release/OWNER_DECISION_RECORD.md`.

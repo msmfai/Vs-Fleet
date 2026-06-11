@@ -3,8 +3,8 @@
 This is the current source-only alpha path. It is intended for local macOS
 dogfooding and technical review, not for packaged binary distribution.
 
-Fleet is still blocked for public open-source release until a license is chosen
-and `UNLICENSED` is removed from the package metadata. See
+Fleet is licensed as `MIT OR Apache-2.0`; public visibility remains gated by
+the owner decision record and release evidence in
 `docs/release/ALPHA_RELEASE_CHECKLIST.md`.
 
 ## Prerequisites
@@ -107,5 +107,5 @@ Run the public-release hygiene check from the repository root:
 ./scripts/release-check.sh
 ```
 
-It is expected to fail until the license decision is applied and package
-metadata no longer declares `UNLICENSED`.
+It is expected to fail until the remaining owner decisions, history review, and
+publication evidence are resolved.

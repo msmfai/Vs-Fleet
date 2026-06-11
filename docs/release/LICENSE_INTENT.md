@@ -5,9 +5,9 @@ context, not a substitute for the actual `LICENSE` file and manifest metadata.
 
 ## Current Decision
 
-Fleet should ship the source alpha as `MIT OR Apache-2.0` once the reviewed
-license text is added and all Rust/npm manifests and lockfiles are updated.
-Until that happens, `UNLICENSED` metadata remains a public-release blocker.
+Fleet should ship the source alpha as `MIT OR Apache-2.0`. The reviewed license
+text is tracked in `LICENSE`, `LICENSE-MIT`, and `LICENSE-APACHE`, and the
+Rust/npm manifests and lockfiles use the same SPDX expression.
 
 The permissive license is the default for Fleet's reusable library and protocol
 surfaces. The goal is to let people inspect, fork, package, and embed the local

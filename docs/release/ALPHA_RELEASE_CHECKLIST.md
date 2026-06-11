@@ -6,22 +6,19 @@ support debt?"
 
 ## Current verdict
 
-**Not ready for public alpha yet.** The code is promising, but the repository is
-too rough as a public open-source project until the blocking items below are
-closed or explicitly accepted.
+**Gated for public alpha.** The code is promising, but the repository still
+needs the blocking items below closed or explicitly accepted before public
+visibility.
 
 ## Blocking before public GitHub visibility
 
-- [ ] Choose and apply a project license.
-- [ ] Add a root `LICENSE` file.
-- [ ] Replace `UNLICENSED` in `Cargo.toml`, `crates/fleet-host/Cargo.toml`, and
-  package manifests/lockfiles.
-- [ ] After the license decision is approved and real license text is ready, run
-  `./scripts/apply-license-decision.sh docs/release/OWNER_DECISION_RECORD.md . path/to/LICENSE`
-  to apply the SPDX expression to release metadata.
-- [ ] Run `./scripts/check-license-decision.sh` after choosing the license to
-  verify the owner record, root `LICENSE`, Rust manifests, npm manifests, and
-  package lockfiles agree.
+- [x] Choose and apply the `MIT OR Apache-2.0` project license.
+- [x] Add root `LICENSE`, `LICENSE-MIT`, and `LICENSE-APACHE` files.
+- [x] Apply `MIT OR Apache-2.0` to `Cargo.toml`,
+  `crates/fleet-host/Cargo.toml`, and package manifests/lockfiles.
+- [ ] Run `./scripts/check-license-decision.sh` after the owner record is
+  approved to verify the owner record, root `LICENSE`, Rust manifests, npm
+  manifests, and package lockfiles agree.
 - [x] Fence package publication for source-only alpha with `publish = false` in
   Rust crates and `"private": true` in extension package manifests.
 - [ ] Run `./scripts/check-distribution-decision.sh` after choosing
@@ -168,12 +165,12 @@ closed or explicitly accepted.
 ## Current evidence from the repository
 
 - Root `Cargo.toml`, `crates/fleet-host/Cargo.toml`,
-  `packages/*/package.json`, and `packages/*/package-lock.json` currently
-  declare `UNLICENSED`.
+  `packages/*/package.json`, and `packages/*/package-lock.json` declare
+  `MIT OR Apache-2.0`.
 - Rust crates set `publish = false`, and extension package manifests set
   `"private": true`; the release gate enforces those source-only alpha fences.
-- No root `LICENSE` is tracked yet. `SECURITY.md` and `CONTRIBUTING.md` are
-  present.
+- Root `LICENSE`, `LICENSE-MIT`, and `LICENSE-APACHE` are tracked.
+  `SECURITY.md` and `CONTRIBUTING.md` are present.
 - `SUPPORT.md`, `CODE_OF_CONDUCT.md`, GitHub issue templates, and a pull request
   template are present.
 - `scripts/check-github-intake-templates.sh` validates that GitHub issue/PR

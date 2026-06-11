@@ -14,13 +14,14 @@ write_valid() {
   cat >"$intent" <<'EOF'
 # License Intent
 
-Fleet should ship as MIT OR Apache-2.0. UNLICENSED metadata remains a
-public-release blocker. Developer Certificate of Origin (DCO) sign-off is used;
-it does not assign copyright and does not give the maintainer relicensing
-rights over contributor code. Revisit a Contributor License Agreement (CLA)
-before commercial relicensing. Released versions remain available under their
-release license. Keep reusable library/API crates permissive. AGPL-3.0-only is
-a contingency for a future hosted control plane or hosted-reseller trigger.
+Fleet should ship as MIT OR Apache-2.0. LICENSE-MIT and LICENSE-APACHE are
+tracked, and manifests use SPDX metadata. Developer Certificate of Origin (DCO)
+sign-off is used; it does not assign copyright and does not give the maintainer
+relicensing rights over contributor code. Revisit a Contributor License
+Agreement (CLA) before commercial relicensing. Released versions remain
+available under their release license. Keep reusable library/API crates
+permissive. AGPL-3.0-only is a contingency for a future hosted control plane or
+hosted-reseller trigger.
 EOF
   cat >"$dco" <<'EOF'
 # DCO
