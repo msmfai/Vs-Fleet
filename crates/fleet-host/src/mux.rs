@@ -9,11 +9,7 @@
 //! Only the rail webview gets Fleet's IPC; each editor surface is a plain
 //! external origin (the code-server) with no Fleet API access.
 
-use std::{
-    collections::{HashMap, HashSet},
-    process::Command,
-    sync::Mutex,
-};
+use std::{collections::HashMap, process::Command, sync::Mutex};
 
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "macos")]
@@ -52,20 +48,6 @@ pub struct HostStatus {
     pub message: String,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct RailMenuState {
-    row_count: usize,
-    unread_count: usize,
-    openable_unread_count: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct MenuSignature {
-    servers: Vec<Server>,
-    selected: Option<String>,
-    rail_state: RailMenuState,
-}
-
 /// One persistent editor webview owned by a server id.
 #[derive(Debug, Clone)]
 struct EditorEntry {
@@ -80,7 +62,6 @@ struct EditorEntry {
 pub struct MuxState {
     pub selected: Mutex<Option<String>>,
     pub status: Mutex<Option<HostStatus>>,
-    menu_signature: Mutex<Option<MenuSignature>>,
     /// Legacy singleton loaded URL, used only when `FLEET_EDITOR_KEEPALIVE=0`.
     loaded: Mutex<Option<String>>,
     /// Persistent editor webviews keyed by Fleet server id.
@@ -786,112 +767,21 @@ fn sync_rail_selection(app: &AppHandle) {
 /// menus. The webview can't own the OS menu bar, so Fleet provides one wired to
 /// the active surface.
 pub fn build_menu(app: &mut App) -> tauri::Result<()> {
-    let signature = MenuSignature {
-        servers: Vec::new(),
-        selected: None,
-        rail_state: RailMenuState::default(),
-    };
-    app.set_menu(build_app_menu(
-        app,
-        &signature.servers,
-        signature.selected.as_deref(),
-        signature.rail_state,
-    )?)?;
-    if let Some(state) = app.try_state::<MuxState>() {
-        if let Ok(mut cached) = state.menu_signature.lock() {
-            *cached = Some(signature);
-        }
-    }
+    app.set_menu(build_app_menu(app)?)?;
     Ok(())
 }
 
 pub fn refresh_menu(app: &AppHandle) {
-    if let Err(e) = refresh_menu_result(app) {
-        tracing::warn!(error = %e, "native menu refresh failed");
-    }
-}
-
-fn refresh_menu_result(app: &AppHandle) -> tauri::Result<()> {
-    let servers = menu_servers(app);
-    let selected = app
-        .try_state::<MuxState>()
-        .and_then(|state| state.selected.lock().ok().and_then(|g| g.clone()));
-    let rail_state = rail_menu_state(app, &servers);
-    let signature = MenuSignature {
-        servers,
-        selected,
-        rail_state,
-    };
-    if let Some(state) = app.try_state::<MuxState>() {
-        if let Ok(cached) = state.menu_signature.lock() {
-            if cached.as_ref() == Some(&signature) {
-                return Ok(());
-            }
-        }
-    }
-
-    app.set_menu(build_app_menu(
-        app,
-        &signature.servers,
-        signature.selected.as_deref(),
-        signature.rail_state,
-    )?)?;
-    if let Some(state) = app.try_state::<MuxState>() {
-        if let Ok(mut cached) = state.menu_signature.lock() {
-            *cached = Some(signature);
-        }
-    }
-    Ok(())
-}
-
-fn menu_servers(app: &AppHandle) -> Vec<Server> {
-    servers_for_app(app)
-}
-
-fn rail_menu_state(app: &AppHandle, servers: &[Server]) -> RailMenuState {
-    let inbox = app
-        .try_state::<crate::hub_client::Shared>()
-        .and_then(|shared| shared.lock().ok().map(|g| g.clone()));
-    rail_menu_state_from(servers, inbox.as_ref())
-}
-
-fn rail_menu_state_from(
-    servers: &[Server],
-    inbox: Option<&crate::render::RenderedInbox>,
-) -> RailMenuState {
-    let server_ids: HashSet<&str> = servers.iter().map(|server| server.id.as_str()).collect();
-    let mut row_ids = server_ids.clone();
-    let mut unread_count = 0;
-    let mut openable_unread_count = 0;
-
-    if let Some(inbox) = inbox {
-        for tab in &inbox.tabs {
-            row_ids.insert(tab.session_id.as_str());
-            if tab.unread {
-                unread_count += 1;
-                if server_ids.contains(tab.session_id.as_str()) {
-                    openable_unread_count += 1;
-                }
-            }
-        }
-    }
-
-    RailMenuState {
-        row_count: row_ids.len(),
-        unread_count,
-        openable_unread_count,
-    }
+    let _ = app;
 }
 
 fn build_app_menu<M: Manager<tauri::Wry>>(
     manager: &M,
-    servers: &[Server],
-    selected: Option<&str>,
-    rail_state: RailMenuState,
 ) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 
-    // Standard app menu (the bold first menu on macOS).
+    // Standard app menu (the bold first menu on macOS). Keep native roles for
+    // app/window operations so macOS owns the menu lifecycle.
     let app_menu = SubmenuBuilder::new(manager, "Fleet")
         .about(None)
         .separator()
@@ -900,7 +790,11 @@ fn build_app_menu<M: Manager<tauri::Wry>>(
                 .build(manager)?,
         )
         .separator()
-        .item(&MenuItemBuilder::with_id("app:quit", "Quit Fleet").build(manager)?)
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .quit()
         .build()?;
 
     // The VS Code menu tree. Each `Cmd(label, id)` forwards a real VS Code command
@@ -919,13 +813,13 @@ fn build_app_menu<M: Manager<tauri::Wry>>(
         subs.push(build_sub(manager, title, items)?);
     }
 
-    let server_menu = build_server_menu(manager, servers, selected, rail_state)?;
+    let server_menu = build_server_menu(manager)?;
 
     let window_menu = SubmenuBuilder::new(manager, "Window")
-        .item(&MenuItemBuilder::with_id("window:minimize", "Minimize").build(manager)?)
-        .item(&MenuItemBuilder::with_id("window:fullscreen", "Toggle Full Screen").build(manager)?)
+        .minimize()
+        .fullscreen()
         .separator()
-        .item(&MenuItemBuilder::with_id("window:close", "Close Window").build(manager)?)
+        .close_window()
         .build()?;
 
     let help_menu = build_sub(manager, "Help", HELP)?;
@@ -942,110 +836,27 @@ fn build_app_menu<M: Manager<tauri::Wry>>(
 
 fn build_server_menu<M: Manager<tauri::Wry>>(
     manager: &M,
-    servers: &[Server],
-    selected: Option<&str>,
-    rail_state: RailMenuState,
 ) -> tauri::Result<tauri::menu::Submenu<tauri::Wry>> {
-    use tauri::menu::{CheckMenuItemBuilder, MenuItemBuilder, SubmenuBuilder};
-    let close_current = close_current_menu_item(servers, selected);
-    let open_current_enabled = selected_server_has_url(servers, selected);
+    use tauri::menu::{MenuItemBuilder, SubmenuBuilder};
 
-    let mut menu = SubmenuBuilder::new(manager, "Server")
+    SubmenuBuilder::new(manager, "Server")
         .item(&MenuItemBuilder::with_id("spawn:new", "New Server").build(manager)?)
         .item(
-            &MenuItemBuilder::with_id("spawn:close-current", close_current.label)
-                .enabled(close_current.enabled)
+            &MenuItemBuilder::with_id("spawn:close-current", "Close Current Server")
                 .build(manager)?,
         )
         .item(
             &MenuItemBuilder::with_id("external:open-current", "Open Current in Browser")
-                .enabled(open_current_enabled)
                 .build(manager)?,
         )
         .separator()
-        .item(
-            &MenuItemBuilder::with_id("rail:palette", "Session Palette")
-                .enabled(rail_state.row_count > 0)
-                .build(manager)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("rail:jump-unread", "Jump to Next Unread")
-                .enabled(rail_state.openable_unread_count > 0)
-                .build(manager)?,
-        )
+        .item(&MenuItemBuilder::with_id("rail:palette", "Session Palette").build(manager)?)
+        .item(&MenuItemBuilder::with_id("rail:jump-unread", "Jump to Next Unread").build(manager)?)
         .item(
             &MenuItemBuilder::with_id("rail:cycle-unread", "Cycle Unread Without Marking Read")
-                .enabled(rail_state.unread_count > 0)
                 .build(manager)?,
         )
-        .separator();
-
-    if servers.is_empty() {
-        return menu
-            .item(
-                &MenuItemBuilder::with_id("server:none", "No Servers")
-                    .enabled(false)
-                    .build(manager)?,
-            )
-            .build();
-    }
-
-    for server in servers {
-        let item = CheckMenuItemBuilder::with_id(
-            format!("server:{}", server.id),
-            menu_server_label(server),
-        )
-        .checked(selected == Some(server.id.as_str()));
-        let item = item.build(manager)?;
-        menu = menu.item(&item);
-    }
-
-    menu.build()
-}
-
-fn menu_server_label(server: &Server) -> String {
-    if server.owned {
-        server.label.clone()
-    } else {
-        format!("{} (external)", server.label)
-    }
-}
-
-struct CloseCurrentMenuItem {
-    label: &'static str,
-    enabled: bool,
-}
-
-fn close_current_menu_item(servers: &[Server], selected: Option<&str>) -> CloseCurrentMenuItem {
-    let Some(selected) = selected else {
-        return CloseCurrentMenuItem {
-            label: "Close Current Server",
-            enabled: false,
-        };
-    };
-    let Some(server) = servers.iter().find(|server| server.id == selected) else {
-        return CloseCurrentMenuItem {
-            label: "Close Current Server",
-            enabled: false,
-        };
-    };
-    CloseCurrentMenuItem {
-        label: if server.owned {
-            "Close Current Server"
-        } else {
-            "Forget Current Server"
-        },
-        enabled: true,
-    }
-}
-
-fn selected_server_has_url(servers: &[Server], selected: Option<&str>) -> bool {
-    let Some(selected) = selected else {
-        return false;
-    };
-    servers
-        .iter()
-        .any(|server| server.id == selected && !server.url.is_empty())
+        .build()
 }
 
 fn sanitize_server_label(label: &str) -> Result<String, String> {
@@ -1327,16 +1138,12 @@ fn editor_parking_pane(app: &AppHandle) -> Option<(LogicalPosition<f64>, Logical
 #[cfg(test)]
 mod tests {
     use super::{
-        close_current_menu_item, editor_label_for, external_open_command, keepalive_env_enabled,
-        menu_server_label, merged_servers, rail_menu_state_from, sanitize_server_label,
-        selected_server_has_url, RailMenuState, Server,
+        editor_label_for, external_open_command, keepalive_env_enabled, merged_servers,
+        sanitize_server_label, Server,
     };
 
     #[cfg(target_os = "macos")]
     use super::macos_title_bar_style_from_env_value;
-
-    use crate::render::{RenderedInbox, RenderedTab};
-    use fleet_protocol::LocationGlyph;
 
     #[cfg(target_os = "macos")]
     use tauri::TitleBarStyle;
@@ -1359,87 +1166,6 @@ mod tests {
             editor_label_for("host/ws 1@prod"),
             "editor:host~2fws~201~40prod"
         );
-    }
-
-    #[test]
-    fn menu_server_labels_mark_external_servers() {
-        assert_eq!(
-            menu_server_label(&Server {
-                id: "server-1".into(),
-                label: "server-1".into(),
-                url: "http://127.0.0.1:1/".into(),
-                owned: true,
-            }),
-            "server-1"
-        );
-        assert_eq!(
-            menu_server_label(&Server {
-                id: "remote".into(),
-                label: "prod".into(),
-                url: "http://127.0.0.1:2/".into(),
-                owned: false,
-            }),
-            "prod (external)"
-        );
-    }
-
-    #[test]
-    fn close_current_menu_item_tracks_selected_server_ownership() {
-        let owned = Server {
-            id: "server-1".into(),
-            label: "server-1".into(),
-            url: "http://127.0.0.1:1/".into(),
-            owned: true,
-        };
-        let external = Server {
-            id: "remote".into(),
-            label: "prod".into(),
-            url: "http://127.0.0.1:2/".into(),
-            owned: false,
-        };
-
-        let no_selection = close_current_menu_item(&[owned.clone(), external.clone()], None);
-        assert_eq!(no_selection.label, "Close Current Server");
-        assert!(!no_selection.enabled);
-
-        let selected_owned =
-            close_current_menu_item(&[owned.clone(), external.clone()], Some("server-1"));
-        assert_eq!(selected_owned.label, "Close Current Server");
-        assert!(selected_owned.enabled);
-
-        let selected_external = close_current_menu_item(&[owned, external], Some("remote"));
-        assert_eq!(selected_external.label, "Forget Current Server");
-        assert!(selected_external.enabled);
-
-        let stale_selection = close_current_menu_item(&[], Some("missing"));
-        assert_eq!(stale_selection.label, "Close Current Server");
-        assert!(!stale_selection.enabled);
-    }
-
-    #[test]
-    fn selected_server_has_url_only_for_selected_url_backed_server() {
-        let server = Server {
-            id: "server-1".into(),
-            label: "server-1".into(),
-            url: "http://127.0.0.1:1/".into(),
-            owned: true,
-        };
-        let no_url = Server {
-            id: "server-2".into(),
-            label: "server-2".into(),
-            url: "".into(),
-            owned: true,
-        };
-
-        assert!(selected_server_has_url(
-            &[server.clone(), no_url.clone()],
-            Some("server-1")
-        ));
-        assert!(!selected_server_has_url(
-            &[server.clone(), no_url.clone()],
-            Some("server-2")
-        ));
-        assert!(!selected_server_has_url(&[server, no_url], None));
     }
 
     #[test]
@@ -1479,35 +1205,6 @@ mod tests {
     }
 
     #[test]
-    fn rail_menu_state_tracks_rows_and_unread_openable_sessions() {
-        let server = Server {
-            id: "server-1".into(),
-            label: "server-1".into(),
-            url: "http://127.0.0.1:1/".into(),
-            owned: true,
-        };
-        let inbox = RenderedInbox {
-            tabs: vec![
-                rendered_tab("server-1", true),
-                rendered_tab("agent-only", true),
-                rendered_tab("read", false),
-            ],
-            connected: true,
-            ..Default::default()
-        };
-
-        assert_eq!(
-            rail_menu_state_from(&[server], Some(&inbox)),
-            RailMenuState {
-                row_count: 3,
-                unread_count: 2,
-                openable_unread_count: 1,
-            }
-        );
-        assert_eq!(rail_menu_state_from(&[], None), RailMenuState::default());
-    }
-
-    #[test]
     fn merged_servers_prefers_fleet_owned_entries() {
         let owned = Server {
             id: "server-1".into(),
@@ -1525,28 +1222,6 @@ mod tests {
             merged_servers(vec![owned.clone()], vec![registered]),
             vec![owned]
         );
-    }
-
-    fn rendered_tab(session_id: &str, unread: bool) -> RenderedTab {
-        RenderedTab {
-            session_id: session_id.into(),
-            location: LocationGlyph::Laptop,
-            agent: "agent".into(),
-            title: session_id.into(),
-            state: "waiting".into(),
-            state_glyph: ".".into(),
-            attention: unread,
-            pinging: unread,
-            ping_suppressed: false,
-            urgency: None,
-            confidence: None,
-            waiting_since: None,
-            muted: false,
-            soloed: false,
-            unread,
-            run_count: 1,
-            last_message: None,
-        }
     }
 
     #[cfg(target_os = "macos")]
