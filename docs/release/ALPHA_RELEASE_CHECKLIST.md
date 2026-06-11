@@ -123,8 +123,10 @@ visibility.
   `./scripts/generate-alpha-release-notes.sh v0.1.0-alpha.1 <source-ref> path/to/release-notes.md`
   and add any exact `change=...` or `rough-edge=...` entries needed for this
   alpha.
-- [ ] Run the release-notes checker with the expected commit:
-  `./scripts/check-release-notes.sh path/to/release-notes.md "$(git rev-parse HEAD)"`.
+- [ ] Run the release-notes checker with the expected public commit. For the
+  recommended cleaned-history release this is the `Public root commit` from
+  `docs/release/PUBLIC_BRANCH_EVIDENCE.md`, not the private release-prep
+  branch `HEAD`.
 - [ ] Walk through `docs/release/GITHUB_PUBLICATION_RUNBOOK.md` before changing
   repository visibility or creating the public pre-release.
 - [ ] Generate GitHub repository settings evidence in
@@ -226,12 +228,13 @@ visibility.
 - `docs/release/GITHUB_PUBLICATION_RUNBOOK.md` is present for the final
   repository visibility, security settings, branch protection, and pre-release
   sequence.
-- `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` is present so the first GitHub
-  pre-release has a consistent scope, verification, history, dependency,
-  security, and known-rough-edges disclosure.
-- `scripts/check-release-notes.sh` validates the filled release notes draft for
-  required sections and unresolved placeholders before a GitHub pre-release is
-  published.
+- `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` is present as the checked
+  disclosure baseline for the first GitHub pre-release.
+- `scripts/generate-alpha-release-notes.sh` writes release notes from approved
+  owner decisions and concrete release evidence.
+- `scripts/check-release-notes.sh` validates the generated release notes for
+  required sections, unresolved placeholders, and the expected public commit
+  before a GitHub pre-release is published.
 - `scripts/secret-release-check.sh` scans the tracked tree and, by default, all
   reachable git history for private-key blocks and common token shapes. Passing
   a public branch name scopes the history scan to that release ref. Findings

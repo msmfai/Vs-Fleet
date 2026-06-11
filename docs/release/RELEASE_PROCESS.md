@@ -116,9 +116,11 @@ Do not publish a public alpha until these are true:
   owner decision record explicitly accepts publishing without it.
 - `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` records the exact commit,
   command results, and accepted findings or skipped-review risk.
-- GitHub pre-release notes are drafted from
-  [ALPHA_RELEASE_NOTES_TEMPLATE.md](ALPHA_RELEASE_NOTES_TEMPLATE.md), with every
-  placeholder replaced.
+- GitHub pre-release notes are generated with
+  `./scripts/generate-alpha-release-notes.sh` after owner decisions and release
+  evidence pass, then checked with `./scripts/check-release-notes.sh`.
+  [ALPHA_RELEASE_NOTES_TEMPLATE.md](ALPHA_RELEASE_NOTES_TEMPLATE.md) remains the
+  checked content template and disclosure baseline.
 - [GITHUB_PUBLICATION_RUNBOOK.md](GITHUB_PUBLICATION_RUNBOOK.md) has been walked
   for the exact GitHub repository before public visibility or the first public
   pre-release.
