@@ -26,6 +26,33 @@ write_valid_notes() {
 This alpha is intended for local macOS source builds and local code serve-web
 sessions.
 
+## Supported Platform And Toolchain
+
+- macOS source build only.
+- Rust 1.78 or newer.
+- Node.js 20 and npm.
+- user-provided VS Code `code` CLI.
+
+## Roadmap And Non-Goals
+
+- No public roadmap commitments are made during alpha.
+- Issues, labels, and milestones are triage hints only.
+
+## Naming And Trademark Posture
+
+- `Fleet` is a provisional source-alpha working name.
+- This release makes no trademark claim.
+
+## Local Data And Cleanup
+
+- Runtime data lives under `~/.fleet/run` and `~/.fleet/mux`.
+- Manual cleanup after closing Fleet-spawned servers: `rm -rf ~/.fleet/run ~/.fleet/mux`.
+
+## Workflow Supply Chain
+
+- GitHub Actions use read-only `GITHUB_TOKEN` permissions.
+- Workflows use no repository secrets or publishing credentials.
+
 ## What Changed
 
 - Added release readiness gates.
@@ -150,6 +177,27 @@ missing_tree_size="$TMPDIR/missing-tree-size.md"
 write_valid_notes "$missing_tree_size"
 perl -0pi -e 's/\n- Public tree size audit: passed\.\n/\n/' "$missing_tree_size"
 expect_fail "missing public tree size audit is rejected" "$missing_tree_size"
+
+missing_platform="$TMPDIR/missing-platform.md"
+write_valid_notes "$missing_platform"
+perl -0pi -e 's/\n## Supported Platform And Toolchain\n.*?\n## Roadmap And Non-Goals\n/\n## Roadmap And Non-Goals\n/s' "$missing_platform"
+expect_fail "missing platform/toolchain boundary is rejected" "$missing_platform"
+
+missing_name="$TMPDIR/missing-name.md"
+write_valid_notes "$missing_name"
+perl -0pi -e 's/`Fleet` is a provisional source-alpha working name\./Fleet is stable./' "$missing_name"
+expect_fail "missing provisional name posture is rejected" "$missing_name"
+
+missing_local_data="$TMPDIR/missing-local-data.md"
+write_valid_notes "$missing_local_data"
+perl -0pi -e 's/\n- Runtime data lives under `~\/\.fleet\/run` and `~\/\.fleet\/mux`\.\n/\n/' "$missing_local_data"
+perl -0pi -e 's/\n- Manual cleanup after closing Fleet-spawned servers: `rm -rf ~\/\.fleet\/run ~\/\.fleet\/mux`\.\n/\n/' "$missing_local_data"
+expect_fail "missing local data locations are rejected" "$missing_local_data"
+
+missing_supply_chain="$TMPDIR/missing-supply-chain.md"
+write_valid_notes "$missing_supply_chain"
+perl -0pi -e 's/GitHub Actions use read-only `GITHUB_TOKEN` permissions\./GitHub Actions are configured./; s/Workflows use no repository secrets or publishing credentials\./Workflow details are recorded./' "$missing_supply_chain"
+expect_fail "missing workflow supply-chain posture is rejected" "$missing_supply_chain"
 
 exception="$TMPDIR/exception.md"
 write_valid_notes "$exception"
