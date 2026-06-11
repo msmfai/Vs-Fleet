@@ -68,6 +68,19 @@ Fleet is a stateless client for externally registered sessions. Quitting Fleet
 must not kill already-running external servers. Closing a Fleet-spawned server
 from the UI is the explicit owner action that removes the server process.
 
+## Cleanup
+
+Fleet does not promise an automated source-alpha uninstaller. Close any
+Fleet-spawned servers from the Fleet UI before deleting runtime data, then run:
+
+```sh
+rm -rf ~/.fleet/run ~/.fleet/mux
+```
+
+If `FLEET_RUNTIME_DIR` or `FLEET_MUX_DIR` was set, delete those configured
+directories instead. See [Local data and uninstall](LOCAL_DATA_AND_UNINSTALL.md)
+for the complete local data contract.
+
 ## Useful Environment Overrides
 
 Use these only when debugging or dogfooding a non-default setup:

@@ -21,9 +21,12 @@ reporting channel first.
 - Fleet is designed as local-first software.
 - Local-only development services should bind to loopback unless explicitly
   configured otherwise.
+- Source-alpha runtime files live under `~/.fleet/run` and `~/.fleet/mux` unless
+  `FLEET_RUNTIME_DIR` or `FLEET_MUX_DIR` is set.
 - Non-loopback transport, remote deployment, public binaries, and auto-update
   flows are not considered production-ready security surfaces yet.
 - Logs and review artifacts should be scrubbed before sharing publicly.
+- Manual cleanup is documented in `docs/LOCAL_DATA_AND_UNINSTALL.md`.
 
 ## Disclosure expectations
 

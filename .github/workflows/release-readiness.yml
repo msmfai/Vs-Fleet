@@ -102,6 +102,9 @@ jobs:
       - name: Name collision decision gate self-test
         run: ./scripts/test-name-collision-decision-check.sh
 
+      - name: Local data decision gate self-test
+        run: ./scripts/test-local-data-decision-check.sh
+
       - name: GitHub publication evidence gate self-test
         run: ./scripts/test-github-publication-evidence-check.sh
 

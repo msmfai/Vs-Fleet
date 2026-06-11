@@ -52,6 +52,15 @@ Not supported as a public alpha commitment:
 - Stable package or binary publication under Fleet namespaces is deferred until
   the owner completes the public name decision.
 
+## Local Data And Cleanup
+
+- Runtime data lives under `~/.fleet/run` and `~/.fleet/mux` unless
+  `FLEET_RUNTIME_DIR` or `FLEET_MUX_DIR` is set.
+- Manual cleanup after closing Fleet-spawned servers:
+  `rm -rf ~/.fleet/run ~/.fleet/mux`.
+- Quitting Fleet does not promise to delete spawned editor userdata or logs, and
+  externally registered sessions are not owned by the host.
+
 ## What Changed
 
 - `[one-line change]`

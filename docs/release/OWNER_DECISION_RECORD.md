@@ -289,12 +289,28 @@ Current default recommendation: treat `Fleet` as a provisional working name for
 source alpha, make no trademark claim, and defer stable package/binary namespace
 publication until the owner either clears the name or renames it.
 
+### 21. Local Data And Uninstall Policy
+
+Choose what public source-alpha users are promised about local files, logs,
+runtime sockets, spawned editor userdata, and cleanup.
+
+- [ ] Document local data locations and manual cleanup for source alpha. Fleet
+  does not promise an automated uninstaller, but public docs identify
+  `~/.fleet/run`, `~/.fleet/mux`, cleanup commands, and the process ownership
+  boundary.
+- [ ] Add an automated cleanup or uninstall command before public visibility.
+- [ ] Other: `TODO`
+
+Current default recommendation: document the manual cleanup contract for source
+alpha. Do not imply that quitting Fleet removes spawned editor data, logs, or
+external sessions.
+
 ## Required Before Binary Distribution
 
 These do not block a source-only alpha, but they must be decided before any
 public app bundle.
 
-### 21. macOS Signing and Notarization
+### 22. macOS Signing and Notarization
 
 - [ ] No public binaries until Developer ID signing and notarization are
   automated.
@@ -304,7 +320,7 @@ public app bundle.
 Current default recommendation: no public binaries until signing and notarization
 are automated.
 
-### 22. Update Channel
+### 23. Update Channel
 
 - [ ] No auto-update in alpha.
 - [ ] GitHub Releases only.

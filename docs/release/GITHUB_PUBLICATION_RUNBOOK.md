@@ -30,6 +30,7 @@ choices in `docs/release/OWNER_DECISION_RECORD.md` before using this runbook:
 - Release custody and maintainer authority.
 - Public roadmap/non-goals posture.
 - Public name collision and trademark posture.
+- Local data and uninstall policy.
 
 ## Public Visibility
 
@@ -64,6 +65,9 @@ Set these before public visibility:
 - Repository name matches the approved namespace table.
 - Public name collision/trademark posture has been recorded; if `Fleet` remains
   provisional, public release notes must make no trademark claim.
+- Local data/uninstall policy has been recorded; public docs must identify
+  `~/.fleet/run`, `~/.fleet/mux`, cleanup commands, and process ownership
+  boundaries before the first source alpha.
 - Default branch is the exact public branch.
 - Issues are enabled only if the support commitment allows public issue intake.
 - Discussions and wiki are disabled unless deliberately supported.

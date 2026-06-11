@@ -24,6 +24,7 @@ write_record() {
   local platform_checked='x'
   local roadmap_checked='x'
   local name_collision_checked='x'
+  local local_data_checked='x'
 
   case "$distribution" in
     source) source_checked='x' ;;
@@ -170,14 +171,19 @@ Decision record status: $status
 - [$name_collision_checked] Use \`Fleet\` only as a provisional source-alpha working name. Make no trademark claim, acknowledge name-collision review is unresolved, and do not publish packages or binaries under stable Fleet namespaces.
 - [ ] Other: \`TODO\`
 
+### 21. Local Data And Uninstall Policy
+
+- [$local_data_checked] Document local data locations and manual cleanup for source alpha. Fleet does not promise an automated uninstaller, but public docs identify \`~/.fleet/run\`, \`~/.fleet/mux\`, cleanup commands, and the process ownership boundary.
+- [ ] Other: \`TODO\`
+
 ## Required Before Binary Distribution
 
-### 21. macOS Signing and Notarization
+### 22. macOS Signing and Notarization
 
 - [$signing_checked] No public binaries until Developer ID signing and notarization are automated.
 - [ ] Other: \`TODO\`
 
-### 22. Update Channel
+### 23. Update Channel
 
 - [$update_checked] No auto-update in alpha.
 - [ ] Other: \`TODO\`
@@ -266,6 +272,12 @@ write_record "$name_collision_missing" APPROVED source decided undecided
 perl -0pi -e 's/- \[x\] Use `Fleet` only as a provisional source-alpha working name\./- [ ] Use `Fleet` only as a provisional source-alpha working name./' "$name_collision_missing"
 expect_fail_contains "source-only alpha requires a name collision decision" "$name_collision_missing" \
   "### 20\\. Public Name Collision And Trademark Posture must have exactly one checked choice; found 0"
+
+local_data_missing="$TMPDIR/local-data-missing.md"
+write_record "$local_data_missing" APPROVED source decided undecided
+perl -0pi -e 's/- \[x\] Document local data locations and manual cleanup for source alpha\./- [ ] Document local data locations and manual cleanup for source alpha./' "$local_data_missing"
+expect_fail_contains "source-only alpha requires a local data decision" "$local_data_missing" \
+  "### 21\\. Local Data And Uninstall Policy must have exactly one checked choice; found 0"
 
 binary_missing="$TMPDIR/binary-missing.md"
 write_record "$binary_missing" APPROVED unsigned decided undecided

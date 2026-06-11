@@ -15,6 +15,7 @@ license, artifact, security, and support decisions tracked in:
 - [Alpha release checklist](docs/release/ALPHA_RELEASE_CHECKLIST.md)
 - [Quickstart](docs/QUICKSTART.md)
 - [Architecture overview](docs/ARCHITECTURE.md)
+- [Local data and uninstall](docs/LOCAL_DATA_AND_UNINSTALL.md)
 - [Release process](docs/release/RELEASE_PROCESS.md)
 
 The long-form product and architecture spec lives in
@@ -96,6 +97,10 @@ Fleet is local-first and has no intended telemetry by default. It can still log
 local metadata such as workspace paths, local URLs, session labels, process
 command lines, and editor state. Scrub logs and review artifacts before sharing
 them publicly.
+
+Local source-alpha runtime data lives under `~/.fleet/run` and `~/.fleet/mux`
+unless `FLEET_RUNTIME_DIR` or `FLEET_MUX_DIR` is set. Manual cleanup is
+documented in [Local data and uninstall](docs/LOCAL_DATA_AND_UNINSTALL.md).
 
 ## Editor Server Boundary
 
