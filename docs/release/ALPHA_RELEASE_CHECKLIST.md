@@ -16,6 +16,9 @@ closed or explicitly accepted.
 - [ ] Add a root `LICENSE` file.
 - [ ] Replace `UNLICENSED` in `Cargo.toml`, `crates/fleet-host/Cargo.toml`, and
   package manifests/lockfiles.
+- [ ] After the license decision is approved and real license text is ready, run
+  `./scripts/apply-license-decision.sh docs/release/OWNER_DECISION_RECORD.md . path/to/LICENSE`
+  to apply the SPDX expression to release metadata.
 - [ ] Run `./scripts/check-license-decision.sh` after choosing the license to
   verify the owner record, root `LICENSE`, Rust manifests, npm manifests, and
   package lockfiles agree.

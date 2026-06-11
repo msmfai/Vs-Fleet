@@ -19,6 +19,7 @@ packages/*/coverage/
 dist/
 *.vsix
 crates/fleet-host/artifacts/manual/
+docs/release/OWNER_DECISION_RECORD.draft.md
 
 # OS
 .DS_Store

@@ -112,6 +112,8 @@ for script in \
   scripts/test-doc-link-check.sh \
   scripts/test-public-tree-size-check.sh \
   scripts/test-lockfile-policy-check.sh \
+  scripts/apply-license-decision.sh \
+  scripts/test-apply-license-decision.sh \
   scripts/test-license-decision-check.sh \
   scripts/test-namespace-decision-check.sh \
   scripts/test-alpha-scope-decision-check.sh \
