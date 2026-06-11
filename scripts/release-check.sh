@@ -82,6 +82,7 @@ for required in \
   docs/release/DEPENDENCY_REVIEW.md \
   docs/release/DEPENDENCY_REVIEW_EVIDENCE.md \
   docs/release/GITHUB_PUBLICATION_RUNBOOK.md \
+  docs/release/GITHUB_PUBLICATION_EVIDENCE.md \
   docs/release/PUBLIC_CI_EVIDENCE.md \
   docs/release/PUBLIC_ALPHA_OWNER_PROMPT.md \
   docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md \
@@ -132,6 +133,8 @@ for required in \
   scripts/test-contribution-decision-check.sh \
   scripts/check-ci-evidence-decision.sh \
   scripts/test-ci-evidence-decision-check.sh \
+  scripts/check-github-publication-evidence.sh \
+  scripts/test-github-publication-evidence-check.sh \
   scripts/check-privacy-decision.sh \
   scripts/test-privacy-decision-check.sh \
   scripts/check-dependency-review-decision.sh \
@@ -220,6 +223,9 @@ else
       fail=1
     fi
     if ! scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"; then
+      fail=1
+    fi
+    if ! scripts/check-github-publication-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md "$(git rev-parse HEAD)"; then
       fail=1
     fi
     if ! scripts/check-privacy-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then

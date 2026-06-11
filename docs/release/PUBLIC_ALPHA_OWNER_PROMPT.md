@@ -96,6 +96,9 @@ is still `TODO`, ambiguous, or only a recommendation.
    Recommended alpha default: require GitHub Actions green on the exact public
    branch/commit before public visibility.
    Owner answer:
+   Follow-up: after the GitHub repository exists and settings are reviewed,
+   fill `GITHUB_PUBLICATION_EVIDENCE.md` and run
+   `./scripts/check-github-publication-evidence.sh`.
 
 10. Privacy and telemetry posture:
     Recommended alpha default: no telemetry by default. Local logs and artifacts
