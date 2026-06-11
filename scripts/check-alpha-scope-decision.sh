@@ -86,6 +86,16 @@ check_local_macos_scope() {
     "architecture remote/container/eval path list"
   require_text "docs/ARCHITECTURE.md" 'public support commitments' \
     "architecture remote/container/eval non-support boundary"
+  require_text "containers/fleet-env/eval/README.md" '^## Public alpha support boundary' \
+    "eval harness public alpha support boundary section"
+  require_text "containers/fleet-env/eval/README.md" 'development and release-verification infrastructure' \
+    "eval harness development-infrastructure classification"
+  require_text "containers/fleet-env/eval/README.md" 'not supported public alpha user paths' \
+    "eval harness non-support boundary"
+  require_text "containers/fleet-env/eval/README.md" 'local macOS Fleet host' \
+    "eval harness local macOS host pointer"
+  require_text "containers/fleet-env/eval/README.md" 'user-provided `?code serve-web`?' \
+    "eval harness user-provided code serve-web pointer"
 
   require_text "docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md" 'local macOS source builds' \
     "release-notes local macOS scope"

@@ -1,5 +1,14 @@
 # Fleet behaviour-test suite
 
+## Public alpha support boundary
+
+This directory is development and release-verification infrastructure. It is
+included in the source tree for maintainers, but containerized evals, Docker or
+Colima setup, screenshot review tooling, and remote/container Fleet workflows
+are not supported public alpha user paths. The supported source-alpha workflow
+is the local macOS Fleet host with local user-provided `code serve-web`
+sessions.
+
 Headless, parallel, reproducible **behaviour tests** for Fleet environments. Each
 test boots a containerized `fleet-env` (code-server + Claude Code + the Fleet
 bridge), drives a *real* VS Code action through the bridge, and **asserts the effect
