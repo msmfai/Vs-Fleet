@@ -29,7 +29,6 @@ fn fleet_shell_has_no_app_wide_keyboard_capture() {
         "Cmd/Ctrl",
         "set_focus(",
         "MenuItemBuilder::with_id",
-        "SubmenuBuilder::new",
     ];
 
     for rel in files {
@@ -49,19 +48,19 @@ fn fleet_shell_has_no_app_wide_keyboard_capture() {
 }
 
 #[test]
-fn fleet_does_not_install_or_mutate_native_menus() {
+fn fleet_installs_one_static_native_shell_menu() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let main_path = manifest.join("src/main.rs");
     let main = fs::read_to_string(&main_path).unwrap_or_else(|err| {
         panic!("failed to read {}: {err}", main_path.display());
     });
     assert!(
-        !main.contains(".menu("),
-        "Fleet must not install a custom native menu; leave normal macOS menu ownership to Tauri/AppKit"
+        main.contains(".menu(mux::build_menu)"),
+        "Fleet must install one static native menu through the Tauri builder"
     );
     assert!(
-        !main.contains(".on_menu_event("),
-        "Fleet must not handle native menu events for editor or rail commands"
+        main.contains(".on_menu_event("),
+        "Fleet may handle only static shell menu events, never editor or rail commands"
     );
     assert!(
         !main.contains("enable_macos_default_menu(false)"),
@@ -82,16 +81,20 @@ fn fleet_does_not_install_or_mutate_native_menus() {
         "refresh_menu must stay a no-op so bridge/register/selection churn does not close macOS menus"
     );
     assert!(
-        !contents.contains("pub fn build_menu"),
-        "Fleet must not define a custom native menu builder"
+        contents.contains("pub fn build_menu<R: tauri::Runtime>"),
+        "Fleet must define a static native shell menu"
     );
     assert!(
         !contents.contains("MenuItemBuilder::with_id("),
         "Fleet must not install command menu items that could grow accelerators later"
     );
     assert!(
-        !contents.contains("SubmenuBuilder::new"),
-        "Fleet must not install custom native submenus"
+        contents.matches("MenuItem::with_id(").count() == 4,
+        "Fleet native menu should stay limited to shell commands"
+    );
+    assert!(
+        contents.matches("None::<&str>").count() >= 4,
+        "Fleet shell menu items must not define native accelerators"
     );
     for pattern in [
         ".cut()",
@@ -106,9 +109,15 @@ fn fleet_does_not_install_or_mutate_native_menus() {
         "\"rail:",
         "\"external:",
     ] {
-        assert!(
-            !contents.contains(pattern),
-            "Fleet native menu must not contain editor/server command pattern {pattern:?}"
-        );
+        for (rel, source) in [
+            ("src/main.rs", main.as_str()),
+            ("src/mux.rs", contents.as_str()),
+        ] {
+            assert!(
+                !source.contains(pattern),
+                "{} must not contain editor/server command pattern {pattern:?}",
+                rel
+            );
+        }
     }
 }
