@@ -46,10 +46,12 @@ jobs:
       - run: ./scripts/test-dependabot-config-check.sh
       - run: ./scripts/test-secret-release-check.sh
       - run: ./scripts/test-doc-link-check.sh
+      - run: ./scripts/test-public-tree-size-check.sh
       - run: ./scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md
       - run: ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md
       - run: ./scripts/secret-release-check.sh
       - run: ./scripts/check-doc-links.sh
+      - run: ./scripts/check-public-tree-size.sh
       - run: ./scripts/release-check.sh
   source-checks:
     steps:
@@ -118,5 +120,10 @@ no_doc_links="$TMPDIR/no-doc-links.yml"
 write_release "$no_doc_links"
 perl -0pi -e 's/\n      - run: \.\/scripts\/test-doc-link-check\.sh\n//; s/\n      - run: \.\/scripts\/check-doc-links\.sh\n//' "$no_doc_links"
 expect_fail "Release Readiness must keep documentation link checks" "$ci" "$no_doc_links"
+
+no_tree_size="$TMPDIR/no-tree-size.yml"
+write_release "$no_tree_size"
+perl -0pi -e 's/\n      - run: \.\/scripts\/test-public-tree-size-check\.sh\n//; s/\n      - run: \.\/scripts\/check-public-tree-size\.sh\n//' "$no_tree_size"
+expect_fail "Release Readiness must keep public tree size checks" "$ci" "$no_tree_size"
 
 echo "GitHub workflow check tests passed."

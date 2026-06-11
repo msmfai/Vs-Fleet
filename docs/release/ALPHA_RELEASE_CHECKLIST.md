@@ -91,6 +91,9 @@ closed or explicitly accepted.
 - [ ] Run `./scripts/check-github-intake-templates.sh`.
 - [x] Add a documentation link gate for tracked Markdown files.
 - [ ] Run `./scripts/check-doc-links.sh` before publishing release-facing docs.
+- [x] Add a public tree size gate to catch accidental large tracked artifacts.
+- [ ] Run `./scripts/check-public-tree-size.sh`; only the replaceable source
+  icon has a narrow larger-file allowance.
 - [x] Add a code of conduct if you want public contributions.
 - [x] Add a manual release-readiness CI workflow for the exact public ref.
 - [x] Add a workflow integrity gate for normal CI and Release Readiness.
@@ -118,6 +121,9 @@ closed or explicitly accepted.
   hygiene/test evidence.
 - `scripts/check-doc-links.sh` validates tracked Markdown links to local files
   so the public GitHub front door does not ship with broken relative docs.
+- `scripts/check-public-tree-size.sh` rejects tracked files over 1 MiB, except
+  `crates/fleet-host/icons/icon.png`, which is allowed up to 5 MiB as the
+  replaceable source icon.
 - `docs/QUICKSTART.md`, `docs/ARCHITECTURE.md`, and
   `docs/release/RELEASE_PROCESS.md` are present.
 - `.github/workflows/release-readiness.yml`,
