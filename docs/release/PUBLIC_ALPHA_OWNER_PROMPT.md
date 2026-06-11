@@ -19,6 +19,11 @@ accept the recommended source-only alpha defaults and only supply the remaining
 free-form values: namespace, security contact/private reporting choice,
 emergency removal owner, and later CI run URLs.
 
+Namespace answers must be concrete because manifest metadata needs exact
+strings. Source-only alpha still defers crates.io, npm, VS Code Marketplace,
+Open VSX, binary, and container publication unless a later owner decision
+changes the distribution scope.
+
 To create a review draft with the recommended source-alpha defaults checked,
 run:
 
