@@ -14,8 +14,8 @@ write_valid() {
   cat >"$intent" <<'EOF'
 # License Intent
 
-Fleet should ship as MIT OR Apache-2.0. LICENSE-MIT and LICENSE-APACHE are
-tracked, and manifests use SPDX metadata. Developer Certificate of Origin (DCO)
+Fleet should ship as MIT OR Apache-2.0. Full texts are tracked under docs/legal,
+and manifests use SPDX metadata. Developer Certificate of Origin (DCO)
 sign-off is used; it does not assign copyright and does not give the maintainer
 relicensing rights over contributor code. Revisit a Contributor License
 Agreement (CLA) before commercial relicensing. Released versions remain

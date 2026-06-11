@@ -21,7 +21,7 @@ if [ ! -f LICENSE ]; then
   fail=1
 fi
 
-for license_file in LICENSE-MIT LICENSE-APACHE; do
+for license_file in docs/legal/LICENSE-MIT docs/legal/LICENSE-APACHE; do
   if [ ! -f "$license_file" ]; then
     echo "FAIL: missing $license_file"
     fail=1
@@ -84,8 +84,8 @@ done
 
 for required in \
   SECURITY.md \
-  LICENSE-MIT \
-  LICENSE-APACHE \
+  docs/legal/LICENSE-MIT \
+  docs/legal/LICENSE-APACHE \
   CONTRIBUTING.md \
   DCO.md \
   SUPPORT.md \
