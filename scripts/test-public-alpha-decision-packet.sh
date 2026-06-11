@@ -156,14 +156,19 @@ Decision record status: $status
 - [x] macOS source alpha only. Supported toolchain: Rust 1.78 or newer, Node.js 20/npm, Git, and user-provided VS Code code CLI/serve-web.
 - [ ] Other: \`TODO\`
 
+### 19. Public Roadmap And Non-Goals
+
+- [x] No public roadmap commitments during alpha. Issues, labels, and milestones are triage hints only, not delivery promises.
+- [ ] Other: \`TODO\`
+
 ## Required Before Binary Distribution
 
-### 19. macOS Signing and Notarization
+### 20. macOS Signing and Notarization
 
 - [$signing_checked] No public binaries until Developer ID signing and notarization are automated.
 - [ ] Other: \`TODO\`
 
-### 20. Update Channel
+### 21. Update Channel
 
 - [$update_checked] No auto-update in alpha.
 - [ ] Other: \`TODO\`
@@ -223,8 +228,8 @@ expect_output "approved current-history source-only record" './scripts/release-c
 binary_missing="$TMPDIR/binary-missing.md"
 write_record "$binary_missing" APPROVED clean unsigned undecided
 expect_fail "binary distribution without binary decisions" "$binary_missing"
-expect_output "binary distribution without binary decisions" '19\. macOS Signing and Notarization'
-expect_output "binary distribution without binary decisions" '20\. Update Channel'
+expect_output "binary distribution without binary decisions" '20\. macOS Signing and Notarization'
+expect_output "binary distribution without binary decisions" '21\. Update Channel'
 
 todo_namespace="$TMPDIR/todo-namespace.md"
 write_record "$todo_namespace" APPROVED clean source undecided

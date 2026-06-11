@@ -38,6 +38,13 @@ Not supported as a public alpha commitment:
 - Linux, Windows, and remote/container workflows are not supported alpha
   platforms.
 
+## Roadmap And Non-Goals
+
+- No public roadmap commitments are made during alpha.
+- Issues, labels, and milestones are triage hints, not delivery promises.
+- Remote/container workflows, binary packages, stable APIs, and production
+  support remain non-goals unless a later owner decision approves them.
+
 ## What Changed
 
 - `[one-line change]`

@@ -112,6 +112,7 @@ for script in \
   scripts/check-release-custody-decision.sh \
   scripts/check-ai-contribution-decision.sh \
   scripts/check-platform-support-decision.sh \
+  scripts/check-roadmap-decision.sh \
   scripts/test-owner-decision-gate.sh \
   scripts/test-draft-owner-decisions.sh \
   scripts/test-public-alpha-decision-packet.sh \
@@ -147,6 +148,7 @@ for script in \
   scripts/test-release-custody-decision-check.sh \
   scripts/test-ai-contribution-decision-check.sh \
   scripts/test-platform-support-decision-check.sh \
+  scripts/test-roadmap-decision-check.sh \
   scripts/test-release-check.sh \
   scripts/check-release-notes.sh \
   scripts/test-release-notes-check.sh

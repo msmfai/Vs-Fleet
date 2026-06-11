@@ -101,6 +101,9 @@ closed or explicitly accepted.
 - [ ] Choose supported platform/toolchain scope in
   `docs/release/OWNER_DECISION_RECORD.md` and run
   `./scripts/check-platform-support-decision.sh`.
+- [ ] Choose public roadmap/non-goals posture in
+  `docs/release/OWNER_DECISION_RECORD.md` and run
+  `./scripts/check-roadmap-decision.sh`.
 - [ ] Draft GitHub pre-release notes from
   `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` and remove all placeholders.
 - [ ] Run the release-notes checker with the expected commit:
@@ -256,6 +259,9 @@ closed or explicitly accepted.
 - `scripts/check-platform-support-decision.sh` validates that the public alpha
   does not imply unsupported Linux, Windows, remote/container, or binary-package
   support beyond the approved OS/toolchain matrix.
+- `scripts/check-roadmap-decision.sh` validates that public issues, labels, and
+  milestones are not presented as delivery promises unless the owner publishes
+  a concrete roadmap policy.
 - `scripts/check-privacy-decision.sh` validates that the approved
   privacy/telemetry posture matches the README, security policy, architecture
   notes, issue template, and release notes template.
