@@ -69,7 +69,8 @@ the server process.
 - Fleet does not kill external sessions when the host exits.
 - Fleet does not persist a server list across restarts. Reporters and bridges
   re-register after the host/Hub comes back.
-- Fleet does not install global keyboard hooks, custom native menus, or
+- Fleet installs only a static native shell menu with no accelerators and no
+  editor/server command proxies. It does not install global keyboard hooks or
   app-wide native menu accelerators for the embedded editor. Keystrokes belong
   to the active editor webview.
 
