@@ -275,6 +275,23 @@ async function waitForControl(port, ms) {
   throw new Error(`Fleet probe control did not become ready on port ${port}: ${last?.message || last}`);
 }
 
+async function waitForServers(port, minCount, ms) {
+  const deadline = Date.now() + ms;
+  let last = null;
+  while (Date.now() < deadline) {
+    try {
+      const body = await controlRequest(port, "/servers");
+      const servers = Array.isArray(body.servers) ? body.servers : [];
+      if (servers.length >= minCount) return servers;
+      last = new Error(`only ${servers.length} server(s) visible`);
+    } catch (err) {
+      last = err;
+    }
+    await sleep(500);
+  }
+  throw new Error(`Fleet did not report ${minCount} servers: ${last?.message || last}`);
+}
+
 async function selectViaControl(port, id) {
   return controlRequest(port, `/select/${encodeURIComponent(id)}`);
 }
@@ -424,7 +441,7 @@ async function main() {
   mkdirSync(shotDir, { recursive: true });
 
   if (!opts.allowBusyPorts) {
-    const preflightPorts = opts.clickSwitch ? [51777, 51778] : [51777, 51778, opts.controlPort];
+    const preflightPorts = [51777, 51778, opts.controlPort];
     const busy = preflightPorts.filter(portInUse);
     if (busy.length) {
       throw new Error(`Fleet fixed port(s) already in use: ${busy.join(", ")}. Close Fleet or rerun with --allow-busy-ports.`);
@@ -480,7 +497,7 @@ async function main() {
     FLEET_MUX_DIR: muxDir,
     FLEET_RUNTIME_DIR: runtimeDir,
     ...(opts.appBundle ? {} : { FLEET_REPORTER_BIN: reporterBin, FLEET_BRIDGE_VSIX: bridgeVsix }),
-    ...(opts.clickSwitch ? {} : { FLEET_PROBE_CONTROL_PORT: String(opts.controlPort) }),
+    FLEET_PROBE_CONTROL_PORT: String(opts.controlPort),
     RUST_LOG: process.env.RUST_LOG || "info",
   };
   const child = spawn(hostBin, [], {
@@ -514,8 +531,14 @@ async function main() {
     };
 
     window = await waitForWindow(20000, toolDir);
-    if (!opts.clickSwitch) await waitForControl(opts.controlPort, 10000);
+    await waitForControl(opts.controlPort, 10000);
     await waitForLog(logPath, /server registered \(phone-home\)/g, 2, opts.settleMs);
+    const visibleServers = await waitForServers(opts.controlPort, 2, 10000);
+    const orderedServers = [...visibleServers].sort((a, b) =>
+      String(a.label || a.id).localeCompare(String(b.label || b.id)),
+    );
+    const server1 = orderedServers[0];
+    const server2 = orderedServers[1];
     await sleep(Math.max(0, opts.settleMs - 2000));
     await take("01-initial-selected.png");
 
@@ -526,24 +549,24 @@ async function main() {
       ? async (id, _rowY) => clickAt(child.pid, rowX, _rowY)
       : async (id) => selectViaControl(opts.controlPort, id);
 
-    await switchTo("server-1", row1Y);
+    await switchTo(server1.id, row1Y);
     await sleep(opts.switchDelayMs);
     await take("02-server-1-selected.png");
 
-    await switchTo("server-2", row2Y);
+    await switchTo(server2.id, row2Y);
     await sleep(opts.switchDelayMs);
     await take("03-server-2-selected.png");
 
-    await switchTo("server-1", row1Y);
+    await switchTo(server1.id, row1Y);
     await sleep(opts.switchDelayMs);
     await take("04-server-1-returned.png");
 
     let closeResult = null;
     let closedServer2Processes = [];
     if (opts.closeCheck) {
-      closeResult = await closeViaControl(opts.controlPort, "server-2");
+      closeResult = await closeViaControl(opts.controlPort, server2.id);
       await sleep(1000);
-      closedServer2Processes = await waitForServerProcessesGone("server-2", 7000);
+      closedServer2Processes = await waitForServerProcessesGone(server2.id, 7000);
       await take("05-server-2-closed.png");
     }
 
@@ -565,13 +588,15 @@ async function main() {
       closeRequestedCount: countMatches(log, /close server requested/g),
       closeResult,
       closedServer2Processes,
+      server1,
+      server2,
       hubConnectedCount: countMatches(log, /host face connected to Hub; subscribed/g),
       hubLinkErrors: countMatches(log, /hub link error; retrying/g),
       inboxConnectedCount: countMatches(log, /inbox → window: .*connected=true/g),
       inboxDisconnectedCount: countMatches(log, /inbox → window: .*connected=false/g),
       latestInboxConnected: latestInboxConnected(log),
-      server1SelectionCount: countMatches(log, /selected server server_id=server-1/g),
-      server2SelectionCount: countMatches(log, /selected server server_id=server-2/g),
+      server1SelectionCount: countMatches(log, new RegExp(`selected server server_id=${escapeRegExp(server1.id)}`, "g")),
+      server2SelectionCount: countMatches(log, new RegExp(`selected server server_id=${escapeRegExp(server2.id)}`, "g")),
       switchMode: opts.clickSwitch ? "click" : "probe-control",
       closeCheck: opts.closeCheck,
       controlPort: opts.clickSwitch ? null : opts.controlPort,

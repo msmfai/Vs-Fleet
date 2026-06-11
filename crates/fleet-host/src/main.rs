@@ -137,9 +137,9 @@ fn embedded_hub_persist_enabled() -> bool {
 }
 
 fn embedded_hub_persist_enabled_from(value: Option<&str>) -> bool {
-    !matches!(
+    matches!(
         value.map(|v| v.trim().to_ascii_lowercase()),
-        Some(v) if matches!(v.as_str(), "0" | "false" | "off" | "no")
+        Some(v) if matches!(v.as_str(), "1" | "true" | "on" | "yes")
     )
 }
 
@@ -170,6 +170,7 @@ fn get_inbox(state: tauri::State<'_, hub_client::Shared>) -> RenderedInbox {
 
 fn main() {
     init_logging();
+    spawn::clear_legacy_spawn_state();
 
     let explicit_ws_url = std::env::args()
         .nth(1)
@@ -292,8 +293,6 @@ fn main() {
                 app.set_dock_visibility(true);
             }
 
-            #[cfg(unix)]
-            install_termination_cleanup(app.handle().clone());
             start_probe_control(app.handle().clone());
 
             let handle = app.handle().clone();
@@ -429,6 +428,9 @@ fn handle_probe_control(app: tauri::AppHandle, mut stream: TcpStream) {
 
     if path == "/healthz" {
         let _ = write_probe_json(&mut stream, 200, r#"{"ok":true}"#);
+    } else if path == "/servers" {
+        let body = serde_json::json!({ "servers": mux::servers_for_app(&app) }).to_string();
+        let _ = write_probe_json(&mut stream, 200, &body);
     } else if path == "/selected" {
         let selected = app
             .try_state::<mux::MuxState>()
@@ -480,54 +482,6 @@ fn write_probe_response_with_type(
     )
 }
 
-#[cfg(unix)]
-fn install_termination_cleanup(app: tauri::AppHandle) {
-    std::thread::Builder::new()
-        .name("fleet-termination-cleanup".into())
-        .spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("build signal runtime");
-            rt.block_on(async move {
-                let mut sigterm =
-                    match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                    {
-                        Ok(signal) => signal,
-                        Err(e) => {
-                            tracing::warn!(error = %e, "SIGTERM cleanup handler unavailable");
-                            return;
-                        }
-                    };
-                let mut sigint =
-                    match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
-                    {
-                        Ok(signal) => signal,
-                        Err(e) => {
-                            tracing::warn!(error = %e, "SIGINT cleanup handler unavailable");
-                            return;
-                        }
-                    };
-
-                let signal_name = tokio::select! {
-                    _ = sigterm.recv() => "SIGTERM",
-                    _ = sigint.recv() => "SIGINT",
-                };
-
-                tracing::info!(
-                    signal = signal_name,
-                    "termination signal received; cleaning up spawned servers"
-                );
-                if let Some(supervisor) = app.try_state::<spawn::ServerSupervisor>() {
-                    supervisor.shutdown_all();
-                }
-                app.exit(0);
-                std::process::exit(0);
-            });
-        })
-        .expect("spawn termination cleanup thread");
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -556,11 +510,13 @@ mod tests {
     }
 
     #[test]
-    fn embedded_hub_persistence_defaults_on_and_can_be_disabled() {
-        assert!(embedded_hub_persist_enabled_from(None));
-        assert!(embedded_hub_persist_enabled_from(Some("")));
+    fn embedded_hub_persistence_defaults_off_and_can_be_enabled() {
+        assert!(!embedded_hub_persist_enabled_from(None));
+        assert!(!embedded_hub_persist_enabled_from(Some("")));
         assert!(embedded_hub_persist_enabled_from(Some("1")));
         assert!(embedded_hub_persist_enabled_from(Some("true")));
+        assert!(embedded_hub_persist_enabled_from(Some("on")));
+        assert!(embedded_hub_persist_enabled_from(Some("yes")));
         assert!(!embedded_hub_persist_enabled_from(Some("0")));
         assert!(!embedded_hub_persist_enabled_from(Some("false")));
         assert!(!embedded_hub_persist_enabled_from(Some("off")));

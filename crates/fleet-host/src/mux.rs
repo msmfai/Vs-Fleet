@@ -168,6 +168,18 @@ fn bridge_registered(app: &AppHandle, id: &str) -> bool {
         .unwrap_or(false)
 }
 
+pub fn servers_for_app(app: &AppHandle) -> Vec<Server> {
+    let spawned = app
+        .try_state::<crate::spawn::ServerSupervisor>()
+        .map(|sup| sup.servers())
+        .unwrap_or_default();
+    let registered = app
+        .try_state::<crate::bridge::BridgeRegistry>()
+        .map(|reg| reg.servers())
+        .unwrap_or_default();
+    merged_servers(spawned, registered)
+}
+
 /// Build the multiplexer window: the rail plus a placeholder editor surface.
 /// Persistent server editor webviews are created on first selection.
 pub fn build_window(app: &mut App) -> tauri::Result<()> {
@@ -792,15 +804,7 @@ fn refresh_menu_result(app: &AppHandle) -> tauri::Result<()> {
 }
 
 fn menu_servers(app: &AppHandle) -> Vec<Server> {
-    let spawned = app
-        .try_state::<crate::spawn::ServerSupervisor>()
-        .map(|sup| sup.servers())
-        .unwrap_or_default();
-    let registered = app
-        .try_state::<crate::bridge::BridgeRegistry>()
-        .map(|reg| reg.servers())
-        .unwrap_or_default();
-    merged_servers(spawned, registered)
+    servers_for_app(app)
 }
 
 fn rail_menu_state(app: &AppHandle, servers: &[Server]) -> RailMenuState {
