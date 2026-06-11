@@ -162,8 +162,9 @@ visibility.
 - [ ] Run `./scripts/check-github-workflows.sh .github/workflows/ci.yml
   .github/workflows/release-readiness.yml`.
 - [ ] Run CI on the exact public branch after artifact cleanup.
-- [ ] Record exact CI and Release Readiness workflow evidence in
-  `docs/release/PUBLIC_CI_EVIDENCE.md` and run
+- [ ] Generate exact CI and Release Readiness workflow evidence with
+  `./scripts/generate-public-ci-evidence.sh <branch> <ci-run-url> <release-readiness-run-url> <source-ref>`
+  and run
   `./scripts/check-ci-evidence-decision.sh`.
 
 ## Current evidence from the repository
