@@ -18,9 +18,9 @@ closed or explicitly accepted.
   package manifests.
 - [x] Decide whether the public root README is a product README or an
   engineering spec, then make the first screen match that decision.
-- [ ] Add `SECURITY.md` with supported versions and report channel.
-- [ ] Add `CONTRIBUTING.md` and a contribution licensing policy.
-- [ ] Remove or redact tracked artifacts that include local paths, process
+- [x] Add `SECURITY.md` with supported versions and report channel.
+- [x] Add `CONTRIBUTING.md` and a contribution licensing policy.
+- [x] Remove or redact tracked artifacts that include local paths, process
   command lines, raw logs, or failed eval output.
 - [ ] State the alpha support boundary: best-effort, breaking changes expected,
   not production-ready.
@@ -42,13 +42,14 @@ closed or explicitly accepted.
 
 - Root `Cargo.toml` and `packages/*/package.json` currently declare
   `UNLICENSED`.
-- No root `LICENSE`, `SECURITY.md`, or `CONTRIBUTING.md` is tracked.
+- No root `LICENSE` is tracked yet. `SECURITY.md` and `CONTRIBUTING.md` are
+  present.
 - Root `README.md` is now a public alpha front door; the long engineering spec
   was moved to `docs/ENGINEERING_SPEC.md`.
-- `crates/fleet-host/artifacts/**` contains source-controlled probe evidence,
-  including raw logs/RSS/JSON with local absolute paths.
-- `containers/fleet-env/eval/artifacts/**` contains a large generated eval
-  result corpus, including at least one failed result from an older run.
+- `crates/fleet-host/artifacts/**` is now a local ignored artifact area; raw
+  probe runs are not tracked for public release.
+- `containers/fleet-env/eval/artifacts/**` is now a local ignored artifact area;
+  generated eval reports/screenshots are not tracked for public release.
 - The GitHub CI workflow exists, but should be re-run after the public tree is
   cleaned.
 
