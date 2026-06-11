@@ -41,10 +41,16 @@ expect_fail() {
 }
 
 printf 'small\n' >"$repo/README.md"
+mkdir -p "$repo/crates/fleet-host/artifacts/keepalive"
+printf 'local artifact directory only; generated payloads stay ignored\n' \
+  >"$repo/crates/fleet-host/artifacts/README.md"
+printf '*\n!.gitignore\n!README.md\n!keepalive/\n!keepalive/.gitkeep\n' \
+  >"$repo/crates/fleet-host/artifacts/.gitignore"
+printf '' >"$repo/crates/fleet-host/artifacts/keepalive/.gitkeep"
 write_bytes "$repo/crates/fleet-host/icons/icon.png" $((3 * 1024 * 1024))
 git -C "$repo" add .
 git -C "$repo" commit -q -m "allowed source icon"
-expect_pass "source icon has a narrow larger allowance"
+expect_pass "source icon and artifact placeholders have narrow allowances"
 
 write_bytes "$repo/docs/screenshot.png" $((2 * 1024 * 1024))
 git -C "$repo" add docs/screenshot.png
@@ -52,6 +58,20 @@ git -C "$repo" commit -q -m "large generated artifact"
 expect_fail "non-icon large file is rejected"
 
 git -C "$repo" rm -q docs/screenshot.png
+mkdir -p "$repo/crates/fleet-host/artifacts/manual"
+printf '{"local":"artifact"}\n' >"$repo/crates/fleet-host/artifacts/manual/probe.json"
+git -C "$repo" add -f crates/fleet-host/artifacts/manual/probe.json
+git -C "$repo" commit -q -m "small raw artifact"
+expect_fail "small raw artifact payload is rejected"
+
+git -C "$repo" rm -q crates/fleet-host/artifacts/manual/probe.json
+mkdir -p "$repo/packages/fleet-bridge"
+printf 'vsix\n' >"$repo/packages/fleet-bridge/fleet-bridge-0.0.1.vsix"
+git -C "$repo" add packages/fleet-bridge/fleet-bridge-0.0.1.vsix
+git -C "$repo" commit -q -m "tracked vsix"
+expect_fail "tracked VSIX is rejected"
+
+git -C "$repo" rm -q packages/fleet-bridge/fleet-bridge-0.0.1.vsix
 write_bytes "$repo/crates/fleet-host/icons/icon.png" $((6 * 1024 * 1024))
 git -C "$repo" add crates/fleet-host/icons/icon.png
 git -C "$repo" commit -q -m "oversized source icon"
