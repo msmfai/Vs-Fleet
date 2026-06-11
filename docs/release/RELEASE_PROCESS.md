@@ -91,6 +91,8 @@ Do not publish a public alpha until these are true:
   `docs/release/OWNER_DECISION_RECORD.md`.
 - `./scripts/check-branding-decision.sh docs/release/OWNER_DECISION_RECORD.md .`
   passes.
+- `./scripts/check-versioning-decision.sh docs/release/OWNER_DECISION_RECORD.md .`
+  passes.
 - Dependency review has been run for the exact public commit, or the approved
   owner decision record explicitly accepts publishing without it.
 - `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` records the exact commit,
@@ -167,6 +169,7 @@ Do not publish a public alpha until these are true:
    ./scripts/check-lockfile-policy.sh
    ./scripts/check-support-decision.sh docs/release/OWNER_DECISION_RECORD.md SUPPORT.md .
    ./scripts/check-branding-decision.sh docs/release/OWNER_DECISION_RECORD.md .
+   ./scripts/check-versioning-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/secret-release-check.sh
    ./scripts/release-check.sh
    ```

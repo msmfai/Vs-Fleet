@@ -185,12 +185,26 @@ Choose how stable the public alpha name and visual identity are.
 Current default recommendation: treat the icon as alpha and confirm the name
 only after the namespace check passes.
 
+### 14. Versioning And Compatibility
+
+Choose what compatibility public alpha users can expect.
+
+- [ ] Alpha pre-release tags only. No stable API, protocol, state-file, or
+  upgrade compatibility is promised during alpha.
+- [ ] Commit to semver-compatible public CLI, protocol, and state changes during
+  alpha.
+- [ ] Other: `TODO`
+
+Current default recommendation: use alpha pre-release tags and promise no stable
+API, protocol, state-file, or upgrade compatibility until the project has real
+outside users.
+
 ## Required Before Binary Distribution
 
 These do not block a source-only alpha, but they must be decided before any
 public app bundle.
 
-### 14. macOS Signing and Notarization
+### 15. macOS Signing and Notarization
 
 - [ ] No public binaries until Developer ID signing and notarization are
   automated.
@@ -200,7 +214,7 @@ public app bundle.
 Current default recommendation: no public binaries until signing and notarization
 are automated.
 
-### 15. Update Channel
+### 16. Update Channel
 
 - [ ] No auto-update in alpha.
 - [ ] GitHub Releases only.

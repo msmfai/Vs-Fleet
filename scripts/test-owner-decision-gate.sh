@@ -17,6 +17,7 @@ write_record() {
   local signing_checked=' '
   local update_checked=' '
   local branding_checked=' '
+  local versioning_checked='x'
 
   case "$distribution" in
     source) source_checked='x' ;;
@@ -128,14 +129,19 @@ Decision record status: $status
 - [$branding_checked] \`Fleet\` name and current icon are alpha placeholders.
 - [ ] Other: \`TODO\`
 
+### 14. Versioning And Compatibility
+
+- [$versioning_checked] Alpha pre-release tags only. No stable API, protocol, state-file, or upgrade compatibility is promised during alpha.
+- [ ] Other: \`TODO\`
+
 ## Required Before Binary Distribution
 
-### 14. macOS Signing and Notarization
+### 15. macOS Signing and Notarization
 
 - [$signing_checked] No public binaries until Developer ID signing and notarization are automated.
 - [ ] Other: \`TODO\`
 
-### 15. Update Channel
+### 16. Update Channel
 
 - [$update_checked] No auto-update in alpha.
 - [ ] Other: \`TODO\`
@@ -182,6 +188,12 @@ branding_missing="$TMPDIR/branding-missing.md"
 write_record "$branding_missing" APPROVED source undecided undecided
 expect_fail_contains "source-only alpha requires a branding decision" "$branding_missing" \
   "### 13\\. Branding Stability must have exactly one checked choice; found 0"
+
+versioning_missing="$TMPDIR/versioning-missing.md"
+write_record "$versioning_missing" APPROVED source decided undecided
+perl -0pi -e 's/- \[x\] Alpha pre-release tags only\./- [ ] Alpha pre-release tags only./' "$versioning_missing"
+expect_fail_contains "source-only alpha requires a versioning decision" "$versioning_missing" \
+  "### 14\\. Versioning And Compatibility must have exactly one checked choice; found 0"
 
 binary_missing="$TMPDIR/binary-missing.md"
 write_record "$binary_missing" APPROVED unsigned decided undecided

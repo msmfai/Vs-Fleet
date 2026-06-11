@@ -81,6 +81,9 @@ jobs:
       - name: Branding decision gate self-test
         run: ./scripts/test-branding-decision-check.sh
 
+      - name: Versioning decision gate self-test
+        run: ./scripts/test-versioning-decision-check.sh
+
       - name: GitHub publication evidence gate self-test
         run: ./scripts/test-github-publication-evidence-check.sh
 

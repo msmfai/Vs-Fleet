@@ -82,6 +82,9 @@ closed or explicitly accepted.
   public assets in `docs/release/OWNER_DECISION_RECORD.md`.
 - [ ] Run `./scripts/check-branding-decision.sh` to verify the branding choice,
   release-notes Branding field, and replaceable source-icon contract agree.
+- [ ] Choose the versioning and compatibility promise in
+  `docs/release/OWNER_DECISION_RECORD.md` and run
+  `./scripts/check-versioning-decision.sh`.
 - [ ] Draft GitHub pre-release notes from
   `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` and remove all placeholders.
 - [ ] Run the release-notes checker with the expected commit:
@@ -217,6 +220,10 @@ closed or explicitly accepted.
   repository URL against the approved namespace and requires concrete evidence
   for visibility review, issues/discussions/wiki/releases/packages settings,
   Actions, security settings, and branch protection.
+- `scripts/check-versioning-decision.sh` validates the approved compatibility
+  promise against the release notes, support/security docs, and release process,
+  so alpha users do not infer stable APIs, state formats, or upgrade paths by
+  accident.
 - `scripts/check-privacy-decision.sh` validates that the approved
   privacy/telemetry posture matches the README, security policy, architecture
   notes, issue template, and release notes template.

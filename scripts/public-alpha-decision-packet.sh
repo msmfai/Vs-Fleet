@@ -25,6 +25,7 @@ required_sections=$(
 ### 11. Dependency Review Evidence
 ### 12. Support Commitment
 ### 13. Branding Stability
+### 14. Versioning And Compatibility
 EOF
 )
 
@@ -118,7 +119,7 @@ fi
 
 distribution_block="$(section_block "$required_block" "### 6. Distribution Scope" || true)"
 if printf '%s\n' "$distribution_block" | rg -q '^- \[x\] Source plus|^- \[x\] Other:'; then
-  for section in "### 14. macOS Signing and Notarization" "### 15. Update Channel"; do
+  for section in "### 15. macOS Signing and Notarization" "### 16. Update Channel"; do
     if ! block="$(section_block "$binary_block" "$section")"; then
       echo "- ${section#'### '}: missing section required for public binary distribution"
       missing_any=1
@@ -148,6 +149,7 @@ echo "- Scope: local macOS host plus local code serve-web workflow only."
 echo "- Distribution: source-only alpha."
 echo "- CI: GitHub Actions green on the exact public commit."
 echo "- Support: best-effort alpha support only."
+echo "- Versioning: alpha pre-release tags only; no stable compatibility promise."
 
 echo
 echo "Mechanical next commands after recording choices:"
@@ -167,6 +169,7 @@ else
   echo "  ./scripts/release-check.sh"
 fi
 echo "  ./scripts/run-dependency-review.sh"
+echo "  ./scripts/check-versioning-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo '  ./scripts/check-github-publication-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md "$(git rev-parse HEAD)"'
 
 echo

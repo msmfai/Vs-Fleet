@@ -20,7 +20,8 @@ for pattern in \
   '^\| GitHub org/user \| example \|$' \
   '^\| GitHub repo name \| vs-fleet \|$' \
   '^- \[x\] Source-only alpha\.' \
-  '^- \[x\] `Fleet` name and current icon are alpha placeholders\.$'
+  '^- \[x\] `Fleet` name and current icon are alpha placeholders\.$' \
+  '^- \[x\] Alpha pre-release tags only\.'
 do
   if ! rg -q "$pattern" "$stdout"; then
     echo "FAIL: stdout draft missing expected pattern: $pattern" >&2
