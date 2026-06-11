@@ -30,8 +30,10 @@ From the repository root:
 The script runs Rust metadata checks, npm audit checks, lockfile policy, and a
 generated-artifact check. It writes
 [`DEPENDENCY_REVIEW_EVIDENCE.md`](DEPENDENCY_REVIEW_EVIDENCE.md) only after all
-commands pass. Run `./scripts/release-check.sh` afterwards as the final release
-verifier; do not use it as an input to dependency evidence generation.
+commands pass. It may replace the pending template, but it refuses to overwrite
+concrete reviewed evidence unless `FLEET_DEPENDENCY_REVIEW_FORCE=1` is set. Run
+`./scripts/release-check.sh` afterwards as the final release verifier; do not
+use it as an input to dependency evidence generation.
 
 ## What to Record
 
