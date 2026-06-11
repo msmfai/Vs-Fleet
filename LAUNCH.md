@@ -1,5 +1,14 @@
 # Launching Fleet v1
 
+## Public alpha boundary
+
+This is a maintainer bring-up note, not a public binary/package launch guide.
+For the first public GitHub alpha, the supported user path is source-only,
+local macOS, and user-provided `code serve-web`. Do not treat VSIX packaging,
+headless Hub runs, remote/container workflows, or unsigned app bundles in this
+file as public support commitments unless a later owner decision expands the
+release scope.
+
 Fleet v1 actually runs. This is how to bring up the whole stack and see live
 agent state — both the headless path (proven in CI-style smokes) and the real
 VS Code path.
