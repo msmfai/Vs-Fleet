@@ -82,6 +82,10 @@ The release check is expected to fail until public-alpha blockers are resolved.
 See [docs/release/RELEASE_PROCESS.md](docs/release/RELEASE_PROCESS.md) for the
 source-alpha release process.
 
+No public roadmap commitments are made during alpha. Public issues, labels, and
+milestones are triage hints only, not delivery promises, unless a later owner
+decision publishes a concrete roadmap.
+
 ## Security and privacy
 
 Fleet is local-first and has no intended telemetry by default. It can still log

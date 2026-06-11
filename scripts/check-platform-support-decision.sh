@@ -20,7 +20,7 @@ if ! rg -q '^Decision record status: APPROVED$' "$owner_record"; then
 fi
 
 platform_block="$(
-  sed -n '/^### 18\. Supported Platform And Toolchain$/,/^## Required Before Binary Distribution$/p' "$owner_record"
+  sed -n '/^### 18\. Supported Platform And Toolchain$/,/^### 19\. Public Roadmap And Non-Goals$/p' "$owner_record"
 )"
 
 checked_count="$(printf '%s\n' "$platform_block" | rg -c '^- \[x\] ' || true)"

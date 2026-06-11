@@ -166,17 +166,25 @@ is still `TODO`, ambiguous, or only a recommendation.
     Follow-up: run `./scripts/check-platform-support-decision.sh` after copying
     this choice into `OWNER_DECISION_RECORD.md`.
 
+19. Public roadmap and non-goals:
+    Recommended alpha default: no public roadmap commitments during alpha;
+    issues, labels, milestones, and feedback are triage signals only, not
+    delivery promises.
+    Owner answer:
+    Follow-up: run `./scripts/check-roadmap-decision.sh` after copying this
+    choice into `OWNER_DECISION_RECORD.md`.
+
 ## Binary-Only Decisions
 
 These are not required for a source-only alpha. They become required before any
 public app bundle.
 
-19. macOS signing and notarization:
+20. macOS signing and notarization:
     Recommended default: no public binaries until Developer ID signing and
     notarization are automated.
     Owner answer:
 
-20. Update channel:
+21. Update channel:
     Recommended default: no auto-update in alpha.
     Owner answer:
 

@@ -258,12 +258,26 @@ Current default recommendation: macOS source alpha only. Do not imply Linux,
 Windows, remote/container, or binary-package support until each path has a
 documented support matrix and public verification evidence.
 
+### 19. Public Roadmap And Non-Goals
+
+Choose what public users can infer from issues, labels, milestones, and alpha
+feedback during the first source alpha.
+
+- [ ] No public roadmap commitments during alpha. Issues, labels, and
+  milestones are triage hints only, not delivery promises.
+- [ ] Publish a public roadmap before alpha.
+- [ ] Other: `TODO`
+
+Current default recommendation: no public roadmap commitments during alpha.
+Release notes should list known rough edges and non-goals; issues, labels, and
+milestones are triage signals only.
+
 ## Required Before Binary Distribution
 
 These do not block a source-only alpha, but they must be decided before any
 public app bundle.
 
-### 19. macOS Signing and Notarization
+### 20. macOS Signing and Notarization
 
 - [ ] No public binaries until Developer ID signing and notarization are
   automated.
@@ -273,7 +287,7 @@ public app bundle.
 Current default recommendation: no public binaries until signing and notarization
 are automated.
 
-### 20. Update Channel
+### 21. Update Channel
 
 - [ ] No auto-update in alpha.
 - [ ] GitHub Releases only.

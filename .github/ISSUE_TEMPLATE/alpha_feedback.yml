@@ -8,6 +8,7 @@ body:
       value: |
         Use this for product/readiness feedback rather than a specific reproducible bug. Scrub private local details before posting.
         Do not report vulnerabilities or exploit details in public issues; use SECURITY.md.
+        Feedback and suggestions are not roadmap commitments.
   - type: dropdown
     id: topic
     attributes:

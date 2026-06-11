@@ -22,6 +22,7 @@ write_record() {
   local custody_checked='x'
   local ai_checked='x'
   local platform_checked='x'
+  local roadmap_checked='x'
 
   case "$distribution" in
     source) source_checked='x' ;;
@@ -158,14 +159,19 @@ Decision record status: $status
 - [$platform_checked] macOS source alpha only. Supported toolchain: Rust 1.78 or newer, Node.js 20/npm, Git, and user-provided VS Code code CLI/serve-web.
 - [ ] Other: \`TODO\`
 
+### 19. Public Roadmap And Non-Goals
+
+- [$roadmap_checked] No public roadmap commitments during alpha. Issues, labels, and milestones are triage hints only, not delivery promises.
+- [ ] Other: \`TODO\`
+
 ## Required Before Binary Distribution
 
-### 19. macOS Signing and Notarization
+### 20. macOS Signing and Notarization
 
 - [$signing_checked] No public binaries until Developer ID signing and notarization are automated.
 - [ ] Other: \`TODO\`
 
-### 20. Update Channel
+### 21. Update Channel
 
 - [$update_checked] No auto-update in alpha.
 - [ ] Other: \`TODO\`
@@ -242,6 +248,12 @@ write_record "$platform_missing" APPROVED source decided undecided
 perl -0pi -e 's/- \[x\] macOS source alpha only\./- [ ] macOS source alpha only./' "$platform_missing"
 expect_fail_contains "source-only alpha requires a platform support decision" "$platform_missing" \
   "### 18\\. Supported Platform And Toolchain must have exactly one checked choice; found 0"
+
+roadmap_missing="$TMPDIR/roadmap-missing.md"
+write_record "$roadmap_missing" APPROVED source decided undecided
+perl -0pi -e 's/- \[x\] No public roadmap commitments during alpha\./- [ ] No public roadmap commitments during alpha./' "$roadmap_missing"
+expect_fail_contains "source-only alpha requires a roadmap decision" "$roadmap_missing" \
+  "### 19\\. Public Roadmap And Non-Goals must have exactly one checked choice; found 0"
 
 binary_missing="$TMPDIR/binary-missing.md"
 write_record "$binary_missing" APPROVED unsigned decided undecided

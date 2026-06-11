@@ -25,7 +25,8 @@ for pattern in \
   '^- \[x\] Open public issues only for scoped bug reports and alpha feedback;' \
   '^- \[x\] Single-maintainer alpha\.' \
   '^- \[x\] Allow AI-assisted contributions if the contributor certifies human review,' \
-  '^- \[x\] macOS source alpha only\.'
+  '^- \[x\] macOS source alpha only\.' \
+  '^- \[x\] No public roadmap commitments during alpha\.'
 do
   if ! rg -q "$pattern" "$stdout"; then
     echo "FAIL: stdout draft missing expected pattern: $pattern" >&2
