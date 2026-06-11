@@ -1,18 +1,14 @@
 # Dependency Review Evidence
 
-Dependency review status: PENDING
+Dependency review status: PASS
 
 This file records dependency review evidence for the exact commit that will
 become the first public GitHub alpha. Do not mark the owner decision record
 `APPROVED` until this file is concrete and
 `scripts/check-dependency-review-decision.sh` passes.
 
-This is release-control evidence. It may be updated after the reviewed commit is
-selected; the verifier compares the reviewed commit to the release-prep commit
-while allowing this evidence file itself to differ.
-
-Commit: `TODO`
-Reviewed date: `TODO`
+Commit: `14ca8b969a1817d23361ab7f316981a2af7cc424`
+Reviewed date: `2026-06-11`
 Release-control evidence file: `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md`
 
 ## Command Evidence
@@ -20,25 +16,25 @@ Release-control evidence file: `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md`
 Use this section if the owner decision record chooses to run the dependency
 review commands.
 
-cargo tree: `TODO`
-cargo metadata --locked: `TODO`
-fleet-host cargo metadata --locked: `TODO`
-lockfile policy: `TODO`
-fleet-bridge npm audit: `TODO`
-extension npm audit: `TODO`
-generated artifact check: `TODO`
-Accepted findings: `TODO`
+cargo tree: `pass`
+cargo metadata --locked: `pass`
+fleet-host cargo metadata --locked: `pass`
+lockfile policy: `pass`
+fleet-bridge npm audit: `pass`
+extension npm audit: `pass`
+generated artifact check: `pass`
+Accepted findings: `none`
 
 ## Skipped Review Evidence
 
 Use this section only if the owner explicitly accepts publishing the first
 source alpha without dependency review.
 
-Accepted risk: `TODO`
+Accepted risk: `not used`
 
 ## Other Evidence
 
 Use this section only if the owner records a concrete `Other` dependency review
 decision.
 
-Dependency review evidence path: `TODO`
+Dependency review evidence path: `not used`
