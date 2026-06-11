@@ -60,6 +60,8 @@ closed or explicitly accepted.
 - [x] Add a code of conduct if you want public contributions.
 - [x] Add a manual release-readiness CI workflow for the exact public ref.
 - [ ] Run CI on the exact public branch after artifact cleanup.
+- [ ] Record exact CI evidence in `docs/release/PUBLIC_CI_EVIDENCE.md` and run
+  `./scripts/check-ci-evidence-decision.sh`.
 
 ## Current evidence from the repository
 
@@ -76,6 +78,8 @@ closed or explicitly accepted.
   `docs/release/RELEASE_PROCESS.md` are present.
 - `.github/workflows/release-readiness.yml` and
   `docs/release/DEPENDENCY_REVIEW.md` are present.
+- `docs/release/PUBLIC_CI_EVIDENCE.md` is present as the exact commit/run
+  evidence record for the first public GitHub alpha.
 - `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` is present so the first GitHub
   pre-release has a consistent scope, verification, history, dependency,
   security, and known-rough-edges disclosure.
@@ -96,6 +100,9 @@ closed or explicitly accepted.
 - `scripts/check-contribution-decision.sh` validates that the approved
   contribution intake choice matches `CONTRIBUTING.md` and the pull request
   template before outside code PRs arrive.
+- `scripts/check-ci-evidence-decision.sh` validates that the approved public CI
+  evidence choice has exact commit evidence and, for the recommended path, a
+  GitHub Actions run URL.
 - Root `README.md` is now a public alpha front door; the long engineering spec
   was moved to `docs/ENGINEERING_SPEC.md`.
 - `crates/fleet-host/artifacts/**` is now a local ignored artifact area; raw

@@ -36,6 +36,9 @@ jobs:
       - name: Contribution decision gate self-test
         run: ./scripts/test-contribution-decision-check.sh
 
+      - name: Public CI evidence gate self-test
+        run: ./scripts/test-ci-evidence-decision-check.sh
+
       - name: History release gate self-test
         run: ./scripts/test-history-release-check.sh
 

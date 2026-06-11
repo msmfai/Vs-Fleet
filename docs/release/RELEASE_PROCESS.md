@@ -16,6 +16,8 @@ Do not publish a public alpha until these are true:
 - `./scripts/release-check.sh` passes.
 - CI is green on the exact public branch or commit, including the manual
   "Release Readiness" workflow.
+- `docs/release/PUBLIC_CI_EVIDENCE.md` records the exact commit and CI evidence
+  for the first public GitHub alpha.
 - Generated artifacts, local logs, screenshots, VSIX files, app bundles, and
   machine-specific paths are not tracked.
 - `./scripts/history-release-check.sh` passes, or the approved owner decision
@@ -31,6 +33,8 @@ Do not publish a public alpha until these are true:
 - `./scripts/check-security-reporting-decision.sh docs/release/OWNER_DECISION_RECORD.md SECURITY.md`
   passes.
 - `./scripts/check-contribution-decision.sh docs/release/OWNER_DECISION_RECORD.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md`
+  passes.
+- `./scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"`
   passes.
 - Dependency review has been run for the exact public commit, or the approved
   owner decision record explicitly accepts publishing without it.
@@ -87,6 +91,7 @@ Do not publish a public alpha until these are true:
    ./scripts/check-namespace-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/check-security-reporting-decision.sh docs/release/OWNER_DECISION_RECORD.md SECURITY.md
    ./scripts/check-contribution-decision.sh docs/release/OWNER_DECISION_RECORD.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md
+   ./scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"
    ./scripts/release-check.sh
    ```
 
@@ -114,8 +119,10 @@ Do not publish a public alpha until these are true:
    the owner decision record choice that accepts current branch history exposure.
 
 10. Run the manual GitHub "Release Readiness" workflow on the exact commit you
-   intend to publish. It is expected to fail until the owner decision record is
-   approved and the license metadata is applied.
+   intend to publish, then update
+   [PUBLIC_CI_EVIDENCE.md](PUBLIC_CI_EVIDENCE.md) with the commit SHA, branch,
+   and workflow run URL. It is expected to fail until the owner decision record
+   is approved and the license metadata is applied.
 
 11. Create a signed git tag after checks pass:
 
