@@ -58,8 +58,8 @@ require_text 'PUBLIC_BRANCH_EVIDENCE\.md.*PASS' "public branch evidence requirem
 require_text 'PUBLIC_CI_EVIDENCE\.md.*PASS' "public CI evidence requirement"
 require_text 'GITHUB_PUBLICATION_EVIDENCE\.md.*PASS' "GitHub publication evidence requirement"
 require_text 'DEPENDENCY_REVIEW_EVIDENCE\.md' "dependency review evidence requirement"
-require_text 'FLEET_RELEASE_HISTORY_REF=<public-branch> ./scripts/release-check\.sh' \
-  "public-branch scoped release-check command"
+require_text './scripts/check-public-release-branch\.sh <public-branch> <source-ref-sha>' \
+  "public release branch verifier command"
 require_text './scripts/draft-owner-decisions\.sh <github-owner> <github-repo>' \
   "owner decision draft command"
 

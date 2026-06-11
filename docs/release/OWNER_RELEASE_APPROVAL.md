@@ -86,7 +86,7 @@ Use these as the recommended source-alpha choices:
 6. Run the release gate for the public branch:
 
    ```sh
-   FLEET_RELEASE_HISTORY_REF=<public-branch> ./scripts/release-check.sh
+   ./scripts/check-public-release-branch.sh <public-branch> <source-ref-sha>
    ```
 
 Do not publish publicly while this sheet or any evidence file remains pending.
