@@ -70,7 +70,6 @@ Source commit: $source_commit
 Public root commit: $commit
 
 Next checks from the release-prep branch:
-  ./scripts/generate-public-branch-evidence.sh $branch $source_commit docs/release/PUBLIC_BRANCH_EVIDENCE.md
   ./scripts/check-public-release-branch.sh $branch $source_commit
 
 Push only after release-check passes:

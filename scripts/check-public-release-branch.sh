@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'EOF'
-usage: scripts/check-public-release-branch.sh <public-branch> <source-ref> [owner-record] [evidence-file]
+usage: scripts/check-public-release-branch.sh <public-branch> <source-ref> [owner-record]
 
 Verify a prepared clean public branch before first GitHub visibility.
 This does not create, switch, rewrite, or push branches.
@@ -13,7 +13,6 @@ EOF
 public_branch="${1:-}"
 source_ref="${2:-}"
 owner_record="${3:-docs/release/OWNER_DECISION_RECORD.md}"
-evidence_file="${4:-docs/release/PUBLIC_BRANCH_EVIDENCE.md}"
 
 if [ -z "$public_branch" ] || [ -z "$source_ref" ] ||
   [ "$public_branch" = "-h" ] || [ "$public_branch" = "--help" ]; then
@@ -48,9 +47,16 @@ run_gate() {
 run_gate "history release check" \
   "$root/scripts/history-release-check.sh" "$owner_record" "$public_branch"
 
-run_gate "public branch evidence check" \
-  "$root/scripts/check-public-branch-evidence.sh" \
-  "$owner_record" "$evidence_file" "$source_commit"
+public_commit="$(git -C "$root" rev-parse --verify "$public_branch^{commit}")"
+source_tree="$(git -C "$root" rev-parse --verify "$source_commit^{tree}")"
+public_tree="$(git -C "$root" rev-parse --verify "$public_commit^{tree}")"
+echo "==> public branch tree check"
+if [ "$source_tree" != "$public_tree" ]; then
+  echo "FAIL: public branch tree does not match source ref tree"
+  fail=1
+else
+  echo "Public branch tree matches source ref."
+fi
 
 run_gate "secret release check" \
   "$root/scripts/secret-release-check.sh" "$public_branch"

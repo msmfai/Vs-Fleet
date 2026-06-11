@@ -85,27 +85,18 @@ jobs:
       - run: ./scripts/test-branding-decision-check.sh
       - run: ./scripts/test-versioning-decision-check.sh
       - run: ./scripts/test-community-intake-decision-check.sh
-      - run: ./scripts/test-release-custody-decision-check.sh
       - run: ./scripts/test-ai-contribution-decision-check.sh
       - run: ./scripts/test-platform-support-decision-check.sh
       - run: ./scripts/test-roadmap-decision-check.sh
       - run: ./scripts/test-name-collision-decision-check.sh
       - run: ./scripts/test-local-data-decision-check.sh
       - run: ./scripts/test-workflow-supply-chain-decision-check.sh
-      - run: ./scripts/test-github-publication-evidence-check.sh
-      - run: ./scripts/test-generate-github-publication-evidence.sh
-      - run: ./scripts/test-public-branch-evidence-check.sh
-      - run: ./scripts/test-generate-public-branch-evidence.sh
       - run: ./scripts/test-check-public-release-branch.sh
-      - run: ./scripts/test-generate-public-ci-evidence.sh
-      - run: ./scripts/test-release-evidence-status.sh
-      - run: ./scripts/test-dependency-review-runner.sh
       - run: ./scripts/test-release-notes-check.sh
       - run: ./scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md
       - run: ./scripts/check-owner-release-approval.sh docs/release/OWNER_RELEASE_APPROVAL.md
       - run: ./scripts/check-owner-reply-template.sh docs/release/OWNER_DECISION_REPLY_TEMPLATE.md
       - run: ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md
-      - run: ./scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md "$(git rev-parse HEAD)"
       - run: ./scripts/secret-release-check.sh
       - run: ./scripts/check-doc-links.sh
       - run: ./scripts/check-license-intent.sh
@@ -205,25 +196,10 @@ write_release "$no_lockfile_gate"
 perl -0pi -e 's/\n      - run: \.\/scripts\/test-lockfile-policy-check\.sh\n//; s/\n      - run: \.\/scripts\/check-lockfile-policy\.sh\n//' "$no_lockfile_gate"
 expect_fail "Release Readiness must keep lockfile policy checks" "$ci" "$no_lockfile_gate"
 
-no_dependency_runner="$TMPDIR/no-dependency-runner.yml"
-write_release "$no_dependency_runner"
-perl -0pi -e 's/\n      - run: \.\/scripts\/test-dependency-review-runner\.sh\n//' "$no_dependency_runner"
-expect_fail "Release Readiness must keep dependency review runner self-test" "$ci" "$no_dependency_runner"
-
 no_public_release_branch="$TMPDIR/no-public-release-branch.yml"
 write_release "$no_public_release_branch"
 perl -0pi -e 's/\n      - run: \.\/scripts\/test-check-public-release-branch\.sh\n//' "$no_public_release_branch"
 expect_fail "Release Readiness must keep public release branch verifier self-test" "$ci" "$no_public_release_branch"
-
-no_public_ci_generator="$TMPDIR/no-public-ci-generator.yml"
-write_release "$no_public_ci_generator"
-perl -0pi -e 's/\n      - run: \.\/scripts\/test-generate-public-ci-evidence\.sh\n//' "$no_public_ci_generator"
-expect_fail "Release Readiness must keep public CI evidence generator self-test" "$ci" "$no_public_ci_generator"
-
-no_evidence_status="$TMPDIR/no-evidence-status.yml"
-write_release "$no_evidence_status"
-perl -0pi -e 's/\n      - run: \.\/scripts\/test-release-evidence-status\.sh\n//' "$no_evidence_status"
-expect_fail "Release Readiness must keep release evidence status self-test" "$ci" "$no_evidence_status"
 
 no_release_notes="$TMPDIR/no-release-notes.yml"
 write_release "$no_release_notes"

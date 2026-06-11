@@ -71,12 +71,6 @@ if ! rg -q './scripts/check-public-release-branch.sh public-alpha' "$output"; th
   exit 1
 fi
 
-if ! rg -q './scripts/generate-public-branch-evidence.sh public-alpha' "$output"; then
-  echo "FAIL: helper output must show public branch evidence generation" >&2
-  cat "$output" >&2
-  exit 1
-fi
-
 if rg -q 'git switch public-alpha|FLEET_RELEASE_HISTORY_REF=public-alpha|./scripts/secret-release-check.sh public-alpha' "$output"; then
   echo "FAIL: helper output should route manual checks through the verifier" >&2
   cat "$output" >&2

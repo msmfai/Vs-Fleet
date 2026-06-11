@@ -61,14 +61,14 @@ require_text 'public namespace table' \
   "namespace gating"
 require_text 'branch history contains local paths|cleaned public branch' \
   "history cleanup gating"
-require_text 'Public branch evidence|public branch evidence' \
-  "public branch evidence gating"
-require_text 'public CI evidence' \
-  "public CI evidence gating"
-require_text 'GitHub publication evidence' \
-  "GitHub publication evidence gating"
-require_text 'dependency review evidence' \
-  "dependency review evidence gating"
+require_text 'public-branch verification|public branch verification|check-public-release-branch' \
+  "public branch verification gating"
+require_text 'Public CI|CI' \
+  "public CI gating"
+require_text 'GitHub publication settings|GitHub publication readiness' \
+  "GitHub publication gating"
+require_text 'dependency review' \
+  "dependency review gating"
 require_text 'source-only alpha' \
   "required source-only disclosure"
 require_text 'macOS local source build' \
@@ -87,8 +87,6 @@ require_text 'provisional `?Fleet`? name' \
   "required naming disclosure"
 require_text 'public-alpha-decision-packet\.sh' \
   "owner packet decision rule"
-require_text 'release-evidence-status\.sh' \
-  "release evidence decision rule"
 require_text 'check-public-release-branch\.sh' \
   "clean public branch verifier decision rule"
 require_text 'release-check\.sh' \

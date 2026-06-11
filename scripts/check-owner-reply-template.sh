@@ -42,8 +42,8 @@ for field in \
   'Open VSX publisher:' \
   'macOS bundle id:' \
   'Security reporting:' \
-  'Emergency removal owner for publication evidence:' \
-  'CI evidence:'
+  'Emergency removal owner:' \
+  'CI checks:'
 do
   require_text "$field" "reply field $field"
 done
@@ -53,8 +53,8 @@ require_text 'Source-only alpha still defers crates\.io, npm, VS Code Marketplac
   "package publication deferral warning"
 require_text './scripts/draft-owner-decisions\.sh <github-owner> <github-repo>' \
   "owner draft command"
-require_text 'keep the status `PENDING` until the evidence files are concrete' \
-  "pending-until-evidence warning"
+require_text 'keep the status `PENDING` until the release checklist is concrete' \
+  "pending-until-checklist warning"
 
 if rg -q 'TODO|TBD' "$template"; then
   echo "FAIL: $template must not use TODO/TBD placeholders; use angle-bracket placeholders"

@@ -64,31 +64,6 @@ section_block() {
   fi
 }
 
-evidence_status() {
-  local file=$1
-  local label=$2
-  local status_label=$3
-
-  if [ ! -f "$file" ]; then
-    echo "- $label: MISSING ($file)"
-    return
-  fi
-
-  local status
-  status="$(rg -i "^${status_label}:" "$file" | head -n1 | sed 's/^[^:]*:[[:space:]]*//; s/[[:space:]]*$//; s/^`//; s/`$//' || true)"
-  if [ -z "$status" ]; then
-    echo "- $label: MISSING STATUS ($file)"
-    return
-  fi
-
-  if rg -q 'TODO|TBD|PLACEHOLDER|PENDING|not yet run|not yet reviewed|not yet configured' "$file"; then
-    echo "- $label: $status, placeholders remain ($file)"
-    return
-  fi
-
-  echo "- $label: $status ($file)"
-}
-
 print_owner_reply_template() {
   if [ ! -f "$template_file" ]; then
     echo "  Missing owner reply template: $template_file"
@@ -222,21 +197,11 @@ if ! print_owner_reply_template; then
 fi
 
 echo
-echo "Release evidence snapshot:"
-release_dir="$(cd "$(dirname "$file")" && pwd)"
-evidence_status "$release_dir/PUBLIC_BRANCH_EVIDENCE.md" \
-  "Public branch evidence" \
-  "Public branch evidence status"
-evidence_status "$release_dir/PUBLIC_CI_EVIDENCE.md" \
-  "Public CI evidence" \
-  "Public CI evidence status"
-evidence_status "$release_dir/GITHUB_PUBLICATION_EVIDENCE.md" \
-  "GitHub publication evidence" \
-  "GitHub publication evidence status"
-evidence_status "$release_dir/DEPENDENCY_REVIEW_EVIDENCE.md" \
-  "Dependency review evidence" \
-  "Dependency review status"
-echo "  Full gate: ./scripts/release-evidence-status.sh"
+echo "Release checklist:"
+echo "- Run CI and Release Readiness on the exact public commit."
+echo "- Run dependency review or record the approved skipped-review risk."
+echo "- Review GitHub repository visibility, security, branch protection, and release custody before publishing."
+echo "- Use ./scripts/check-public-release-branch.sh for the cleaned-history path, or ./scripts/release-check.sh for an approved current-history publish."
 
 echo
 echo "Owner review helper:"
@@ -248,7 +213,6 @@ echo
 echo "Mechanical next commands after recording choices:"
 if printf '%s\n' "$required_block" | rg -q '^- \[x\] Publish a cleaned/squashed history for the first public branch\.'; then
   echo "  ./scripts/prepare-public-branch.sh public-alpha HEAD"
-  echo "  ./scripts/generate-public-branch-evidence.sh public-alpha HEAD docs/release/PUBLIC_BRANCH_EVIDENCE.md"
   echo "  ./scripts/check-public-release-branch.sh public-alpha \"\$(git rev-parse HEAD)\""
 elif printf '%s\n' "$required_block" | rg -q '^- \[x\] Publish the current branch history and accept that old commits may contain'; then
   echo "  ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md"
@@ -258,27 +222,21 @@ else
   echo "  # Choose Public History before selecting the release-check command."
   echo "  # Cleaned history:"
   echo "  ./scripts/prepare-public-branch.sh public-alpha HEAD"
-  echo "  ./scripts/generate-public-branch-evidence.sh public-alpha HEAD docs/release/PUBLIC_BRANCH_EVIDENCE.md"
   echo "  ./scripts/check-public-release-branch.sh public-alpha \"\$(git rev-parse HEAD)\""
   echo "  # Current history:"
   echo "  ./scripts/secret-release-check.sh"
   echo "  ./scripts/release-check.sh"
 fi
 echo "  ./scripts/run-dependency-review.sh"
-echo "  ./scripts/generate-public-ci-evidence.sh <branch> <ci-run-url> <release-readiness-run-url> <source-ref>"
-echo "  ./scripts/generate-github-publication-evidence.sh <repo-url> <default-branch> <source-ref> <emergency-removal-owner>"
-echo "  ./scripts/release-evidence-status.sh"
 echo "  ./scripts/check-versioning-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo "  ./scripts/check-community-intake-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
-echo "  ./scripts/check-release-custody-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md ."
+echo "  ./scripts/check-release-custody-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo "  ./scripts/check-ai-contribution-decision.sh docs/release/OWNER_DECISION_RECORD.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md"
 echo "  ./scripts/check-platform-support-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo "  ./scripts/check-roadmap-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo "  ./scripts/check-name-collision-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo "  ./scripts/check-local-data-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo "  ./scripts/check-workflow-supply-chain-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
-echo '  ./scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"'
-echo '  ./scripts/check-github-publication-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md "$(git rev-parse HEAD)"'
 
 echo
 if [ "$fail" -eq 0 ]; then

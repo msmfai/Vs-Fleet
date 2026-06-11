@@ -25,26 +25,17 @@ Do not publish a public alpha until these are true:
   updated manually. Rust crate renames are intentionally not automatic.
 - `./scripts/public-alpha-decision-packet.sh` reports
   `Release readiness: OWNER DECISIONS COMPLETE`.
-- `./scripts/release-evidence-status.sh` reports `Release evidence status:
-  COMPLETE`.
 - For the recommended cleaned-history release, `./scripts/check-public-release-branch.sh
   <public-branch> <source-ref-sha>` passes. If the owner explicitly accepts
   current branch history exposure instead, `./scripts/release-check.sh` passes
   on the current branch.
 - CI is green on the exact public branch or commit, including the manual
   "Release Readiness" workflow.
-- `./scripts/generate-public-ci-evidence.sh` records the exact commit, branch,
-  CI workflow run, and Release Readiness workflow run in
-  `docs/release/PUBLIC_CI_EVIDENCE.md` for the first public GitHub alpha. This
-  evidence is a release-control artifact; the verifier permits known
-  release-control evidence files under `docs/release/*_EVIDENCE.md` to differ
-  from the checked commit, but no product/docs/source payload drift.
-- `docs/release/GITHUB_PUBLICATION_EVIDENCE.md` records the exact GitHub
-  repository URL, visibility review, repository settings, security settings,
-  and branch-protection review for the first public GitHub alpha. This evidence
-  is also a release-control artifact; the verifier permits known
-  release-control evidence files under `docs/release/*_EVIDENCE.md` to differ
-  from the reviewed commit, but no product/docs/source payload drift.
+- CI and Release Readiness run URLs for the exact public commit are recorded in
+  the release notes or publication checklist.
+- GitHub repository URL, visibility review, repository settings, security
+  settings, branch-protection review, and release custody are checked before the
+  first public GitHub alpha.
 - Generated artifacts, local logs, screenshots, VSIX files, app bundles, and
   machine-specific paths are not tracked.
 - `./scripts/secret-release-check.sh` passes for the tracked tree and git
@@ -53,13 +44,9 @@ Do not publish a public alpha until these are true:
   record explicitly accepts current branch history exposure.
 - If current history is not accepted, `./scripts/prepare-public-branch.sh` is
   used to create a single-commit public branch from the approved source tree.
-- If current history is not accepted, `docs/release/PUBLIC_BRANCH_EVIDENCE.md`
-  records the source commit, public branch, public root commit, and passing
-  history check. This evidence is a release-control artifact; the verifier
-  permits known release-control evidence files under
-  `docs/release/*_EVIDENCE.md` to differ between the private release-prep
-  branch and the clean public branch because a public commit cannot contain
-  evidence naming its own future commit hash.
+- If current history is not accepted, `./scripts/check-public-release-branch.sh
+  <public-branch> <source-ref-sha>` verifies the public branch tree, history,
+  secrets, and aggregate release gates.
 - Rust crate manifests retain `publish = false` and extension package manifests
   retain `"private": true` unless the owner decision record explicitly changes
   distribution scope away from source-only alpha.
@@ -87,23 +74,13 @@ Do not publish a public alpha until these are true:
   broken local links.
 - `./scripts/check-public-tree-size.sh` passes, so the public branch does not
   contain accidental large tracked artifacts.
-- `./scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"`
-  passes.
-- `./scripts/check-github-publication-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md "$(git rev-parse HEAD)"`
-  passes.
 - `./scripts/check-github-workflows.sh .github/workflows/ci.yml .github/workflows/release-readiness.yml`
-  passes, so the workflows referenced by public CI evidence still contain the
-  required source-alpha checks.
+  passes, so the public CI workflows still contain the required source-alpha
+  checks.
 - `./scripts/check-privacy-decision.sh docs/release/OWNER_DECISION_RECORD.md .`
   passes.
-- `./scripts/run-dependency-review.sh` generates
-  `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` for the exact public commit when
-  the owner chooses to run dependency review. This evidence is a release-control
-  artifact; the verifier permits known release-control evidence files under
-  `docs/release/*_EVIDENCE.md` to differ from the reviewed commit, but no
-  product/docs/source payload drift.
-- `./scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"`
-  passes.
+- `./scripts/run-dependency-review.sh` passes for the exact public commit when
+  the owner chooses to run dependency review.
 - `./scripts/check-dependabot-config.sh .github/dependabot.yml` passes, so the
   first public branch has dependency update coverage for GitHub Actions, Cargo,
   and npm surfaces.
@@ -117,11 +94,9 @@ Do not publish a public alpha until these are true:
   passes.
 - Dependency review has been run for the exact public commit, or the approved
   owner decision record explicitly accepts publishing without it.
-- `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` records the exact commit,
-  command results, and accepted findings or skipped-review risk.
 - GitHub pre-release notes are generated with
   `./scripts/generate-alpha-release-notes.sh` after owner decisions and release
-  evidence pass, then checked with `./scripts/check-release-notes.sh`.
+  checks pass, then checked with `./scripts/check-release-notes.sh`.
   [ALPHA_RELEASE_NOTES_TEMPLATE.md](ALPHA_RELEASE_NOTES_TEMPLATE.md) remains the
   checked content template and disclosure baseline.
 - [GITHUB_PUBLICATION_RUNBOOK.md](GITHUB_PUBLICATION_RUNBOOK.md) has been walked
@@ -184,12 +159,9 @@ Do not publish a public alpha until these are true:
    ./scripts/check-github-intake-templates.sh
    ./scripts/check-doc-links.sh
    ./scripts/check-public-tree-size.sh
-   ./scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"
-   ./scripts/check-github-publication-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md "$(git rev-parse HEAD)"
    ./scripts/check-github-workflows.sh .github/workflows/ci.yml .github/workflows/release-readiness.yml
    ./scripts/check-privacy-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/run-dependency-review.sh
-   ./scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"
    ./scripts/check-dependabot-config.sh .github/dependabot.yml
    ./scripts/check-lockfile-policy.sh
    ./scripts/check-support-decision.sh docs/release/OWNER_DECISION_RECORD.md SUPPORT.md .
@@ -204,16 +176,10 @@ Do not publish a public alpha until these are true:
    current history exposure is accepted or the final check is run through
    `./scripts/check-public-release-branch.sh` against the cleaned branch.
 
-7. Review the generated
-   [DEPENDENCY_REVIEW_EVIDENCE.md](DEPENDENCY_REVIEW_EVIDENCE.md), and record
-   any accepted findings in the release notes. If dependency review is
-   deliberately skipped for the first public source alpha, record that accepted
-   risk in [OWNER_DECISION_RECORD.md](OWNER_DECISION_RECORD.md).
-
-   The dependency review evidence file is release-control evidence. If you
-   commit it after running the review, the checker permits that evidence file to
-   differ between the reviewed commit and the release-prep commit; any other
-   tracked-path drift still fails.
+7. Review the `./scripts/run-dependency-review.sh` output and record any
+   accepted findings in the release notes. If dependency review is deliberately
+   skipped for the first public source alpha, record that accepted risk in
+   [OWNER_DECISION_RECORD.md](OWNER_DECISION_RECORD.md).
 
 8. Verify the public tree has no tracked generated artifacts:
 
@@ -244,47 +210,19 @@ Do not publish a public alpha until these are true:
    public-alpha exception.
 
    For the recommended cleaned-history path, use
-   `./scripts/check-public-release-branch.sh <public-branch> <source-ref-sha>`
-   after generating `PUBLIC_BRANCH_EVIDENCE.md`; it reruns both audits against
-   the public branch.
+   `./scripts/check-public-release-branch.sh <public-branch> <source-ref-sha>`;
+   it verifies the public branch tree and reruns both audits against the public
+   branch.
 
 11. Run the normal GitHub "CI" workflow and the manual GitHub "Release
-   Readiness" workflow on the exact commit you intend to publish, then generate
-   [PUBLIC_CI_EVIDENCE.md](PUBLIC_CI_EVIDENCE.md):
+   Readiness" workflow on the exact commit you intend to publish. Put the run
+   links in the release notes or publication checklist, not in tracked evidence
+   files.
 
-   ```sh
-   ./scripts/generate-public-ci-evidence.sh <branch> <ci-run-url> <release-readiness-run-url> <source-ref>
-   ```
-
-   Release Readiness is expected to fail until the owner decision record is
-   approved and the license metadata is applied. If you commit this evidence
-   after the workflows run, the checker permits known release-control evidence
-   files under `docs/release/*_EVIDENCE.md` to differ from the checked commit.
-
-12. Generate `docs/release/GITHUB_PUBLICATION_EVIDENCE.md` from the exact
-   GitHub repository URL, repository settings, security settings,
-   branch-protection evidence, and release-custody owner:
-
-   ```sh
-   ./scripts/generate-github-publication-evidence.sh <repo-url> <default-branch> <source-ref> <emergency-removal-owner>
-   ```
-
-   Pass `field=value` overrides for any repository setting that differs from
-   the source-only alpha defaults printed by
-   `./scripts/generate-github-publication-evidence.sh --help`.
-
-   If you commit this evidence after reviewing the settings, the checker permits
-   known release-control evidence files under `docs/release/*_EVIDENCE.md` to
-   differ from the reviewed commit.
-
-   At any point during evidence collection, run:
-
-   ```sh
-   ./scripts/release-evidence-status.sh
-   ```
-
-   It reports which release evidence records are still pending or still contain
-   placeholders before the owner decision record is approved.
+12. Review the exact GitHub repository URL, repository settings, security
+   settings, branch-protection status, and release-custody owner before changing
+   visibility or cutting a tag. Record the checked values in the publication
+   checklist or release notes, not in tracked repo-local markdown records.
 
 13. Create a signed git tag after the final public-branch verifier passes:
 
@@ -296,7 +234,7 @@ Do not publish a public alpha until these are true:
    the release notes.
 
 14. Generate release notes from the approved owner decisions and concrete
-   release evidence:
+   release checks:
 
    ```sh
    ./scripts/generate-alpha-release-notes.sh v0.1.0-alpha.1 <source-ref> path/to/release-notes.md
@@ -304,7 +242,7 @@ Do not publish a public alpha until these are true:
 
    Add `change=...` and `rough-edge=...` arguments if the generated defaults do
    not fully describe the first alpha. The generator refuses to run until the
-   owner decisions and release evidence pass.
+   owner decisions and release checks pass.
 
 15. Validate the drafted release notes against the public commit:
 
@@ -325,16 +263,13 @@ rewrite history. Raw artifacts were removed from the current tree, but prior
 commits may still contain local paths or failed visual/eval evidence. If that is
 not acceptable, create a single-commit public branch.
 
-The public branch evidence file is intentionally treated as release-control
-evidence. Create the clean public branch from the reviewed source commit, then
-generate/update `docs/release/PUBLIC_BRANCH_EVIDENCE.md` on the release-prep
-branch. The verifier allows known release-control evidence files under
-`docs/release/*_EVIDENCE.md` to differ between the source commit, the evidence
-commit, and the clean public branch; every other tracked path must match.
+Create the clean public branch from the reviewed source commit, then verify it
+from the release-prep branch. The verifier requires the clean public branch tree
+to match the reviewed source tree and reruns history, secret, and aggregate
+release gates against the public branch.
 
 ```sh
 ./scripts/prepare-public-branch.sh public-alpha HEAD
-./scripts/generate-public-branch-evidence.sh public-alpha HEAD docs/release/PUBLIC_BRANCH_EVIDENCE.md
 ./scripts/check-public-release-branch.sh public-alpha "$(git rev-parse HEAD)"
 ```
 
@@ -345,9 +280,9 @@ it explicitly:
 FLEET_PUBLIC_BRANCH_FORCE=1 ./scripts/prepare-public-branch.sh public-alpha HEAD
 ```
 
-`./scripts/check-public-release-branch.sh` runs the history, evidence, secret,
-and aggregate release gates against the cleaned public branch so the audits
-match the history that will be pushed to GitHub.
+`./scripts/check-public-release-branch.sh` runs the history, secret, and
+aggregate release gates against the cleaned public branch so the audits match
+the history that will be pushed to GitHub.
 
 ## Binary Release Gate
 

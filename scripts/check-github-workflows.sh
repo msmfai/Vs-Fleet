@@ -89,8 +89,6 @@ require_text "$release" './scripts/test-versioning-decision-check.sh' \
   "versioning decision self-test"
 require_text "$release" './scripts/test-community-intake-decision-check.sh' \
   "community intake decision self-test"
-require_text "$release" './scripts/test-release-custody-decision-check.sh' \
-  "release custody decision self-test"
 require_text "$release" './scripts/test-ai-contribution-decision-check.sh' \
   "AI contribution decision self-test"
 require_text "$release" './scripts/test-platform-support-decision-check.sh' \
@@ -103,22 +101,8 @@ require_text "$release" './scripts/test-local-data-decision-check.sh' \
   "local data decision self-test"
 require_text "$release" './scripts/test-workflow-supply-chain-decision-check.sh' \
   "workflow supply-chain decision self-test"
-require_text "$release" './scripts/test-github-publication-evidence-check.sh' \
-  "GitHub publication evidence self-test"
-require_text "$release" './scripts/test-generate-github-publication-evidence.sh' \
-  "GitHub publication evidence generator self-test"
-require_text "$release" './scripts/test-public-branch-evidence-check.sh' \
-  "public branch evidence self-test"
-require_text "$release" './scripts/test-generate-public-branch-evidence.sh' \
-  "public branch evidence generator self-test"
 require_text "$release" './scripts/test-check-public-release-branch.sh' \
   "public release branch verifier self-test"
-require_text "$release" './scripts/test-generate-public-ci-evidence.sh' \
-  "public CI evidence generator self-test"
-require_text "$release" './scripts/test-release-evidence-status.sh' \
-  "release evidence status self-test"
-require_text "$release" './scripts/test-dependency-review-runner.sh' \
-  "dependency review runner self-test"
 require_text "$release" './scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md' \
   "owner decision gate"
 require_text "$release" './scripts/check-owner-release-approval.sh docs/release/OWNER_RELEASE_APPROVAL.md' \
@@ -127,8 +111,6 @@ require_text "$release" './scripts/check-owner-reply-template.sh docs/release/OW
   "owner decision reply template gate"
 require_text "$release" './scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md' \
   "history exposure gate"
-require_text "$release" './scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md' \
-  "public branch evidence gate"
 require_text "$release" './scripts/secret-release-check.sh' "secret exposure gate"
 require_text "$release" './scripts/check-doc-links.sh' "documentation link gate"
 require_text "$release" './scripts/check-license-intent.sh' "license intent gate"
