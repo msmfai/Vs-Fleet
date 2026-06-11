@@ -28,10 +28,6 @@ fn fleet_shell_has_no_app_wide_keyboard_capture() {
         "CmdOrCtrl",
         "Cmd/Ctrl",
         "set_focus(",
-        "MenuItemBuilder::with_id",
-        "MenuItem::with_id",
-        "MenuBuilder::new",
-        "SubmenuBuilder::new",
     ];
 
     for rel in files {
@@ -62,8 +58,8 @@ fn fleet_installs_one_static_native_shell_menu() {
         "Fleet must install one static AppKit-aware shell menu"
     );
     assert!(
-        !main.contains(".on_menu_event("),
-        "Fleet must use native predefined shell menu items without an app command handler"
+        main.contains(".on_menu_event(") && main.contains("strip_prefix(\"cmd:\")"),
+        "Fleet must forward clicked VS Code menu commands through the active bridge"
     );
     assert!(
         !main.contains("enable_macos_default_menu(false)"),
@@ -88,42 +84,16 @@ fn fleet_installs_one_static_native_shell_menu() {
         "Fleet must define a static native shell menu"
     );
     assert!(
-        contents.contains("WINDOW_SUBMENU_ID") && contents.contains("HELP_SUBMENU_ID"),
-        "Fleet's custom menu must use Tauri's AppKit submenu ids so Window and Help menus stay native"
+        contents.contains("\"File\"")
+            && contents.contains("\"Edit\"")
+            && contents.contains("\"Selection\"")
+            && contents.contains("\"View\"")
+            && contents.contains("\"Go\"")
+            && contents.contains("\"Run\"")
+            && contents.contains("\"Terminal\"")
+            && contents.contains("workbench.action.terminal.new")
+            && contents.contains("workbench.action.files.save")
+            && contents.contains("workbench.action.showCommands"),
+        "Fleet must keep the mirrored VS Code menu tree for child editor command pass-through"
     );
-    assert!(
-        !contents.contains("MenuItemBuilder::with_id("),
-        "Fleet must not install command menu items that could grow accelerators later"
-    );
-    assert!(
-        !contents.contains("MenuItem::with_id("),
-        "Fleet must use native predefined shell menu items, not app-defined menu commands"
-    );
-    assert!(
-        !contents.contains("SubmenuBuilder::new("),
-        "Fleet must not build generic AppKit submenus that bypass Tauri's default menu integration"
-    );
-    assert!(
-        contents.contains("\"Edit\"")
-            && contents.contains("PredefinedMenuItem::cut")
-            && contents.contains("PredefinedMenuItem::copy")
-            && contents.contains("PredefinedMenuItem::paste")
-            && contents.contains("PredefinedMenuItem::undo")
-            && contents.contains("PredefinedMenuItem::redo")
-            && contents.contains("PredefinedMenuItem::select_all"),
-        "Fleet must keep the native Edit menu so AppKit forwards edit actions to the focused VS Code webview"
-    );
-
-    for pattern in ["\"cmd:", "\"spawn:", "\"server:", "\"rail:", "\"external:"] {
-        for (rel, source) in [
-            ("src/main.rs", main.as_str()),
-            ("src/mux.rs", contents.as_str()),
-        ] {
-            assert!(
-                !source.contains(pattern),
-                "{} must not contain editor/server command pattern {pattern:?}",
-                rel
-            );
-        }
-    }
 }
