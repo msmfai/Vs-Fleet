@@ -3,6 +3,9 @@ name: Release Readiness
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -104,6 +107,9 @@ jobs:
 
       - name: Local data decision gate self-test
         run: ./scripts/test-local-data-decision-check.sh
+
+      - name: Workflow supply-chain decision gate self-test
+        run: ./scripts/test-workflow-supply-chain-decision-check.sh
 
       - name: GitHub publication evidence gate self-test
         run: ./scripts/test-github-publication-evidence-check.sh

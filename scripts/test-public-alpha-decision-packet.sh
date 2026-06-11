@@ -171,14 +171,19 @@ Decision record status: $status
 - [x] Document local data locations and manual cleanup for source alpha. Fleet does not promise an automated uninstaller, but public docs identify \`~/.fleet/run\`, \`~/.fleet/mux\`, cleanup commands, and the process ownership boundary.
 - [ ] Other: \`TODO\`
 
+### 22. GitHub Actions Supply-Chain Posture
+
+- [x] Tagged third-party GitHub Actions are accepted for source alpha, but workflows must use read-only \`GITHUB_TOKEN\` permissions, no repository secrets, and no package/release publishing credentials.
+- [ ] Other: \`TODO\`
+
 ## Required Before Binary Distribution
 
-### 22. macOS Signing and Notarization
+### 23. macOS Signing and Notarization
 
 - [$signing_checked] No public binaries until Developer ID signing and notarization are automated.
 - [ ] Other: \`TODO\`
 
-### 23. Update Channel
+### 24. Update Channel
 
 - [$update_checked] No auto-update in alpha.
 - [ ] Other: \`TODO\`
@@ -238,8 +243,8 @@ expect_output "approved current-history source-only record" './scripts/release-c
 binary_missing="$TMPDIR/binary-missing.md"
 write_record "$binary_missing" APPROVED clean unsigned undecided
 expect_fail "binary distribution without binary decisions" "$binary_missing"
-expect_output "binary distribution without binary decisions" '22\. macOS Signing and Notarization'
-expect_output "binary distribution without binary decisions" '23\. Update Channel'
+expect_output "binary distribution without binary decisions" '23\. macOS Signing and Notarization'
+expect_output "binary distribution without binary decisions" '24\. Update Channel'
 
 todo_namespace="$TMPDIR/todo-namespace.md"
 write_record "$todo_namespace" APPROVED clean source undecided

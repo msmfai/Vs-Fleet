@@ -61,6 +61,15 @@ Not supported as a public alpha commitment:
 - Quitting Fleet does not promise to delete spawned editor userdata or logs, and
   externally registered sessions are not owned by the host.
 
+## Workflow Supply Chain
+
+- Source-alpha GitHub Actions use read-only `GITHUB_TOKEN` permissions:
+  `contents: read`.
+- Release-critical workflows do not use repository secrets or publishing
+  credentials.
+- Tagged third-party Actions are accepted for source alpha; full SHA pinning is
+  deferred until binaries, package publishing, or stricter maintainer policy.
+
 ## What Changed
 
 - `[one-line change]`

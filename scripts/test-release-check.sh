@@ -68,6 +68,7 @@ for doc in \
   docs/release/PUBLIC_CI_EVIDENCE.md \
   docs/release/ASSET_PROVENANCE.md \
   docs/release/NAME_COLLISION_REVIEW.md \
+  docs/release/WORKFLOW_SUPPLY_CHAIN.md \
   docs/release/PUBLIC_ALPHA_OWNER_PROMPT.md \
   docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md \
   docs/release/ALPHA_RELEASE_CHECKLIST.md \
@@ -117,6 +118,7 @@ for script in \
   scripts/check-roadmap-decision.sh \
   scripts/check-name-collision-decision.sh \
   scripts/check-local-data-decision.sh \
+  scripts/check-workflow-supply-chain-decision.sh \
   scripts/test-owner-decision-gate.sh \
   scripts/test-draft-owner-decisions.sh \
   scripts/test-public-alpha-decision-packet.sh \
@@ -155,6 +157,7 @@ for script in \
   scripts/test-roadmap-decision-check.sh \
   scripts/test-name-collision-decision-check.sh \
   scripts/test-local-data-decision-check.sh \
+  scripts/test-workflow-supply-chain-decision-check.sh \
   scripts/test-release-check.sh \
   scripts/check-release-notes.sh \
   scripts/test-release-notes-check.sh

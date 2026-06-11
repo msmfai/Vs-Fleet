@@ -110,6 +110,9 @@ closed or explicitly accepted.
 - [ ] Choose local data/uninstall policy in
   `docs/release/OWNER_DECISION_RECORD.md` and run
   `./scripts/check-local-data-decision.sh`.
+- [ ] Choose GitHub Actions supply-chain posture in
+  `docs/release/OWNER_DECISION_RECORD.md` and run
+  `./scripts/check-workflow-supply-chain-decision.sh`.
 - [ ] Draft GitHub pre-release notes from
   `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` and remove all placeholders.
 - [ ] Run the release-notes checker with the expected commit:
@@ -275,6 +278,10 @@ closed or explicitly accepted.
 - `scripts/check-local-data-decision.sh` validates that public docs identify
   source-alpha local runtime paths, manual cleanup commands, environment
   overrides, and process ownership boundaries before users run Fleet locally.
+- `scripts/check-workflow-supply-chain-decision.sh` validates that release-
+  critical GitHub Actions use the approved third-party Action pinning posture,
+  read-only workflow token permissions, no secrets, and no publishing
+  credentials.
 - `scripts/check-privacy-decision.sh` validates that the approved
   privacy/telemetry posture matches the README, security policy, architecture
   notes, issue template, and release notes template.

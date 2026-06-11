@@ -20,7 +20,7 @@ if ! rg -q '^Decision record status: APPROVED$' "$owner_record"; then
 fi
 
 local_data_block="$(
-  sed -n '/^### 21\. Local Data And Uninstall Policy$/,/^## Required Before Binary Distribution$/p' "$owner_record"
+  sed -n '/^### 21\. Local Data And Uninstall Policy$/,/^### 22\. GitHub Actions Supply-Chain Posture$/p' "$owner_record"
 )"
 
 checked_count="$(printf '%s\n' "$local_data_block" | rg -c '^- \[x\] ' || true)"

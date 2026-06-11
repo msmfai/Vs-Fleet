@@ -33,6 +33,7 @@ required_sections=$(
 ### 19. Public Roadmap And Non-Goals
 ### 20. Public Name Collision And Trademark Posture
 ### 21. Local Data And Uninstall Policy
+### 22. GitHub Actions Supply-Chain Posture
 EOF
 )
 
@@ -126,7 +127,7 @@ fi
 
 distribution_block="$(section_block "$required_block" "### 6. Distribution Scope" || true)"
 if printf '%s\n' "$distribution_block" | rg -q '^- \[x\] Source plus|^- \[x\] Other:'; then
-  for section in "### 22. macOS Signing and Notarization" "### 23. Update Channel"; do
+  for section in "### 23. macOS Signing and Notarization" "### 24. Update Channel"; do
     if ! block="$(section_block "$binary_block" "$section")"; then
       echo "- ${section#'### '}: missing section required for public binary distribution"
       missing_any=1
@@ -164,6 +165,7 @@ echo "- Platform: macOS source alpha only with Rust 1.78+, Node.js 20/npm, Git, 
 echo "- Roadmap: no public roadmap commitments during alpha; issues/labels/milestones are triage only."
 echo "- Naming: Fleet is a provisional working name; no trademark claim or stable package/binary namespace promise."
 echo "- Local data: document ~/.fleet/run, ~/.fleet/mux, manual cleanup, and process ownership."
+echo "- Workflows: tagged third-party Actions accepted only with read-only token permissions and no secrets/publishing credentials."
 
 echo
 echo "Mechanical next commands after recording choices:"
@@ -191,6 +193,7 @@ echo "  ./scripts/check-platform-support-decision.sh docs/release/OWNER_DECISION
 echo "  ./scripts/check-roadmap-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo "  ./scripts/check-name-collision-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo "  ./scripts/check-local-data-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
+echo "  ./scripts/check-workflow-supply-chain-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo '  ./scripts/check-github-publication-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md "$(git rev-parse HEAD)"'
 
 echo
