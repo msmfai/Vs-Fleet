@@ -1,13 +1,10 @@
 # Owner Decision Record
 
-Decision record status: PENDING
+Decision record status: APPROVED
 
-Do not publish the repository publicly until this file has explicit owner
-choices for every "Required before public GitHub visibility" item.
-
-This file is intentionally separate from the recommendation docs: it is the
-place where the project owner records the actual decision, not what the release
-prep work guessed.
+The owner accepted the recommended source-alpha defaults on 2026-06-11. This
+record captures the approved alpha choices; later scope expansion requires a
+new owner decision.
 
 ## Required Before Public GitHub Visibility
 
@@ -33,7 +30,7 @@ Choose how the first public GitHub history should look.
 
 - [ ] Publish the current branch history and accept that old commits may contain
   removed local artifacts or failed eval evidence.
-- [ ] Publish a cleaned/squashed history for the first public branch.
+- [x] Publish a cleaned/squashed history for the first public branch.
 
 Current default recommendation: cleaned/squashed history before first public
 visibility.
@@ -44,14 +41,14 @@ Fill these before publishing packages or telling users names are stable.
 
 | Surface | Decision |
 |---|---|
-| GitHub org/user | `TODO` |
-| GitHub repo name | `TODO` |
-| Product name | `Fleet` or `TODO` |
-| Rust crate prefix | `fleet-*` or `TODO` |
-| npm package names | `fleet-extension`, `fleet-bridge`, or `TODO` |
-| VS Code Marketplace publisher | `fleet-team` or `TODO` |
-| Open VSX publisher | `fleet-team` or `TODO` |
-| macOS bundle id | `dev.fleet.host` or `TODO` |
+| GitHub org/user | smfmarin |
+| GitHub repo name | vs-fleet |
+| Product name | Fleet |
+| Rust crate prefix | fleet-* |
+| npm package names | fleet-extension, fleet-bridge |
+| VS Code Marketplace publisher | fleet-team |
+| Open VSX publisher | fleet-team |
+| macOS bundle id | dev.fleet.host |
 
 Current default recommendation: confirm the GitHub repo and bundle id now; defer
 marketplace/crates/npm publication until after source alpha.
@@ -60,7 +57,7 @@ marketplace/crates/npm publication until after source alpha.
 
 Choose what public users can treat as the supported source-alpha surface.
 
-- [ ] Local macOS Fleet host plus local `code serve-web` sessions, Fleet bridge,
+- [x] Local macOS Fleet host plus local `code serve-web` sessions, Fleet bridge,
   Fleet reporter, CLI, and embedded local Hub. Remote, SSH, Docker/container,
   visual probe, and eval harness paths remain development infrastructure, not
   public support commitments.
@@ -75,7 +72,7 @@ macOS host and local `code serve-web` workflow.
 
 Choose how the public alpha handles editor server components.
 
-- [ ] User-provided VS Code only. Fleet may launch the user's local
+- [x] User-provided VS Code only. Fleet may launch the user's local
   `code serve-web` install, but Fleet does not download, bundle, host, or
   redistribute Microsoft's VS Code Server, Microsoft Marketplace extensions, or
   Microsoft remote extensions.
@@ -92,7 +89,7 @@ container workflows.
 
 Choose what the first public alpha promises.
 
-- [ ] Source-only alpha. No public app bundle, crates.io, npm, Open VSX, VS Code
+- [x] Source-only alpha. No public app bundle, crates.io, npm, Open VSX, VS Code
   Marketplace, or container image publishing.
 - [ ] Source plus unsigned macOS app bundle.
 - [ ] Source plus signed/notarized macOS app bundle.
@@ -104,7 +101,7 @@ Current default recommendation: source-only alpha.
 
 Choose the private vulnerability path before public visibility.
 
-- [ ] Enable GitHub Private Vulnerability Reporting.
+- [x] Enable GitHub Private Vulnerability Reporting.
 - [ ] Add a private security email/contact to `SECURITY.md`.
 - [ ] Other: `TODO`
 
@@ -128,7 +125,7 @@ commercial exceptions or proprietary relicensing become a goal.
 
 Choose the CI gate for the public branch.
 
-- [ ] Require GitHub Actions green on the exact branch/commit before public
+- [x] Require GitHub Actions green on the exact branch/commit before public
   visibility.
 - [ ] Accept local check output only for the first publish.
 - [ ] Other: `TODO`
@@ -140,7 +137,7 @@ branch/commit.
 
 Choose the privacy/logging promise before public visibility.
 
-- [ ] No telemetry by default. Local logs and artifacts may contain workspace
+- [x] No telemetry by default. Local logs and artifacts may contain workspace
   paths, local URLs, session labels, process command lines, and editor state;
   users must scrub them before sharing.
 - [ ] Add an explicit telemetry or remote reporting disclosure before public
@@ -154,7 +151,7 @@ contents and scrub-before-sharing warnings in public docs.
 
 Choose what dependency evidence is required for the exact public commit.
 
-- [ ] Run the dependency review commands in `docs/release/DEPENDENCY_REVIEW.md`
+- [x] Run the dependency review commands in `docs/release/DEPENDENCY_REVIEW.md`
   and record findings in the release notes.
 - [ ] Publish the first source alpha without dependency review and accept
   advisory/license review risk.
@@ -168,7 +165,7 @@ invite-only.
 
 Choose what support public alpha users can expect.
 
-- [ ] Best-effort alpha support only. Breaking changes are expected; there are
+- [x] Best-effort alpha support only. Breaking changes are expected; there are
   no production support guarantees, response SLAs, paid support terms, or stable
   release lines.
 - [ ] Define a public triage or response target in `SUPPORT.md`.
@@ -180,7 +177,7 @@ Current default recommendation: best-effort alpha support only.
 
 Choose how stable the public alpha name and visual identity are.
 
-- [ ] `Fleet` name and current icon are alpha placeholders.
+- [x] `Fleet` name and current icon are alpha placeholders.
 - [ ] `Fleet` name is stable, icon may change.
 - [ ] Name and icon are stable.
 - [ ] Other: `TODO`
@@ -192,7 +189,7 @@ only after the namespace check passes.
 
 Choose what compatibility public alpha users can expect.
 
-- [ ] Alpha pre-release tags only. No stable API, protocol, state-file, or
+- [x] Alpha pre-release tags only. No stable API, protocol, state-file, or
   upgrade compatibility is promised during alpha.
 - [ ] Commit to semver-compatible public CLI, protocol, and state changes during
   alpha.
@@ -207,7 +204,7 @@ outside users.
 Choose what public discussion surfaces are open during alpha and how they are
 moderated.
 
-- [ ] Open public issues only for scoped bug reports and alpha feedback; keep
+- [x] Open public issues only for scoped bug reports and alpha feedback; keep
   blank issues disabled and keep discussions off unless explicitly enabled
   later.
 - [ ] Keep public issues and discussions closed during alpha; collect feedback
@@ -223,7 +220,7 @@ until there is maintainer capacity for broad community support.
 Choose who can create public release artifacts or change public repository
 controls during alpha.
 
-- [ ] Single-maintainer alpha. Only the repository owner or named maintainer may
+- [x] Single-maintainer alpha. Only the repository owner or named maintainer may
   push release tags, create GitHub releases, change repository settings, or
   publish packages.
 - [ ] Multi-maintainer governance before public alpha.
@@ -238,7 +235,7 @@ tag protection or an accepted unavailable/deferred reason.
 Choose how public alpha handles AI-assisted or model-generated outside
 contributions.
 
-- [ ] Allow AI-assisted contributions if the contributor certifies human review,
+- [x] Allow AI-assisted contributions if the contributor certifies human review,
   right to submit, and no private prompts, logs, or generated artifacts.
 - [ ] Require maintainer approval before accepting AI-generated code or
   model-generated patches.
@@ -252,7 +249,7 @@ private model transcripts, local logs, workspace paths, and generated artifacts.
 
 Choose the OS and toolchain matrix that public alpha users can expect.
 
-- [ ] macOS source alpha only. Supported toolchain: Rust 1.78 or newer,
+- [x] macOS source alpha only. Supported toolchain: Rust 1.78 or newer,
   Node.js 20/npm, Git, and user-provided VS Code code CLI/serve-web.
 - [ ] Publish a broader OS/toolchain support matrix before public alpha.
 - [ ] Other: `TODO`
@@ -266,7 +263,7 @@ documented support matrix and public verification evidence.
 Choose what public users can infer from issues, labels, milestones, and alpha
 feedback during the first source alpha.
 
-- [ ] No public roadmap commitments during alpha. Issues, labels, and
+- [x] No public roadmap commitments during alpha. Issues, labels, and
   milestones are triage hints only, not delivery promises.
 - [ ] Publish a public roadmap before alpha.
 - [ ] Other: `TODO`
@@ -280,7 +277,7 @@ milestones are triage signals only.
 Choose how the public alpha handles the `Fleet` name before users, package
 indexes, forks, or screenshots treat it as stable.
 
-- [ ] Use `Fleet` only as a provisional source-alpha working name. Make no
+- [x] Use `Fleet` only as a provisional source-alpha working name. Make no
   trademark claim, acknowledge name-collision review is unresolved, and do not
   publish packages or binaries under stable Fleet namespaces.
 - [ ] Rename the product and package namespaces before public visibility.
@@ -297,7 +294,7 @@ publication until the owner either clears the name or renames it.
 Choose what public source-alpha users are promised about local files, logs,
 runtime sockets, spawned editor userdata, and cleanup.
 
-- [ ] Document local data locations and manual cleanup for source alpha. Fleet
+- [x] Document local data locations and manual cleanup for source alpha. Fleet
   does not promise an automated uninstaller, but public docs identify
   `~/.fleet/run`, `~/.fleet/mux`, cleanup commands, and the process ownership
   boundary.
@@ -313,7 +310,7 @@ external sessions.
 Choose how strict the first public alpha is about third-party GitHub Actions,
 workflow token permissions, secrets, and publishing credentials.
 
-- [ ] Tagged third-party GitHub Actions are accepted for source alpha, but
+- [x] Tagged third-party GitHub Actions are accepted for source alpha, but
   workflows must use read-only `GITHUB_TOKEN` permissions, no repository
   secrets, and no package/release publishing credentials.
 - [ ] Require every third-party GitHub Action to be pinned by full commit SHA
