@@ -4,6 +4,9 @@ Fleet is not ready to publish until every **Required before public alpha** item
 has an explicit owner decision. These are the choices that are expensive to
 change once strangers clone, package, fork, or depend on the project.
 
+Record the actual selected choices in
+[OWNER_DECISION_RECORD.md](OWNER_DECISION_RECORD.md).
+
 ## Required before public alpha
 
 | Decision | Current state | Why it matters | Recommended alpha default |
