@@ -49,6 +49,9 @@ closed or explicitly accepted.
   notes.
 - [x] State the alpha support boundary: best-effort, breaking changes expected,
   not production-ready.
+- [ ] Choose the privacy/telemetry posture in
+  `docs/release/OWNER_DECISION_RECORD.md` and run
+  `./scripts/check-privacy-decision.sh`.
 - [ ] Confirm package namespaces before publishing anything to crates.io,
   Open-VSX, VS Code Marketplace, npm, or GitHub Releases.
 - [ ] Run `./scripts/check-namespace-decision.sh` after filling the namespace
@@ -113,6 +116,9 @@ closed or explicitly accepted.
 - `scripts/check-ci-evidence-decision.sh` validates that the approved public CI
   evidence choice has exact commit evidence and, for the recommended path, a
   GitHub Actions run URL.
+- `scripts/check-privacy-decision.sh` validates that the approved
+  privacy/telemetry posture matches the README, security policy, architecture
+  notes, issue template, and release notes template.
 - `scripts/check-dependency-review-decision.sh` validates that the approved
   dependency review choice has exact commit evidence and explicit command
   results or an accepted skipped-review risk.

@@ -26,7 +26,7 @@ Decision record status: $status
 - [$([ "$checked" = "local" ] && echo x || echo ' ')] Accept local check output only for the first publish.
 - [$([ "$checked" = "other" ] && echo x || echo ' ')] Other: \`Use GitLab pipeline evidence\`
 
-### 8. Dependency Review Evidence
+### 8. Privacy And Telemetry Posture
 EOF
 }
 

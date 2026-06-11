@@ -101,7 +101,21 @@ Choose the CI gate for the public branch.
 Current default recommendation: require GitHub Actions green on the exact public
 branch/commit.
 
-### 8. Dependency Review Evidence
+### 8. Privacy And Telemetry Posture
+
+Choose the privacy/logging promise before public visibility.
+
+- [ ] No telemetry by default. Local logs and artifacts may contain workspace
+  paths, local URLs, session labels, process command lines, and editor state;
+  users must scrub them before sharing.
+- [ ] Add an explicit telemetry or remote reporting disclosure before public
+  visibility.
+- [ ] Other: `TODO`
+
+Current default recommendation: no telemetry by default, with explicit local log
+contents and scrub-before-sharing warnings in public docs.
+
+### 9. Dependency Review Evidence
 
 Choose what dependency evidence is required for the exact public commit.
 
@@ -120,7 +134,7 @@ invite-only.
 These do not block a source-only alpha, but they must be decided before any
 public app bundle.
 
-### 9. macOS Signing and Notarization
+### 10. macOS Signing and Notarization
 
 - [ ] No public binaries until Developer ID signing and notarization are
   automated.
@@ -130,7 +144,7 @@ public app bundle.
 Current default recommendation: no public binaries until signing and notarization
 are automated.
 
-### 10. Update Channel
+### 11. Update Channel
 
 - [ ] No auto-update in alpha.
 - [ ] GitHub Releases only.
@@ -140,7 +154,7 @@ are automated.
 Current default recommendation: no auto-update in alpha; GitHub Releases only
 for source tags.
 
-### 11. Branding Stability
+### 12. Branding Stability
 
 - [ ] `Fleet` name and current icon are alpha placeholders.
 - [ ] `Fleet` name is stable, icon may change.
