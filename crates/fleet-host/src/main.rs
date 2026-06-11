@@ -148,19 +148,6 @@ fn embedded_hub_persist_enabled_from(value: Option<&str>) -> bool {
 /// be launched with `FLEET_BRIDGE_URL=ws://127.0.0.1:<this>` before Fleet starts.
 const BRIDGE_PORT: u16 = 51778;
 
-fn run_rail_action(app: &tauri::AppHandle, function_name: &str) {
-    let Some(rail) = app.get_webview(mux::RAIL) else {
-        mux::emit_host_status(app, "error", "menu", "rail unavailable");
-        return;
-    };
-    let script = format!(
-        "if (window.{function_name}) {{ window.{function_name}(); }} else {{ throw new Error('rail action unavailable'); }}"
-    );
-    if let Err(e) = rail.eval(&script) {
-        mux::emit_host_status(app, "error", "menu", format!("rail action failed: {e}"));
-    }
-}
-
 /// The webview's initial pull of current inbox state (live updates arrive via the
 /// `inbox` event). App-defined command — not gated by the v2 capability ACL.
 #[tauri::command]
@@ -212,115 +199,6 @@ fn main() {
             hub_client::dismiss_session,
             hub_client::focus_session
         ])
-        .on_menu_event(|app, event| {
-            let id = event.id().as_ref();
-            if id == "spawn:new" {
-                if let Some(sup) = app.try_state::<spawn::ServerSupervisor>() {
-                    match sup.spawn() {
-                        Ok(server) => {
-                            mux::clear_host_status(app);
-                            let _ = app.emit(bridge::SERVERS_CHANGED, ());
-                            mux::select_spawned(app.clone(), server.id);
-                        }
-                        Err(e) => mux::emit_spawn_error(app, "menu", &e.to_string()),
-                    }
-                } else {
-                    mux::emit_spawn_error(app, "menu", "server supervisor unavailable");
-                }
-            } else if id == "spawn:close-current" {
-                if let (Some(sup), Some(mux)) = (
-                    app.try_state::<spawn::ServerSupervisor>(),
-                    app.try_state::<mux::MuxState>(),
-                ) {
-                    if let Some(active) = mux.selected.lock().ok().and_then(|g| g.clone()) {
-                        mux::close_server_by_id(app, &sup, &active);
-                    } else {
-                        mux::emit_host_status(app, "warning", "menu", "no active server");
-                    }
-                } else {
-                    mux::emit_host_status(app, "error", "menu", "server supervisor unavailable");
-                }
-            } else if id == "rail:palette" {
-                run_rail_action(app, "__fleetOpenPalette");
-            } else if id == "rail:jump-unread" {
-                run_rail_action(app, "__fleetJumpNextUnread");
-            } else if id == "rail:cycle-unread" {
-                run_rail_action(app, "__fleetCycleUnread");
-            } else if id == "app:quit" {
-                app.exit(0);
-            } else if id == "window:minimize" {
-                if let Some(window) = app.get_window(mux::WINDOW) {
-                    if let Err(e) = window.minimize() {
-                        mux::emit_host_status(app, "error", "menu", format!("minimize failed: {e}"));
-                    }
-                }
-            } else if id == "window:fullscreen" {
-                if let Some(window) = app.get_window(mux::WINDOW) {
-                    match window.is_fullscreen() {
-                        Ok(fullscreen) => {
-                            if let Err(e) = window.set_fullscreen(!fullscreen) {
-                                mux::emit_host_status(
-                                    app,
-                                    "error",
-                                    "menu",
-                                    format!("fullscreen failed: {e}"),
-                                );
-                            }
-                        }
-                        Err(e) => mux::emit_host_status(
-                            app,
-                            "error",
-                            "menu",
-                            format!("fullscreen state unavailable: {e}"),
-                        ),
-                    }
-                }
-            } else if id == "window:close" {
-                if let Some(window) = app.get_window(mux::WINDOW) {
-                    if let Err(e) = window.close() {
-                        mux::emit_host_status(app, "error", "menu", format!("close failed: {e}"));
-                    }
-                }
-            } else if id == "external:open-current" {
-                let Some(mux_state) = app.try_state::<mux::MuxState>() else {
-                    mux::emit_host_status(app, "error", "menu", "server selector unavailable");
-                    return;
-                };
-                let Some(active) = mux_state.selected.lock().ok().and_then(|g| g.clone()) else {
-                    mux::emit_host_status(app, "warning", "menu", "no active server");
-                    return;
-                };
-                if let Err(e) = mux::open_server_external_by_id(app, &active) {
-                    mux::emit_host_status(app, "error", "menu", e);
-                }
-            } else if let Some(server_id) = id.strip_prefix("server:") {
-                if server_id != "none" {
-                    mux::select(app, server_id.to_string());
-                }
-            } else if let Some(command) = id.strip_prefix("cmd:") {
-                // Forward a VS Code command to the active server's bridge.
-                let Some(mux_state) = app.try_state::<mux::MuxState>() else {
-                    mux::emit_host_status(app, "error", "menu", "command bridge unavailable");
-                    return;
-                };
-                let Some(reg) = app.try_state::<bridge::BridgeRegistry>() else {
-                    mux::emit_host_status(app, "error", "menu", "command bridge unavailable");
-                    return;
-                };
-                let Some(active) = mux_state.selected.lock().ok().and_then(|g| g.clone()) else {
-                    mux::emit_host_status(app, "warning", "menu", "no active server");
-                    return;
-                };
-                if !reg.send_command(&active, command) {
-                    mux::emit_host_status(
-                        app,
-                        "warning",
-                        "menu",
-                        format!("command unavailable for {active}"),
-                    );
-                }
-            }
-        })
         .setup(move |app| {
             #[cfg(target_os = "macos")]
             {

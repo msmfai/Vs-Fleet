@@ -4,8 +4,8 @@
 //! the `fleet-bridge` extension, which dials this WS server and registers itself
 //! (`hello` with id + the URL Fleet should embed + a label). That registration IS
 //! how a server appears in the multiplexer — there is no static server list. The
-//! same connection then carries `executeCommand` forwarding (the native menu →
-//! the active server). A server vanishes from the rail when its bridge drops.
+//! same connection can carry harness/probe command frames. A server vanishes
+//! from the rail when its bridge drops.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -32,6 +32,7 @@ type Tx = tokio::sync::mpsc::UnboundedSender<String>;
 
 /// What Fleet knows about one connected server.
 struct Conn {
+    #[allow(dead_code)]
     tx: Tx,
     url: String,
     label: String,
@@ -72,6 +73,7 @@ impl BridgeRegistry {
 
     /// Forward a VS Code command id to a server's bridge.
     /// Synchronous + thread-safe — callable from the UI thread.
+    #[allow(dead_code)]
     pub fn send_command(&self, server_id: &str, command: &str) -> bool {
         let frame = serde_json::json!({ "type": "command", "id": command }).to_string();
         if let Ok(map) = self.inner.lock() {
