@@ -229,7 +229,7 @@ expect_output "pending incomplete record" '2\. Public History'
 expect_output "pending incomplete record" '6\. Distribution Scope'
 expect_output "pending incomplete record" 'Owner review helper:'
 expect_output "pending incomplete record" 'Release evidence snapshot:'
-expect_output "pending incomplete record" 'Minimal owner reply shape:'
+expect_output "pending incomplete record" 'Minimal owner reply shape from docs/release/OWNER_DECISION_REPLY_TEMPLATE.md:'
 expect_output "pending incomplete record" 'I accept the recommended source-only alpha defaults'
 expect_output "pending incomplete record" 'Emergency removal owner for publication evidence'
 expect_output "pending incomplete record" 'Public branch evidence: MISSING'
@@ -247,7 +247,11 @@ expect_output "approved clean source-only record" 'generate-public-ci-evidence\.
 expect_output "approved clean source-only record" 'release-evidence-status\.sh'
 expect_output "approved clean source-only record" 'Contribution intake: require DCO sign-off'
 expect_output "approved clean source-only record" 'VS Code Marketplace publisher: fleet-team'
-expect_output "approved clean source-only record" 'these values are manifest namespace decisions'
+expect_output "approved clean source-only record" 'CI evidence: provide the CI and Release Readiness run URLs'
+
+FLEET_OWNER_REPLY_TEMPLATE="$TMPDIR/missing-template.md" expect_fail \
+  "missing owner reply template is visible" "$clean_source"
+expect_output "missing owner reply template is visible" 'Missing owner reply template'
 
 mkdir -p "$TMPDIR/release-docs"
 cp "$clean_source" "$TMPDIR/release-docs/OWNER_DECISION_RECORD.md"
