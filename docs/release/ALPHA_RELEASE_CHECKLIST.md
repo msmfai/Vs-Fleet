@@ -79,6 +79,9 @@ closed or explicitly accepted.
 - [x] Add a privacy note describing local-only operation and log contents.
 - [x] Add a release process for source tags and app bundles.
 - [x] Add issue templates for bug reports and alpha feedback.
+- [x] Add an intake-template gate for issue/PR privacy, security, and alpha
+  scope warnings.
+- [ ] Run `./scripts/check-github-intake-templates.sh`.
 - [x] Add a code of conduct if you want public contributions.
 - [x] Add a manual release-readiness CI workflow for the exact public ref.
 - [x] Add a workflow integrity gate for normal CI and Release Readiness.
@@ -100,6 +103,10 @@ closed or explicitly accepted.
   present.
 - `SUPPORT.md`, `CODE_OF_CONDUCT.md`, GitHub issue templates, and a pull request
   template are present.
+- `scripts/check-github-intake-templates.sh` validates that GitHub issue/PR
+  templates keep blank issues disabled, preserve alpha scope, redirect
+  vulnerability details away from public issues, and require contribution
+  hygiene/test evidence.
 - `docs/QUICKSTART.md`, `docs/ARCHITECTURE.md`, and
   `docs/release/RELEASE_PROCESS.md` are present.
 - `.github/workflows/release-readiness.yml`,

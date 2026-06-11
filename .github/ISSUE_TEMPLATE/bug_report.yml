@@ -7,6 +7,7 @@ body:
     attributes:
       value: |
         Fleet is pre-release alpha software. Please scrub workspace paths, local URLs, logs, screenshots, and command lines before posting.
+        Do not report vulnerabilities or exploit details in public issues; use SECURITY.md.
   - type: checkboxes
     id: scope
     attributes:

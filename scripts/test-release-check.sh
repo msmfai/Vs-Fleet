@@ -70,6 +70,7 @@ for doc in \
   .github/dependabot.yml \
   docs/release/OWNER_DECISION_RECORD.md \
   .github/PULL_REQUEST_TEMPLATE.md \
+  .github/ISSUE_TEMPLATE/config.yml \
   .github/ISSUE_TEMPLATE/bug_report.yml \
   .github/ISSUE_TEMPLATE/alpha_feedback.yml \
   .github/workflows/ci.yml \
@@ -86,6 +87,7 @@ for script in \
   scripts/check-distribution-decision.sh \
   scripts/check-security-reporting-decision.sh \
   scripts/check-contribution-decision.sh \
+  scripts/check-github-intake-templates.sh \
   scripts/check-ci-evidence-decision.sh \
   scripts/check-github-workflows.sh \
   scripts/check-privacy-decision.sh \
@@ -101,6 +103,7 @@ for script in \
   scripts/test-distribution-decision-check.sh \
   scripts/test-security-reporting-decision-check.sh \
   scripts/test-contribution-decision-check.sh \
+  scripts/test-github-intake-templates-check.sh \
   scripts/test-ci-evidence-decision-check.sh \
   scripts/test-github-workflows-check.sh \
   scripts/test-privacy-decision-check.sh \
