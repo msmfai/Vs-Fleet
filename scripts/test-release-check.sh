@@ -28,6 +28,8 @@ $body"
 cp "$ROOT/scripts/release-check.sh" "$repo/scripts/release-check.sh"
 
 write_file "LICENSE" "MIT"
+write_file "LICENSE-MIT" "MIT"
+write_file "LICENSE-APACHE" "Apache-2.0"
 write_file "Cargo.toml" '[workspace.package]
 license = "MIT"'
 
@@ -54,6 +56,8 @@ done
 for doc in \
   README.md \
   SECURITY.md \
+  LICENSE-MIT \
+  LICENSE-APACHE \
   CONTRIBUTING.md \
   DCO.md \
   SUPPORT.md \

@@ -7,9 +7,10 @@ agent process or the user's keystrokes.
 
 ## Alpha status
 
-Fleet is **not ready for a general public alpha yet**. The codebase is suitable
-for private dogfooding and technical review, but public release is blocked on
-license, artifact, security, and support decisions tracked in:
+Fleet is in source-alpha release preparation. The codebase is suitable for
+private dogfooding and technical review; public visibility is gated by the
+owner decision record, history/artifact cleanup, security evidence, and support
+evidence tracked in:
 
 - [Public alpha decisions](docs/release/PUBLIC_ALPHA_DECISIONS.md)
 - [Alpha release checklist](docs/release/ALPHA_RELEASE_CHECKLIST.md)
@@ -36,8 +37,8 @@ The long-form product and architecture spec lives in
 - Public binary distribution: no signing/notarization policy yet.
 - Remote/container deployment: design and eval harness exist, but this is not a
   supported alpha path yet.
-- External contributions: deferred until the license and contribution policy are
-  settled.
+- External contributions: DCO sign-off is required; broad outside code PRs wait
+  until the owner opens contribution intake.
 - Tracked visual/eval artifacts: useful for development, but they need pruning
   or redaction before public GitHub visibility.
 
@@ -113,6 +114,5 @@ See [SUPPORT.md](SUPPORT.md) for the current alpha support boundary.
 
 ## License
 
-No open-source license has been chosen yet. Do not publish this repository as an
-open-source project until a license is selected, a root `LICENSE` file is added,
-and package manifests are updated away from `UNLICENSED`.
+Fleet is licensed under `MIT OR Apache-2.0`. See [LICENSE](LICENSE),
+[LICENSE-MIT](LICENSE-MIT), and [LICENSE-APACHE](LICENSE-APACHE).
