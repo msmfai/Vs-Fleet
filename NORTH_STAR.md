@@ -1,5 +1,14 @@
 # VS-Fleet — North Star
 
+## Public alpha boundary
+
+This document is a future-direction note, not the first public alpha support
+matrix. The first public GitHub alpha is source-only and local macOS only:
+Fleet host plus local user-provided `code serve-web`, bridge, reporter, CLI, and
+embedded local Hub. SSH, container, cloud provisioning, and remote deployment
+references below are design direction and development infrastructure unless a
+later owner decision explicitly expands the supported alpha scope.
+
 **VS-Fleet is a VS Code multiplexer *and* a control plane over a cloud compute provider.**
 
 Not just a launcher for local editors — the end goal is to drive editor workspaces
@@ -32,16 +41,19 @@ showing it the moment it's ready and its agent's state pinging you when it needs
 
 ---
 
-## Scope — locked now (dogfooding)
+## Scope — product direction, not first public alpha support
 
-The end-state above is the destination, not the current build. **Right now the scope is
-deliberately `local` + *existing* `ssh`, kept extensible** — enough to dogfood Fleet as a
-daily driver for keeping one's own local (and existing-remote) VS Code sessions organised
-and multiplexed. Cloud provisioning is **deferred** until the local+SSH experience is good
-enough to live in.
+The end-state above is the destination, not the current public alpha build.
+Internal dogfooding can keep `local` plus existing `ssh` seams extensible, but
+the first public alpha support commitment is deliberately narrower: local macOS
+source builds with local `code serve-web`. Cloud provisioning is **deferred**
+until the local experience is good enough to live in and a later owner decision
+expands the public support scope.
 
-- **In scope now**: spawn / switch / close local code-servers; deploy to an existing SSH
-  host you already reach; the rail (multiplex + organise); agent-state; repo-as-workspace.
+- **In public alpha scope now**: spawn / switch / close local code-servers; the
+  rail (multiplex + organise); agent-state; repo-as-workspace on local macOS.
+- **Internal dogfood only unless later approved**: deploy to an existing SSH host
+  you already reach.
 - **Kept extensible, not built**: the spawn seam (`SpawnMode` + the one-shared-invocation
   deploy) stays clean so a `Provider` layer + cloud backends slot in later — but **no cloud
   code until we've earned it by dogfooding**.

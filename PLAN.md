@@ -1,5 +1,11 @@
 # Fleet — Implementation Plan (v1)
 
+> **Public alpha boundary:** this is historical and forward-looking engineering
+> planning material. The first public GitHub alpha is narrower: source-only,
+> local macOS, user-provided `code serve-web`, no package/binary publication,
+> and no stable compatibility promise unless the owner decision record later
+> expands the scope.
+>
 > Companion to `docs/ENGINEERING_SPEC.md` (the canonical spec). This document resolves every
 > `[IMPL]`/`[OPEN]` decision needed to start, and decomposes the spec's coarse
 > Phase 0–3 into a long chain of **thin vertical slices**, each ending in a
@@ -26,9 +32,9 @@
 | D8 | First real agent | **Codex** (kept first) — earliest end-to-end proof, but high-confidence for a **hand-launched** TUI comes via **hooks** (`PermissionRequest`, default-on), not passive app-server. *Revised* | §8.2 |
 | D9 | `done` state | **Kept distinct** from `idle` | §7.3, §22 |
 | D10 | Codex channels | **Hooks-first** (`PermissionRequest`, default-on) for hand-launched TUIs; **app-server demoted to experimental**, gated on upstream multi-client (codex #25914). Passive app-server observation of a hand-launched TUI is maintainer-confirmed infeasible. *Inverted after validation — see §2* | §8.2 |
-| D11 | v1 OS | **macOS + Linux first-class together**; Windows documented best-effort | §21, §22 |
+| D11 | v1 OS | **Engineering target: macOS and Linux together**; public source alpha starts with macOS-only support unless the owner decision record expands the matrix. Windows documented best-effort. | §21, §22 |
 | D12 | Repo | **Cargo + pnpm monorepo** (one repo, shared protocol crate) | — |
-| D13 | License | **Private for now**; keep `fleet-protocol` cleanly separable for later OSS | §22 |
+| D13 | License | **MIT OR Apache-2.0 for source alpha**; keep reusable library/API crates permissive. Reserve any future AGPL/commercial-exception move for a later non-library or hosted-control-plane trigger. | §22 |
 | D14 | VS Code extension | **Core Phase-0 component** (not optional) — the editor-scoped injection point (see §2) | §11.2, §8.1 |
 | D15 | Owned-PTY power mode | **Excluded from v1** | §8.4 |
 | D16 | Notifications | **OS-native via Tauri**, urgency-tiered | §15.2, §15.5 |

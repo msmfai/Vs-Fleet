@@ -55,10 +55,13 @@ done
 
 for doc in \
   README.md \
+  CONTRIBUTING.md \
+  LAUNCH.md \
+  PLAN.md \
+  NORTH_STAR.md \
   SECURITY.md \
   LICENSE-MIT \
   LICENSE-APACHE \
-  CONTRIBUTING.md \
   DCO.md \
   SUPPORT.md \
   CODE_OF_CONDUCT.md \
@@ -94,6 +97,9 @@ for doc in \
 do
   write_file "$doc" "release-ready test fixture"
 done
+
+write_file "PLAN.md" "Private for now"
+write_file "CONTRIBUTING.md" "until the project license has been chosen and applied"
 
 for script in \
   scripts/check-owner-decisions.sh \
@@ -228,6 +234,18 @@ fi
 
 if ! rg -q 'NAMESPACE_FAIL' "$output"; then
   echo "FAIL: release check stopped before reporting the namespace gate failure" >&2
+  cat "$output" >&2
+  exit 1
+fi
+
+if ! rg -q 'stale private-license or broad-scope planning claims' "$output"; then
+  echo "FAIL: release check did not reject stale root planning claims" >&2
+  cat "$output" >&2
+  exit 1
+fi
+
+if ! rg -q 'unresolved alpha blockers' "$output"; then
+  echo "FAIL: release check did not reject stale contribution licensing language" >&2
   cat "$output" >&2
   exit 1
 fi

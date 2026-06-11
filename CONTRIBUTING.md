@@ -1,9 +1,9 @@
 # Contributing
 
-Fleet is not ready for broad external contributions until the project license
-has been chosen and applied. Small issue reports and private technical feedback
-are welcome during alpha, but code contributions should wait unless the
-maintainer explicitly asks for them.
+Fleet has a source-alpha license and contribution posture: `MIT OR Apache-2.0`,
+DCO sign-off, and no CLA for the alpha. Small issue reports and technical
+feedback are welcome during alpha. Broad outside code contributions should wait
+unless the maintainer explicitly asks for them.
 
 ## Before opening a pull request
 
@@ -53,5 +53,5 @@ node --check crates/fleet-host/ui/main.js
 ./scripts/release-check.sh
 ```
 
-The release check is expected to fail until public-alpha blockers such as the
-license and artifact policy are resolved.
+The release check is expected to fail until the owner decision record and other
+public-alpha approval gates are complete.
