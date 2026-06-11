@@ -308,6 +308,27 @@ pub fn spawn_server(
     }
 }
 
+#[tauri::command]
+pub fn spawn_server_with_options(
+    app: AppHandle,
+    sup: State<'_, crate::spawn::ServerSupervisor>,
+    request: crate::spawn::SpawnRequest,
+) -> Result<String, String> {
+    match sup.spawn_with(request) {
+        Ok(server) => {
+            clear_host_status(&app);
+            let _ = app.emit(crate::bridge::SERVERS_CHANGED, ());
+            select_spawned(app, server.id.clone());
+            Ok(server.id)
+        }
+        Err(e) => {
+            let message = e.to_string();
+            emit_spawn_error(&app, "rail", &message);
+            Err(message)
+        }
+    }
+}
+
 /// Tauri command: close server `id` (kills the process Fleet spawned).
 #[tauri::command]
 pub fn close_server(

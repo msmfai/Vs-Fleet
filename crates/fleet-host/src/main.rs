@@ -190,6 +190,7 @@ fn main() {
             mux::selected_server,
             mux::select_server,
             mux::spawn_server,
+            mux::spawn_server_with_options,
             mux::close_server,
             mux::rename_server,
             mux::open_server_external,
