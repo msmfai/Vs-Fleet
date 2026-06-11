@@ -25,6 +25,8 @@ Do not publish a public alpha until these are true:
 - Rust crate manifests retain `publish = false` and extension package manifests
   retain `"private": true` unless the owner decision record explicitly changes
   distribution scope away from source-only alpha.
+- `./scripts/check-distribution-decision.sh docs/release/OWNER_DECISION_RECORD.md .`
+  passes.
 - GitHub Private Vulnerability Reporting is enabled, or `SECURITY.md` names a
   private contact channel.
 - Public namespaces are confirmed, even if packages are not published yet.
@@ -93,6 +95,7 @@ Do not publish a public alpha until these are true:
    ```sh
    ./scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/check-namespace-decision.sh docs/release/OWNER_DECISION_RECORD.md .
+   ./scripts/check-distribution-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/check-security-reporting-decision.sh docs/release/OWNER_DECISION_RECORD.md SECURITY.md
    ./scripts/check-contribution-decision.sh docs/release/OWNER_DECISION_RECORD.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md
    ./scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"
