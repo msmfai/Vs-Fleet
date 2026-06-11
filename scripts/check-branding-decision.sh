@@ -105,6 +105,17 @@ require_text "docs/release/PUBLIC_ALPHA_DECISIONS.md" 'Branding stability' \
   "the public branding-stability decision prompt"
 require_text "docs/release/PUBLIC_ALPHA_DECISIONS.md" 'release notes checker requires the decision to be stated' \
   "the release-notes branding follow-up"
+require_text "docs/release/ASSET_PROVENANCE.md" '^Asset: crates/fleet-host/icons/icon\.png$' \
+  "the tracked icon asset"
+require_text "docs/release/ASSET_PROVENANCE.md" '^Provenance:' \
+  "a concrete icon provenance line"
+require_text "docs/release/ASSET_PROVENANCE.md" '^Redistribution decision:' \
+  "a concrete icon redistribution decision line"
+if rg -ni 'TODO|TBD|PLACEHOLDER|pending owner affirmation|Redistribution decision: pending' \
+  "$root/docs/release/ASSET_PROVENANCE.md"; then
+  echo "FAIL: docs/release/ASSET_PROVENANCE.md still contains unresolved asset provenance text"
+  exit 1
+fi
 
 branding_line="$(sed -n 's/^- Branding:[[:space:]]*//p' "$root/$release_notes" | head -n1)"
 if [ -z "$branding_line" ]; then

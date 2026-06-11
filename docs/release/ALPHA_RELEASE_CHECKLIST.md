@@ -82,6 +82,9 @@ closed or explicitly accepted.
   public assets in `docs/release/OWNER_DECISION_RECORD.md`.
 - [ ] Run `./scripts/check-branding-decision.sh` to verify the branding choice,
   release-notes Branding field, and replaceable source-icon contract agree.
+- [ ] Confirm `docs/release/ASSET_PROVENANCE.md` has a concrete redistribution
+  decision for `crates/fleet-host/icons/icon.png`, or replace the icon before
+  public release.
 - [ ] Choose the versioning and compatibility promise in
   `docs/release/OWNER_DECISION_RECORD.md` and run
   `./scripts/check-versioning-decision.sh`.
@@ -178,6 +181,9 @@ closed or explicitly accepted.
 - `docs/release/PUBLIC_CI_EVIDENCE.md` is present as the exact commit, branch,
   CI workflow run, and Release Readiness workflow run evidence record for the
   first public GitHub alpha.
+- `docs/release/ASSET_PROVENANCE.md` is present as the tracked icon
+  redistribution record; it is intentionally still pending owner affirmation
+  until the icon is either approved for the chosen project license or replaced.
 - `docs/release/GITHUB_PUBLICATION_RUNBOOK.md` is present for the final
   repository visibility, security settings, branch protection, and pre-release
   sequence.
@@ -241,8 +247,9 @@ closed or explicitly accepted.
   commitment matches `SUPPORT.md`, the README, and the release notes template.
 - `scripts/check-branding-decision.sh` validates the approved branding
   stability choice against the release-notes Branding field and the replaceable
-  source-icon contract. The release-notes checker then requires the final
-  GitHub pre-release to use a concrete branding value.
+  source-icon contract, and rejects unresolved tracked-icon provenance. The
+  release-notes checker then requires the final GitHub pre-release to use a
+  concrete branding value.
 - Root `README.md` is now a public alpha front door; the long engineering spec
   was moved to `docs/ENGINEERING_SPEC.md`.
 - `crates/fleet-host/artifacts/**` is now a local ignored artifact area; raw
