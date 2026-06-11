@@ -75,7 +75,7 @@ async fn ws_subscribe_empty_then_live_delta() {
     // Subscriber connects and subscribes → empty snapshot.
     let (mut sub, _resp) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let subscribe = serde_json::to_string(&ClientMessage::Subscribe).unwrap();
-    sub.send(Message::Text(subscribe)).await.unwrap();
+    sub.send(Message::Text(subscribe.into())).await.unwrap();
     match next_event(&mut sub).await {
         Event::Snapshot { sessions, .. } => assert!(sessions.is_empty(), "snapshot starts empty"),
         other => panic!("expected snapshot, got {other:?}"),
@@ -87,7 +87,7 @@ async fn ws_subscribe_empty_then_live_delta() {
         session: sample_session("s1"),
     })
     .unwrap();
-    rep.send(Message::Text(upsert)).await.unwrap();
+    rep.send(Message::Text(upsert.into())).await.unwrap();
 
     // Subscriber observes the live session.added.
     match next_event(&mut sub).await {
@@ -103,7 +103,7 @@ async fn ws_subscribe_empty_then_live_delta() {
         stamp: None,
     })
     .unwrap();
-    rep.send(Message::Text(run_up)).await.unwrap();
+    rep.send(Message::Text(run_up.into())).await.unwrap();
 
     let mut saw_run_added = false;
     let mut saw_rollup_working = false;
@@ -136,7 +136,7 @@ async fn ws_two_faces_see_identical_state() {
     let (mut b, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     for f in [&mut a, &mut b] {
         let s = serde_json::to_string(&ClientMessage::Subscribe).unwrap();
-        f.send(Message::Text(s)).await.unwrap();
+        f.send(Message::Text(s.into())).await.unwrap();
         // Drain each face's snapshot.
         let _ = next_event(f).await;
     }
@@ -147,7 +147,7 @@ async fn ws_two_faces_see_identical_state() {
         session: sample_session("s9"),
     })
     .unwrap();
-    rep.send(Message::Text(upsert)).await.unwrap();
+    rep.send(Message::Text(upsert.into())).await.unwrap();
 
     // Both faces observe the identical session.added.
     let ea = next_event(&mut a).await;
@@ -187,7 +187,7 @@ async fn unix_subscribe_empty_then_live_delta() {
         .unwrap();
 
     let subscribe = serde_json::to_string(&ClientMessage::Subscribe).unwrap();
-    sub.send(Message::Text(subscribe)).await.unwrap();
+    sub.send(Message::Text(subscribe.into())).await.unwrap();
     match next_event(&mut sub).await {
         Event::Snapshot { sessions, .. } => assert!(sessions.is_empty()),
         other => panic!("expected snapshot over unix, got {other:?}"),
@@ -202,7 +202,7 @@ async fn unix_subscribe_empty_then_live_delta() {
         session: sample_session("u1"),
     })
     .unwrap();
-    rep.send(Message::Text(upsert)).await.unwrap();
+    rep.send(Message::Text(upsert.into())).await.unwrap();
 
     match next_event(&mut sub).await {
         Event::SessionAdded { session, .. } => assert_eq!(session.session_id, "u1"),

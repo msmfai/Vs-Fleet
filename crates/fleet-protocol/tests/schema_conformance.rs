@@ -20,21 +20,19 @@ use fleet_protocol::objects::{
 use fleet_protocol::schema;
 use fleet_protocol::state::{Confidence, State, Urgency};
 
-/// Compile a schemars `RootSchema` into a jsonschema validator.
-fn compile(root: &schemars::schema::RootSchema) -> jsonschema::JSONSchema {
+/// Compile a schemars schema into a jsonschema validator.
+fn compile(root: &schemars::Schema) -> jsonschema::Validator {
     let value = serde_json::to_value(root).expect("schema to value");
-    jsonschema::JSONSchema::options()
+    jsonschema::options()
         .with_draft(jsonschema::Draft::Draft7)
-        .compile(&value)
+        .build(&value)
         .expect("schema compiles")
 }
 
-fn assert_valid(validator: &jsonschema::JSONSchema, instance: &serde_json::Value, ctx: &str) {
-    if let Err(errors) = validator.validate(instance) {
-        let msgs: Vec<String> = errors.map(|e| format!("  - {e}")).collect();
+fn assert_valid(validator: &jsonschema::Validator, instance: &serde_json::Value, ctx: &str) {
+    if let Err(error) = validator.validate(instance) {
         panic!(
-            "instance failed schema validation ({ctx}):\n{}\ninstance: {}",
-            msgs.join("\n"),
+            "instance failed schema validation ({ctx}):\n  - {error}\ninstance: {}",
             serde_json::to_string_pretty(instance).unwrap()
         );
     }

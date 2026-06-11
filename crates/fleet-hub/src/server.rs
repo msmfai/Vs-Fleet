@@ -327,7 +327,7 @@ fn encode(ev: &Event) -> Message {
     // Events are always serializable; fall back to an empty object on the
     // impossible error rather than panicking a connection task.
     let txt = serde_json::to_string(ev).unwrap_or_else(|_| "{}".to_string());
-    Message::Text(txt)
+    Message::Text(txt.into())
 }
 
 /// Drive a single accepted WebSocket connection to completion.

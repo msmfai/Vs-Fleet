@@ -924,7 +924,9 @@ async fn send_command(hub: &TestHub, command: Command) {
         }
     }
     let txt = serde_json::Value::Object(obj).to_string();
-    ws.send(Message::Text(txt)).await.expect("send command");
+    ws.send(Message::Text(txt.into()))
+        .await
+        .expect("send command");
     // Give the Hub a beat to apply before the connection closes.
     let _ = ws.close(None).await;
 }

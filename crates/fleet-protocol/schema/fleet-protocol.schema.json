@@ -4,9 +4,7 @@
   "schemaVersion": 1,
   "schemas": {
     "AgentRun": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": true,
-      "definitions": {
+      "$defs": {
         "AgentKind": {
           "description": "The agent flavor of a run (README §7.2 `agent_kind`).",
           "enum": [
@@ -17,117 +15,91 @@
           "type": "string"
         },
         "Confidence": {
-          "description": "How trustworthy a `waiting` (or any heuristic) signal is (README §7.2, §8).\n\n**Invariant 5 (confidence honesty):** a value of `High` must only ever be set from an authoritative signal; heuristic inference is always `Inferred`.",
+          "description": "How trustworthy a `waiting` (or any heuristic) signal is (README §7.2, §8).\n\n**Invariant 5 (confidence honesty):** a value of `High` must only ever be\nset from an authoritative signal; heuristic inference is always `Inferred`.",
           "oneOf": [
             {
-              "description": "Derived from an authoritative channel (e.g. Codex `requestApproval`, Claude `PermissionRequest` in Use-Terminal mode).",
-              "enum": [
-                "high"
-              ],
+              "const": "high",
+              "description": "Derived from an authoritative channel (e.g. Codex `requestApproval`,\nClaude `PermissionRequest` in Use-Terminal mode).",
               "type": "string"
             },
             {
+              "const": "inferred",
               "description": "Derived from a heuristic (e.g. `PreToolUse`-without-`Stop` debounce).",
-              "enum": [
-                "inferred"
-              ],
               "type": "string"
             }
           ]
         },
         "State": {
-          "description": "Per-run lifecycle state (README §7.3).\n\n**D9 (locked): `Done` is KEPT DISTINCT from `Idle`.** `idle` means the run is alive and waiting for the next prompt; `done` means the agent reported its task complete. They must never be collapsed on the wire.",
+          "description": "Per-run lifecycle state (README §7.3).\n\n**D9 (locked): `Done` is KEPT DISTINCT from `Idle`.** `idle` means the run is\nalive and waiting for the next prompt; `done` means the agent reported its\ntask complete. They must never be collapsed on the wire.",
           "oneOf": [
             {
+              "const": "working",
               "description": "Actively producing output / running a tool.",
-              "enum": [
-                "working"
-              ],
               "type": "string"
             },
             {
+              "const": "waiting",
               "description": "Blocked on the user (approval or question). The only state that pings.",
-              "enum": [
-                "waiting"
-              ],
               "type": "string"
             },
             {
+              "const": "idle",
               "description": "Alive, turn finished, awaiting the next prompt.",
-              "enum": [
-                "idle"
-              ],
               "type": "string"
             },
             {
+              "const": "done",
               "description": "Agent reported its task complete. Kept distinct from `Idle` (D9).",
-              "enum": [
-                "done"
-              ],
               "type": "string"
             },
             {
+              "const": "error",
               "description": "The agent raised an error.",
-              "enum": [
-                "error"
-              ],
               "type": "string"
             },
             {
+              "const": "dead",
               "description": "Process exited or the reporter is gone past the timeout (§7.3).",
-              "enum": [
-                "dead"
-              ],
               "type": "string"
             }
           ]
         },
         "Urgency": {
-          "description": "Why a run/session is demanding attention (README §7.2).\n\n`null` on the wire (absence of urgency) maps to [`Urgency::None`]; it is serialized as the JSON string `\"null\"` is NOT used — instead the field that holds urgency is `Option<Urgency>` and `None` ⇒ JSON `null`. The explicit `None` variant here exists so callers can name \"no urgency\" without an `Option` wrapper when a non-optional urgency is required by a delta.",
+          "description": "Why a run/session is demanding attention (README §7.2).\n\n`null` on the wire (absence of urgency) maps to [`Urgency::None`]; it is\nserialized as the JSON string `\"null\"` is NOT used — instead the field that\nholds urgency is `Option<Urgency>` and `None` ⇒ JSON `null`. The explicit\n`None` variant here exists so callers can name \"no urgency\" without an\n`Option` wrapper when a non-optional urgency is required by a delta.",
           "oneOf": [
             {
+              "const": "approval",
               "description": "Agent is asking for an approval (run a command, edit a file, …).",
-              "enum": [
-                "approval"
-              ],
               "type": "string"
             },
             {
+              "const": "question",
               "description": "Agent asked the user a question.",
-              "enum": [
-                "question"
-              ],
               "type": "string"
             },
             {
+              "const": "idle-done",
               "description": "Idle/done attention tier (the quiet tier; §15.5).",
-              "enum": [
-                "idle-done"
-              ],
               "type": "string"
             },
             {
-              "description": "Explicitly no urgency. Serializes to the string `\"null\"`.\n\nNote: the README writes `rollup_urgency: \"...|null\"`. We model the *absence* of urgency on optional fields as JSON `null` via `Option`, and also provide this named variant so a required urgency can express \"none\" without ambiguity. Its wire token is the literal string `null`.",
-              "enum": [
-                "null"
-              ],
+              "const": "null",
+              "description": "Explicitly no urgency. Serializes to the string `\"null\"`.\n\nNote: the README writes `rollup_urgency: \"...|null\"`. We model the\n*absence* of urgency on optional fields as JSON `null` via `Option`, and\nalso provide this named variant so a required urgency can express \"none\"\nwithout ambiguity. Its wire token is the literal string `null`.",
               "type": "string"
             }
           ]
         }
       },
-      "description": "A single agent run within a session (README §7.2).\n\nA [`Session`] has one or more of these. `schema_version` is carried on the object per §7.6.",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": true,
+      "description": "A single agent run within a session (README §7.2).\n\nA [`Session`] has one or more of these. `schema_version` is carried on the\nobject per §7.6.",
       "properties": {
         "agent_kind": {
-          "$ref": "#/definitions/AgentKind"
+          "$ref": "#/$defs/AgentKind"
         },
         "confidence": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/Confidence"
-            }
-          ],
-          "description": "Confidence honesty (invariant 5): `inferred` when `waiting` came from a heuristic, not an authoritative signal."
+          "$ref": "#/$defs/Confidence",
+          "description": "Confidence honesty (invariant 5): `inferred` when `waiting` came from a\nheuristic, not an authoritative signal."
         },
         "cwd": {
           "type": "string"
@@ -152,11 +124,11 @@
         "schema_version": {
           "description": "Versioning (§7.6) — present on every object.",
           "format": "uint32",
-          "minimum": 0.0,
+          "minimum": 0,
           "type": "integer"
         },
         "state": {
-          "$ref": "#/definitions/State"
+          "$ref": "#/$defs/State"
         },
         "updated_at": {
           "description": "ISO-8601.",
@@ -165,7 +137,7 @@
         "urgency": {
           "anyOf": [
             {
-              "$ref": "#/definitions/Urgency"
+              "$ref": "#/$defs/Urgency"
             },
             {
               "type": "null"
@@ -182,23 +154,22 @@
         }
       },
       "required": [
-        "agent_kind",
-        "confidence",
-        "cwd",
-        "native_id",
-        "run_id",
         "schema_version",
+        "run_id",
+        "agent_kind",
+        "native_id",
+        "cwd",
         "state",
+        "confidence",
         "updated_at"
       ],
       "title": "AgentRun",
       "type": "object"
     },
     "Command": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "definitions": {
+      "$defs": {
         "Target": {
-          "description": "A target that a command addresses. `focus`/`dismiss` may address either a whole session or a single run (README writes `focus(session_id|run_id)`).",
+          "description": "A target that a command addresses. `focus`/`dismiss` may address either a\nwhole session or a single run (README writes `focus(session_id|run_id)`).",
           "oneOf": [
             {
               "properties": {
@@ -206,15 +177,13 @@
                   "type": "string"
                 },
                 "type": {
-                  "enum": [
-                    "session"
-                  ],
+                  "const": "session",
                   "type": "string"
                 }
               },
               "required": [
-                "session_id",
-                "type"
+                "type",
+                "session_id"
               ],
               "type": "object"
             },
@@ -224,39 +193,36 @@
                   "type": "string"
                 },
                 "type": {
-                  "enum": [
-                    "run"
-                  ],
+                  "const": "run",
                   "type": "string"
                 }
               },
               "required": [
-                "run_id",
-                "type"
+                "type",
+                "run_id"
               ],
               "type": "object"
             }
           ]
         }
       },
-      "description": "A command sent from a face to the Hub.\n\nInternally tagged on `command`. Like events, the envelope tolerates unknown fields a newer face adds; unknown *commands* are a deserialize error so the Hub never silently ignores an instruction it cannot honor.",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "A command sent from a face to the Hub.\n\nInternally tagged on `command`. Like events, the envelope tolerates unknown\nfields a newer face adds; unknown *commands* are a deserialize error so the\nHub never silently ignores an instruction it cannot honor.",
       "oneOf": [
         {
           "description": "Focus the editor window for a session or run (§12.2).",
           "properties": {
             "command": {
-              "enum": [
-                "focus"
-              ],
+              "const": "focus",
               "type": "string"
             },
             "schema_version": {
               "format": "uint32",
-              "minimum": 0.0,
+              "minimum": 0,
               "type": "integer"
             },
             "target": {
-              "$ref": "#/definitions/Target"
+              "$ref": "#/$defs/Target"
             }
           },
           "required": [
@@ -270,14 +236,12 @@
           "description": "Mute a session's pings (state still shown) (§15.4).",
           "properties": {
             "command": {
-              "enum": [
-                "mute"
-              ],
+              "const": "mute",
               "type": "string"
             },
             "schema_version": {
               "format": "uint32",
-              "minimum": 0.0,
+              "minimum": 0,
               "type": "integer"
             },
             "session_id": {
@@ -295,14 +259,12 @@
           "description": "Unmute a session.",
           "properties": {
             "command": {
-              "enum": [
-                "unmute"
-              ],
+              "const": "unmute",
               "type": "string"
             },
             "schema_version": {
               "format": "uint32",
-              "minimum": 0.0,
+              "minimum": 0,
               "type": "integer"
             },
             "session_id": {
@@ -320,14 +282,12 @@
           "description": "Solo a session: mute all others (§15.4).",
           "properties": {
             "command": {
-              "enum": [
-                "solo"
-              ],
+              "const": "solo",
               "type": "string"
             },
             "schema_version": {
               "format": "uint32",
-              "minimum": 0.0,
+              "minimum": 0,
               "type": "integer"
             },
             "session_id": {
@@ -345,18 +305,16 @@
           "description": "Dismiss a (typically `dead`/stale) session or run (§7.3, §15.2).",
           "properties": {
             "command": {
-              "enum": [
-                "dismiss"
-              ],
+              "const": "dismiss",
               "type": "string"
             },
             "schema_version": {
               "format": "uint32",
-              "minimum": 0.0,
+              "minimum": 0,
               "type": "integer"
             },
             "target": {
-              "$ref": "#/definitions/Target"
+              "$ref": "#/$defs/Target"
             }
           },
           "required": [
@@ -370,14 +328,12 @@
           "description": "Replace the tag set on a session.",
           "properties": {
             "command": {
-              "enum": [
-                "set_tags"
-              ],
+              "const": "set_tags",
               "type": "string"
             },
             "schema_version": {
               "format": "uint32",
-              "minimum": 0.0,
+              "minimum": 0,
               "type": "integer"
             },
             "session_id": {
@@ -402,8 +358,7 @@
       "title": "Command"
     },
     "Event": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "definitions": {
+      "$defs": {
         "AgentKind": {
           "description": "The agent flavor of a run (README §7.2 `agent_kind`).",
           "enum": [
@@ -415,18 +370,14 @@
         },
         "AgentRun": {
           "additionalProperties": true,
-          "description": "A single agent run within a session (README §7.2).\n\nA [`Session`] has one or more of these. `schema_version` is carried on the object per §7.6.",
+          "description": "A single agent run within a session (README §7.2).\n\nA [`Session`] has one or more of these. `schema_version` is carried on the\nobject per §7.6.",
           "properties": {
             "agent_kind": {
-              "$ref": "#/definitions/AgentKind"
+              "$ref": "#/$defs/AgentKind"
             },
             "confidence": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/Confidence"
-                }
-              ],
-              "description": "Confidence honesty (invariant 5): `inferred` when `waiting` came from a heuristic, not an authoritative signal."
+              "$ref": "#/$defs/Confidence",
+              "description": "Confidence honesty (invariant 5): `inferred` when `waiting` came from a\nheuristic, not an authoritative signal."
             },
             "cwd": {
               "type": "string"
@@ -451,11 +402,11 @@
             "schema_version": {
               "description": "Versioning (§7.6) — present on every object.",
               "format": "uint32",
-              "minimum": 0.0,
+              "minimum": 0,
               "type": "integer"
             },
             "state": {
-              "$ref": "#/definitions/State"
+              "$ref": "#/$defs/State"
             },
             "updated_at": {
               "description": "ISO-8601.",
@@ -464,7 +415,7 @@
             "urgency": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/Urgency"
+                  "$ref": "#/$defs/Urgency"
                 },
                 {
                   "type": "null"
@@ -481,39 +432,35 @@
             }
           },
           "required": [
-            "agent_kind",
-            "confidence",
-            "cwd",
-            "native_id",
-            "run_id",
             "schema_version",
+            "run_id",
+            "agent_kind",
+            "native_id",
+            "cwd",
             "state",
+            "confidence",
             "updated_at"
           ],
           "type": "object"
         },
         "Confidence": {
-          "description": "How trustworthy a `waiting` (or any heuristic) signal is (README §7.2, §8).\n\n**Invariant 5 (confidence honesty):** a value of `High` must only ever be set from an authoritative signal; heuristic inference is always `Inferred`.",
+          "description": "How trustworthy a `waiting` (or any heuristic) signal is (README §7.2, §8).\n\n**Invariant 5 (confidence honesty):** a value of `High` must only ever be\nset from an authoritative signal; heuristic inference is always `Inferred`.",
           "oneOf": [
             {
-              "description": "Derived from an authoritative channel (e.g. Codex `requestApproval`, Claude `PermissionRequest` in Use-Terminal mode).",
-              "enum": [
-                "high"
-              ],
+              "const": "high",
+              "description": "Derived from an authoritative channel (e.g. Codex `requestApproval`,\nClaude `PermissionRequest` in Use-Terminal mode).",
               "type": "string"
             },
             {
+              "const": "inferred",
               "description": "Derived from a heuristic (e.g. `PreToolUse`-without-`Stop` debounce).",
-              "enum": [
-                "inferred"
-              ],
               "type": "string"
             }
           ]
         },
         "Editor": {
           "additionalProperties": true,
-          "description": "README §7.1 `editor` object. The whole object is optional on a session (`editor: null` is legal); within it, `kind` may itself be `null`.",
+          "description": "README §7.1 `editor` object. The whole object is optional on a session\n(`editor: null` is legal); within it, `kind` may itself be `null`.",
           "properties": {
             "focus_hint": {
               "description": "CLI args / URI used to focus this window.",
@@ -525,7 +472,7 @@
             "kind": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/EditorKind"
+                  "$ref": "#/$defs/EditorKind"
                 },
                 {
                   "type": "null"
@@ -557,19 +504,19 @@
               ]
             },
             "glyph": {
-              "$ref": "#/definitions/LocationGlyph"
+              "$ref": "#/$defs/LocationGlyph"
             },
             "kind": {
-              "$ref": "#/definitions/LocationKind"
+              "$ref": "#/$defs/LocationKind"
             },
             "label": {
               "type": "string"
             }
           },
           "required": [
-            "glyph",
             "kind",
-            "label"
+            "label",
+            "glyph"
           ],
           "type": "object"
         },
@@ -596,7 +543,7 @@
           "description": "README §7.1 `server` object.",
           "properties": {
             "kind": {
-              "$ref": "#/definitions/ServerKind"
+              "$ref": "#/$defs/ServerKind"
             },
             "version": {
               "type": [
@@ -622,12 +569,12 @@
         },
         "Session": {
           "additionalProperties": true,
-          "description": "A tracked VS Code-Server environment (README §7.1).\n\n`rollup_state` / `rollup_urgency` are the most-urgent state/urgency across the session's runs (computed by the Hub merge engine; see [`crate::rollup`]).",
+          "description": "A tracked VS Code-Server environment (README §7.1).\n\n`rollup_state` / `rollup_urgency` are the most-urgent state/urgency across\nthe session's runs (computed by the Hub merge engine; see [`crate::rollup`]).",
           "properties": {
             "editor": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/Editor"
+                  "$ref": "#/$defs/Editor"
                 },
                 {
                   "type": "null"
@@ -636,7 +583,7 @@
               "description": "`null` when no editor is bound."
             },
             "location": {
-              "$ref": "#/definitions/Location"
+              "$ref": "#/$defs/Location"
             },
             "muted": {
               "default": false,
@@ -646,17 +593,13 @@
               "description": "Opaque policy blob (§17, not modeled in v1)."
             },
             "rollup_state": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/State"
-                }
-              ],
+              "$ref": "#/$defs/State",
               "description": "Worst/most-urgent state across `runs`."
             },
             "rollup_urgency": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/Urgency"
+                  "$ref": "#/$defs/Urgency"
                 },
                 {
                   "type": "null"
@@ -666,18 +609,18 @@
             },
             "runs": {
               "items": {
-                "$ref": "#/definitions/AgentRun"
+                "$ref": "#/$defs/AgentRun"
               },
               "type": "array"
             },
             "schema_version": {
               "description": "Versioning (§7.6) — present on every object.",
               "format": "uint32",
-              "minimum": 0.0,
+              "minimum": 0,
               "type": "integer"
             },
             "server": {
-              "$ref": "#/definitions/Server"
+              "$ref": "#/$defs/Server"
             },
             "session_id": {
               "description": "Stable durable session id.",
@@ -707,125 +650,104 @@
             }
           },
           "required": [
-            "location",
-            "rollup_state",
-            "runs",
             "schema_version",
-            "server",
             "session_id",
             "title",
+            "location",
+            "server",
+            "runs",
+            "rollup_state",
             "updated_at"
           ],
           "type": "object"
         },
         "State": {
-          "description": "Per-run lifecycle state (README §7.3).\n\n**D9 (locked): `Done` is KEPT DISTINCT from `Idle`.** `idle` means the run is alive and waiting for the next prompt; `done` means the agent reported its task complete. They must never be collapsed on the wire.",
+          "description": "Per-run lifecycle state (README §7.3).\n\n**D9 (locked): `Done` is KEPT DISTINCT from `Idle`.** `idle` means the run is\nalive and waiting for the next prompt; `done` means the agent reported its\ntask complete. They must never be collapsed on the wire.",
           "oneOf": [
             {
+              "const": "working",
               "description": "Actively producing output / running a tool.",
-              "enum": [
-                "working"
-              ],
               "type": "string"
             },
             {
+              "const": "waiting",
               "description": "Blocked on the user (approval or question). The only state that pings.",
-              "enum": [
-                "waiting"
-              ],
               "type": "string"
             },
             {
+              "const": "idle",
               "description": "Alive, turn finished, awaiting the next prompt.",
-              "enum": [
-                "idle"
-              ],
               "type": "string"
             },
             {
+              "const": "done",
               "description": "Agent reported its task complete. Kept distinct from `Idle` (D9).",
-              "enum": [
-                "done"
-              ],
               "type": "string"
             },
             {
+              "const": "error",
               "description": "The agent raised an error.",
-              "enum": [
-                "error"
-              ],
               "type": "string"
             },
             {
+              "const": "dead",
               "description": "Process exited or the reporter is gone past the timeout (§7.3).",
-              "enum": [
-                "dead"
-              ],
               "type": "string"
             }
           ]
         },
         "Urgency": {
-          "description": "Why a run/session is demanding attention (README §7.2).\n\n`null` on the wire (absence of urgency) maps to [`Urgency::None`]; it is serialized as the JSON string `\"null\"` is NOT used — instead the field that holds urgency is `Option<Urgency>` and `None` ⇒ JSON `null`. The explicit `None` variant here exists so callers can name \"no urgency\" without an `Option` wrapper when a non-optional urgency is required by a delta.",
+          "description": "Why a run/session is demanding attention (README §7.2).\n\n`null` on the wire (absence of urgency) maps to [`Urgency::None`]; it is\nserialized as the JSON string `\"null\"` is NOT used — instead the field that\nholds urgency is `Option<Urgency>` and `None` ⇒ JSON `null`. The explicit\n`None` variant here exists so callers can name \"no urgency\" without an\n`Option` wrapper when a non-optional urgency is required by a delta.",
           "oneOf": [
             {
+              "const": "approval",
               "description": "Agent is asking for an approval (run a command, edit a file, …).",
-              "enum": [
-                "approval"
-              ],
               "type": "string"
             },
             {
+              "const": "question",
               "description": "Agent asked the user a question.",
-              "enum": [
-                "question"
-              ],
               "type": "string"
             },
             {
+              "const": "idle-done",
               "description": "Idle/done attention tier (the quiet tier; §15.5).",
-              "enum": [
-                "idle-done"
-              ],
               "type": "string"
             },
             {
-              "description": "Explicitly no urgency. Serializes to the string `\"null\"`.\n\nNote: the README writes `rollup_urgency: \"...|null\"`. We model the *absence* of urgency on optional fields as JSON `null` via `Option`, and also provide this named variant so a required urgency can express \"none\" without ambiguity. Its wire token is the literal string `null`.",
-              "enum": [
-                "null"
-              ],
+              "const": "null",
+              "description": "Explicitly no urgency. Serializes to the string `\"null\"`.\n\nNote: the README writes `rollup_urgency: \"...|null\"`. We model the\n*absence* of urgency on optional fields as JSON `null` via `Option`, and\nalso provide this named variant so a required urgency can express \"none\"\nwithout ambiguity. Its wire token is the literal string `null`.",
               "type": "string"
             }
           ]
         }
       },
-      "description": "An event pushed from the Hub to a face.\n\nThe `type` tag uses the README's dotted names. `#[serde(tag = \"type\")]` makes them internally tagged so the discriminator and payload share one JSON object. We do NOT `deny_unknown_fields` here: faces must tolerate envelope fields a newer Hub adds (invariant 2). Unknown variants, however, are a hard deserialize error by design — a face that sees an event `type` it cannot interpret should surface that rather than silently drop state.",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "An event pushed from the Hub to a face.\n\nThe `type` tag uses the README's dotted names. `#[serde(tag = \"type\")]`\nmakes them internally tagged so the discriminator and payload share one\nJSON object. We do NOT `deny_unknown_fields` here: faces must tolerate\nenvelope fields a newer Hub adds (invariant 2). Unknown variants, however,\nare a hard deserialize error by design — a face that sees an event `type`\nit cannot interpret should surface that rather than silently drop state.",
       "oneOf": [
         {
           "description": "Full list of sessions, sent on subscribe (README §7.4).",
           "properties": {
             "schema_version": {
               "format": "uint32",
-              "minimum": 0.0,
+              "minimum": 0,
               "type": "integer"
             },
             "sessions": {
               "items": {
-                "$ref": "#/definitions/Session"
+                "$ref": "#/$defs/Session"
               },
               "type": "array"
             },
             "type": {
-              "enum": [
-                "fleet.snapshot"
-              ],
+              "const": "fleet.snapshot",
               "type": "string"
             }
           },
           "required": [
+            "type",
             "schema_version",
-            "sessions",
-            "type"
+            "sessions"
           ],
           "type": "object"
         },
@@ -834,23 +756,21 @@
           "properties": {
             "schema_version": {
               "format": "uint32",
-              "minimum": 0.0,
+              "minimum": 0,
               "type": "integer"
             },
             "session": {
-              "$ref": "#/definitions/Session"
+              "$ref": "#/$defs/Session"
             },
             "type": {
-              "enum": [
-                "session.added"
-              ],
+              "const": "session.added",
               "type": "string"
             }
           },
           "required": [
+            "type",
             "schema_version",
-            "session",
-            "type"
+            "session"
           ],
           "type": "object"
         },
@@ -859,23 +779,21 @@
           "properties": {
             "schema_version": {
               "format": "uint32",
-              "minimum": 0.0,
+              "minimum": 0,
               "type": "integer"
             },
             "session": {
-              "$ref": "#/definitions/Session"
+              "$ref": "#/$defs/Session"
             },
             "type": {
-              "enum": [
-                "session.updated"
-              ],
+              "const": "session.updated",
               "type": "string"
             }
           },
           "required": [
+            "type",
             "schema_version",
-            "session",
-            "type"
+            "session"
           ],
           "type": "object"
         },
@@ -884,23 +802,21 @@
           "properties": {
             "schema_version": {
               "format": "uint32",
-              "minimum": 0.0,
+              "minimum": 0,
               "type": "integer"
             },
             "session_id": {
               "type": "string"
             },
             "type": {
-              "enum": [
-                "session.removed"
-              ],
+              "const": "session.removed",
               "type": "string"
             }
           },
           "required": [
+            "type",
             "schema_version",
-            "session_id",
-            "type"
+            "session_id"
           ],
           "type": "object"
         },
@@ -908,28 +824,26 @@
           "description": "A run newly appeared within a session.",
           "properties": {
             "run": {
-              "$ref": "#/definitions/AgentRun"
+              "$ref": "#/$defs/AgentRun"
             },
             "schema_version": {
               "format": "uint32",
-              "minimum": 0.0,
+              "minimum": 0,
               "type": "integer"
             },
             "session_id": {
               "type": "string"
             },
             "type": {
-              "enum": [
-                "run.added"
-              ],
+              "const": "run.added",
               "type": "string"
             }
           },
           "required": [
-            "run",
+            "type",
             "schema_version",
             "session_id",
-            "type"
+            "run"
           ],
           "type": "object"
         },
@@ -937,28 +851,26 @@
           "description": "A run changed.",
           "properties": {
             "run": {
-              "$ref": "#/definitions/AgentRun"
+              "$ref": "#/$defs/AgentRun"
             },
             "schema_version": {
               "format": "uint32",
-              "minimum": 0.0,
+              "minimum": 0,
               "type": "integer"
             },
             "session_id": {
               "type": "string"
             },
             "type": {
-              "enum": [
-                "run.updated"
-              ],
+              "const": "run.updated",
               "type": "string"
             }
           },
           "required": [
-            "run",
+            "type",
             "schema_version",
             "session_id",
-            "type"
+            "run"
           ],
           "type": "object"
         },
@@ -970,24 +882,22 @@
             },
             "schema_version": {
               "format": "uint32",
-              "minimum": 0.0,
+              "minimum": 0,
               "type": "integer"
             },
             "session_id": {
               "type": "string"
             },
             "type": {
-              "enum": [
-                "run.removed"
-              ],
+              "const": "run.removed",
               "type": "string"
             }
           },
           "required": [
-            "run_id",
+            "type",
             "schema_version",
             "session_id",
-            "type"
+            "run_id"
           ],
           "type": "object"
         }
@@ -995,9 +905,7 @@
       "title": "Event"
     },
     "Session": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": true,
-      "definitions": {
+      "$defs": {
         "AgentKind": {
           "description": "The agent flavor of a run (README §7.2 `agent_kind`).",
           "enum": [
@@ -1009,18 +917,14 @@
         },
         "AgentRun": {
           "additionalProperties": true,
-          "description": "A single agent run within a session (README §7.2).\n\nA [`Session`] has one or more of these. `schema_version` is carried on the object per §7.6.",
+          "description": "A single agent run within a session (README §7.2).\n\nA [`Session`] has one or more of these. `schema_version` is carried on the\nobject per §7.6.",
           "properties": {
             "agent_kind": {
-              "$ref": "#/definitions/AgentKind"
+              "$ref": "#/$defs/AgentKind"
             },
             "confidence": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/Confidence"
-                }
-              ],
-              "description": "Confidence honesty (invariant 5): `inferred` when `waiting` came from a heuristic, not an authoritative signal."
+              "$ref": "#/$defs/Confidence",
+              "description": "Confidence honesty (invariant 5): `inferred` when `waiting` came from a\nheuristic, not an authoritative signal."
             },
             "cwd": {
               "type": "string"
@@ -1045,11 +949,11 @@
             "schema_version": {
               "description": "Versioning (§7.6) — present on every object.",
               "format": "uint32",
-              "minimum": 0.0,
+              "minimum": 0,
               "type": "integer"
             },
             "state": {
-              "$ref": "#/definitions/State"
+              "$ref": "#/$defs/State"
             },
             "updated_at": {
               "description": "ISO-8601.",
@@ -1058,7 +962,7 @@
             "urgency": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/Urgency"
+                  "$ref": "#/$defs/Urgency"
                 },
                 {
                   "type": "null"
@@ -1075,39 +979,35 @@
             }
           },
           "required": [
-            "agent_kind",
-            "confidence",
-            "cwd",
-            "native_id",
-            "run_id",
             "schema_version",
+            "run_id",
+            "agent_kind",
+            "native_id",
+            "cwd",
             "state",
+            "confidence",
             "updated_at"
           ],
           "type": "object"
         },
         "Confidence": {
-          "description": "How trustworthy a `waiting` (or any heuristic) signal is (README §7.2, §8).\n\n**Invariant 5 (confidence honesty):** a value of `High` must only ever be set from an authoritative signal; heuristic inference is always `Inferred`.",
+          "description": "How trustworthy a `waiting` (or any heuristic) signal is (README §7.2, §8).\n\n**Invariant 5 (confidence honesty):** a value of `High` must only ever be\nset from an authoritative signal; heuristic inference is always `Inferred`.",
           "oneOf": [
             {
-              "description": "Derived from an authoritative channel (e.g. Codex `requestApproval`, Claude `PermissionRequest` in Use-Terminal mode).",
-              "enum": [
-                "high"
-              ],
+              "const": "high",
+              "description": "Derived from an authoritative channel (e.g. Codex `requestApproval`,\nClaude `PermissionRequest` in Use-Terminal mode).",
               "type": "string"
             },
             {
+              "const": "inferred",
               "description": "Derived from a heuristic (e.g. `PreToolUse`-without-`Stop` debounce).",
-              "enum": [
-                "inferred"
-              ],
               "type": "string"
             }
           ]
         },
         "Editor": {
           "additionalProperties": true,
-          "description": "README §7.1 `editor` object. The whole object is optional on a session (`editor: null` is legal); within it, `kind` may itself be `null`.",
+          "description": "README §7.1 `editor` object. The whole object is optional on a session\n(`editor: null` is legal); within it, `kind` may itself be `null`.",
           "properties": {
             "focus_hint": {
               "description": "CLI args / URI used to focus this window.",
@@ -1119,7 +1019,7 @@
             "kind": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/EditorKind"
+                  "$ref": "#/$defs/EditorKind"
                 },
                 {
                   "type": "null"
@@ -1151,19 +1051,19 @@
               ]
             },
             "glyph": {
-              "$ref": "#/definitions/LocationGlyph"
+              "$ref": "#/$defs/LocationGlyph"
             },
             "kind": {
-              "$ref": "#/definitions/LocationKind"
+              "$ref": "#/$defs/LocationKind"
             },
             "label": {
               "type": "string"
             }
           },
           "required": [
-            "glyph",
             "kind",
-            "label"
+            "label",
+            "glyph"
           ],
           "type": "object"
         },
@@ -1190,7 +1090,7 @@
           "description": "README §7.1 `server` object.",
           "properties": {
             "kind": {
-              "$ref": "#/definitions/ServerKind"
+              "$ref": "#/$defs/ServerKind"
             },
             "version": {
               "type": [
@@ -1215,92 +1115,74 @@
           "type": "string"
         },
         "State": {
-          "description": "Per-run lifecycle state (README §7.3).\n\n**D9 (locked): `Done` is KEPT DISTINCT from `Idle`.** `idle` means the run is alive and waiting for the next prompt; `done` means the agent reported its task complete. They must never be collapsed on the wire.",
+          "description": "Per-run lifecycle state (README §7.3).\n\n**D9 (locked): `Done` is KEPT DISTINCT from `Idle`.** `idle` means the run is\nalive and waiting for the next prompt; `done` means the agent reported its\ntask complete. They must never be collapsed on the wire.",
           "oneOf": [
             {
+              "const": "working",
               "description": "Actively producing output / running a tool.",
-              "enum": [
-                "working"
-              ],
               "type": "string"
             },
             {
+              "const": "waiting",
               "description": "Blocked on the user (approval or question). The only state that pings.",
-              "enum": [
-                "waiting"
-              ],
               "type": "string"
             },
             {
+              "const": "idle",
               "description": "Alive, turn finished, awaiting the next prompt.",
-              "enum": [
-                "idle"
-              ],
               "type": "string"
             },
             {
+              "const": "done",
               "description": "Agent reported its task complete. Kept distinct from `Idle` (D9).",
-              "enum": [
-                "done"
-              ],
               "type": "string"
             },
             {
+              "const": "error",
               "description": "The agent raised an error.",
-              "enum": [
-                "error"
-              ],
               "type": "string"
             },
             {
+              "const": "dead",
               "description": "Process exited or the reporter is gone past the timeout (§7.3).",
-              "enum": [
-                "dead"
-              ],
               "type": "string"
             }
           ]
         },
         "Urgency": {
-          "description": "Why a run/session is demanding attention (README §7.2).\n\n`null` on the wire (absence of urgency) maps to [`Urgency::None`]; it is serialized as the JSON string `\"null\"` is NOT used — instead the field that holds urgency is `Option<Urgency>` and `None` ⇒ JSON `null`. The explicit `None` variant here exists so callers can name \"no urgency\" without an `Option` wrapper when a non-optional urgency is required by a delta.",
+          "description": "Why a run/session is demanding attention (README §7.2).\n\n`null` on the wire (absence of urgency) maps to [`Urgency::None`]; it is\nserialized as the JSON string `\"null\"` is NOT used — instead the field that\nholds urgency is `Option<Urgency>` and `None` ⇒ JSON `null`. The explicit\n`None` variant here exists so callers can name \"no urgency\" without an\n`Option` wrapper when a non-optional urgency is required by a delta.",
           "oneOf": [
             {
+              "const": "approval",
               "description": "Agent is asking for an approval (run a command, edit a file, …).",
-              "enum": [
-                "approval"
-              ],
               "type": "string"
             },
             {
+              "const": "question",
               "description": "Agent asked the user a question.",
-              "enum": [
-                "question"
-              ],
               "type": "string"
             },
             {
+              "const": "idle-done",
               "description": "Idle/done attention tier (the quiet tier; §15.5).",
-              "enum": [
-                "idle-done"
-              ],
               "type": "string"
             },
             {
-              "description": "Explicitly no urgency. Serializes to the string `\"null\"`.\n\nNote: the README writes `rollup_urgency: \"...|null\"`. We model the *absence* of urgency on optional fields as JSON `null` via `Option`, and also provide this named variant so a required urgency can express \"none\" without ambiguity. Its wire token is the literal string `null`.",
-              "enum": [
-                "null"
-              ],
+              "const": "null",
+              "description": "Explicitly no urgency. Serializes to the string `\"null\"`.\n\nNote: the README writes `rollup_urgency: \"...|null\"`. We model the\n*absence* of urgency on optional fields as JSON `null` via `Option`, and\nalso provide this named variant so a required urgency can express \"none\"\nwithout ambiguity. Its wire token is the literal string `null`.",
               "type": "string"
             }
           ]
         }
       },
-      "description": "A tracked VS Code-Server environment (README §7.1).\n\n`rollup_state` / `rollup_urgency` are the most-urgent state/urgency across the session's runs (computed by the Hub merge engine; see [`crate::rollup`]).",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": true,
+      "description": "A tracked VS Code-Server environment (README §7.1).\n\n`rollup_state` / `rollup_urgency` are the most-urgent state/urgency across\nthe session's runs (computed by the Hub merge engine; see [`crate::rollup`]).",
       "properties": {
         "editor": {
           "anyOf": [
             {
-              "$ref": "#/definitions/Editor"
+              "$ref": "#/$defs/Editor"
             },
             {
               "type": "null"
@@ -1309,7 +1191,7 @@
           "description": "`null` when no editor is bound."
         },
         "location": {
-          "$ref": "#/definitions/Location"
+          "$ref": "#/$defs/Location"
         },
         "muted": {
           "default": false,
@@ -1319,17 +1201,13 @@
           "description": "Opaque policy blob (§17, not modeled in v1)."
         },
         "rollup_state": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/State"
-            }
-          ],
+          "$ref": "#/$defs/State",
           "description": "Worst/most-urgent state across `runs`."
         },
         "rollup_urgency": {
           "anyOf": [
             {
-              "$ref": "#/definitions/Urgency"
+              "$ref": "#/$defs/Urgency"
             },
             {
               "type": "null"
@@ -1339,18 +1217,18 @@
         },
         "runs": {
           "items": {
-            "$ref": "#/definitions/AgentRun"
+            "$ref": "#/$defs/AgentRun"
           },
           "type": "array"
         },
         "schema_version": {
           "description": "Versioning (§7.6) — present on every object.",
           "format": "uint32",
-          "minimum": 0.0,
+          "minimum": 0,
           "type": "integer"
         },
         "server": {
-          "$ref": "#/definitions/Server"
+          "$ref": "#/$defs/Server"
         },
         "session_id": {
           "description": "Stable durable session id.",
@@ -1380,13 +1258,13 @@
         }
       },
       "required": [
-        "location",
-        "rollup_state",
-        "runs",
         "schema_version",
-        "server",
         "session_id",
         "title",
+        "location",
+        "server",
+        "runs",
+        "rollup_state",
         "updated_at"
       ],
       "title": "Session",
