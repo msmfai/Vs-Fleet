@@ -83,7 +83,11 @@ for required in \
   docs/release/GITHUB_PUBLICATION_RUNBOOK.md \
   docs/release/PUBLIC_CI_EVIDENCE.md \
   docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md \
+  .github/workflows/ci.yml \
+  .github/workflows/release-readiness.yml \
   .github/dependabot.yml \
+  scripts/check-github-workflows.sh \
+  scripts/test-github-workflows-check.sh \
   scripts/check-dependabot-config.sh \
   scripts/test-dependabot-config-check.sh \
   scripts/check-owner-decisions.sh \
@@ -115,7 +119,6 @@ for required in \
   scripts/test-release-check.sh \
   scripts/check-release-notes.sh \
   scripts/test-release-notes-check.sh \
-  .github/workflows/release-readiness.yml \
   .github/PULL_REQUEST_TEMPLATE.md \
   .github/ISSUE_TEMPLATE/bug_report.yml \
   .github/ISSUE_TEMPLATE/alpha_feedback.yml
@@ -127,6 +130,10 @@ do
 done
 
 if ! scripts/check-dependabot-config.sh .github/dependabot.yml; then
+  fail=1
+fi
+
+if ! scripts/check-github-workflows.sh .github/workflows/ci.yml .github/workflows/release-readiness.yml; then
   fail=1
 fi
 

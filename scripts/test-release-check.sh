@@ -72,6 +72,7 @@ for doc in \
   .github/PULL_REQUEST_TEMPLATE.md \
   .github/ISSUE_TEMPLATE/bug_report.yml \
   .github/ISSUE_TEMPLATE/alpha_feedback.yml \
+  .github/workflows/ci.yml \
   .github/workflows/release-readiness.yml
 do
   write_file "$doc" "release-ready test fixture"
@@ -86,6 +87,7 @@ for script in \
   scripts/check-security-reporting-decision.sh \
   scripts/check-contribution-decision.sh \
   scripts/check-ci-evidence-decision.sh \
+  scripts/check-github-workflows.sh \
   scripts/check-privacy-decision.sh \
   scripts/check-dependency-review-decision.sh \
   scripts/check-dependabot-config.sh \
@@ -100,6 +102,7 @@ for script in \
   scripts/test-security-reporting-decision-check.sh \
   scripts/test-contribution-decision-check.sh \
   scripts/test-ci-evidence-decision-check.sh \
+  scripts/test-github-workflows-check.sh \
   scripts/test-privacy-decision-check.sh \
   scripts/test-dependency-review-decision-check.sh \
   scripts/test-dependabot-config-check.sh \

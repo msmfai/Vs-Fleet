@@ -81,6 +81,9 @@ closed or explicitly accepted.
 - [x] Add issue templates for bug reports and alpha feedback.
 - [x] Add a code of conduct if you want public contributions.
 - [x] Add a manual release-readiness CI workflow for the exact public ref.
+- [x] Add a workflow integrity gate for normal CI and Release Readiness.
+- [ ] Run `./scripts/check-github-workflows.sh .github/workflows/ci.yml
+  .github/workflows/release-readiness.yml`.
 - [ ] Run CI on the exact public branch after artifact cleanup.
 - [ ] Record exact CI and Release Readiness workflow evidence in
   `docs/release/PUBLIC_CI_EVIDENCE.md` and run
@@ -105,6 +108,10 @@ closed or explicitly accepted.
 - `.github/dependabot.yml` is present for GitHub Actions, root Cargo workspace,
   standalone Fleet host Cargo crate, and both npm packages; the release gate
   validates those entries with `scripts/check-dependabot-config.sh`.
+- `.github/workflows/ci.yml` and `.github/workflows/release-readiness.yml` are
+  present; `scripts/check-github-workflows.sh` validates that the public-alpha
+  evidence workflows still contain the expected Rust, package, coverage, host
+  bundle, release gate, and artifact checks.
 - `docs/release/PUBLIC_CI_EVIDENCE.md` is present as the exact commit, branch,
   CI workflow run, and Release Readiness workflow run evidence record for the
   first public GitHub alpha.
