@@ -14,10 +14,11 @@ answers:
 ./scripts/public-alpha-decision-packet.sh
 ```
 
-The packet includes a **Minimal owner reply shape**. Use that when you want to
-accept the recommended source-only alpha defaults and only supply the remaining
-free-form values: namespace, security contact/private reporting choice,
-emergency removal owner, and later CI run URLs.
+The packet includes a **Minimal owner reply shape**. The same shape is tracked
+as [OWNER_DECISION_REPLY_TEMPLATE.md](OWNER_DECISION_REPLY_TEMPLATE.md). Use it
+when you want to accept the recommended source-only alpha defaults and only
+supply the remaining free-form values: namespace, security contact/private
+reporting choice, emergency removal owner, and later CI run URLs.
 
 Namespace answers must be concrete because manifest metadata needs exact
 strings. Source-only alpha still defers crates.io, npm, VS Code Marketplace,

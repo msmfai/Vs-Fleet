@@ -62,5 +62,8 @@ require_text './scripts/check-public-release-branch\.sh <public-branch> <source-
   "public release branch verifier command"
 require_text './scripts/draft-owner-decisions\.sh <github-owner> <github-repo>' \
   "owner decision draft command"
+require_text 'OWNER_DECISION_REPLY_TEMPLATE\.md' "owner decision reply template reference"
+require_text 'namespace, security, emergency-removal, and CI evidence values' \
+  "owner reply template value scope"
 
 echo "Owner release approval sheet check passed."
