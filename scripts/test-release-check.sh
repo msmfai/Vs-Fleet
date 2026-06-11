@@ -70,6 +70,7 @@ for doc in \
   docs/release/DEPENDENCY_REVIEW_EVIDENCE.md \
   docs/release/GITHUB_PUBLICATION_RUNBOOK.md \
   docs/release/GITHUB_PUBLICATION_EVIDENCE.md \
+  docs/release/PUBLIC_BRANCH_EVIDENCE.md \
   docs/release/PUBLIC_CI_EVIDENCE.md \
   docs/release/ASSET_PROVENANCE.md \
   docs/release/NAME_COLLISION_REVIEW.md \
@@ -96,6 +97,7 @@ for script in \
   scripts/draft-owner-decisions.sh \
   scripts/public-alpha-decision-packet.sh \
   scripts/history-release-check.sh \
+  scripts/check-public-branch-evidence.sh \
   scripts/prepare-public-branch.sh \
   scripts/secret-release-check.sh \
   scripts/check-doc-links.sh \
@@ -131,6 +133,7 @@ for script in \
   scripts/test-draft-owner-decisions.sh \
   scripts/test-public-alpha-decision-packet.sh \
   scripts/test-history-release-check.sh \
+  scripts/test-public-branch-evidence-check.sh \
   scripts/test-prepare-public-branch.sh \
   scripts/test-secret-release-check.sh \
   scripts/test-doc-link-check.sh \

@@ -85,9 +85,11 @@ jobs:
       - run: ./scripts/test-local-data-decision-check.sh
       - run: ./scripts/test-workflow-supply-chain-decision-check.sh
       - run: ./scripts/test-github-publication-evidence-check.sh
+      - run: ./scripts/test-public-branch-evidence-check.sh
       - run: ./scripts/test-dependency-review-runner.sh
       - run: ./scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md
       - run: ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md
+      - run: ./scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md "$(git rev-parse HEAD)"
       - run: ./scripts/secret-release-check.sh
       - run: ./scripts/check-doc-links.sh
       - run: ./scripts/check-license-intent.sh

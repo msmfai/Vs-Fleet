@@ -58,6 +58,8 @@ visibility.
 - [ ] If current history is not accepted, create the public branch with
   `./scripts/prepare-public-branch.sh <public-branch> <source-ref>` and run
   `./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md <public-branch>`.
+  Fill `docs/release/PUBLIC_BRANCH_EVIDENCE.md` and run
+  `./scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md <source-ref-sha>`.
   In the same private clone, run
   `FLEET_RELEASE_HISTORY_REF=<public-branch> ./scripts/release-check.sh` for the
   aggregate gate.
