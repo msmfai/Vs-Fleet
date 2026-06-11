@@ -26,7 +26,7 @@ if ! rg -q '^Decision record status: APPROVED$' "$owner_record"; then
 fi
 
 ai_block="$(
-  sed -n '/^### 17\. AI-Assisted Contribution Provenance$/,/^## Required Before Binary Distribution$/p' "$owner_record"
+  sed -n '/^### 17\. AI-Assisted Contribution Provenance$/,/^### 18\. Supported Platform And Toolchain$/p' "$owner_record"
 )"
 
 checked_count="$(printf '%s\n' "$ai_block" | rg -c '^- \[x\] ' || true)"

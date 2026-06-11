@@ -98,6 +98,9 @@ closed or explicitly accepted.
 - [ ] Choose AI-assisted contribution provenance in
   `docs/release/OWNER_DECISION_RECORD.md` and run
   `./scripts/check-ai-contribution-decision.sh`.
+- [ ] Choose supported platform/toolchain scope in
+  `docs/release/OWNER_DECISION_RECORD.md` and run
+  `./scripts/check-platform-support-decision.sh`.
 - [ ] Draft GitHub pre-release notes from
   `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` and remove all placeholders.
 - [ ] Run the release-notes checker with the expected commit:
@@ -250,6 +253,9 @@ closed or explicitly accepted.
 - `scripts/check-ai-contribution-decision.sh` validates that AI-assisted
   outside contributions have explicit human-review, right-to-submit, and
   private-prompt/log/artifact provenance boundaries before public PR intake.
+- `scripts/check-platform-support-decision.sh` validates that the public alpha
+  does not imply unsupported Linux, Windows, remote/container, or binary-package
+  support beyond the approved OS/toolchain matrix.
 - `scripts/check-privacy-decision.sh` validates that the approved
   privacy/telemetry posture matches the README, security policy, architecture
   notes, issue template, and release notes template.

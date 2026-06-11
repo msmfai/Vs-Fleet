@@ -28,6 +28,16 @@ Not supported as a public alpha commitment:
 - container/remote deployment as a supported user path,
 - production support, stable APIs, or backwards-compatible state formats.
 
+## Supported Platform And Toolchain
+
+- macOS source build only.
+- Rust 1.78 or newer.
+- Node.js 20 and npm.
+- Git.
+- user-provided VS Code `code` CLI.
+- Linux, Windows, and remote/container workflows are not supported alpha
+  platforms.
+
 ## What Changed
 
 - `[one-line change]`

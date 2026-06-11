@@ -29,6 +29,7 @@ required_sections=$(
 ### 15. Community Intake And Moderation
 ### 16. Release Custody And Maintainer Authority
 ### 17. AI-Assisted Contribution Provenance
+### 18. Supported Platform And Toolchain
 EOF
 )
 
@@ -122,7 +123,7 @@ fi
 
 distribution_block="$(section_block "$required_block" "### 6. Distribution Scope" || true)"
 if printf '%s\n' "$distribution_block" | rg -q '^- \[x\] Source plus|^- \[x\] Other:'; then
-  for section in "### 18. macOS Signing and Notarization" "### 19. Update Channel"; do
+  for section in "### 19. macOS Signing and Notarization" "### 20. Update Channel"; do
     if ! block="$(section_block "$binary_block" "$section")"; then
       echo "- ${section#'### '}: missing section required for public binary distribution"
       missing_any=1
@@ -156,6 +157,7 @@ echo "- Versioning: alpha pre-release tags only; no stable compatibility promise
 echo "- Community intake: scoped public bug and alpha-feedback issues only; no blank issues."
 echo "- Release custody: single-maintainer alpha; no package publishing credentials."
 echo "- AI contributions: human-reviewed, rights-certified, no private prompts/logs/artifacts."
+echo "- Platform: macOS source alpha only with Rust 1.78+, Node.js 20/npm, Git, and VS Code code CLI."
 
 echo
 echo "Mechanical next commands after recording choices:"
@@ -179,6 +181,7 @@ echo "  ./scripts/check-versioning-decision.sh docs/release/OWNER_DECISION_RECOR
 echo "  ./scripts/check-community-intake-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo "  ./scripts/check-release-custody-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md ."
 echo "  ./scripts/check-ai-contribution-decision.sh docs/release/OWNER_DECISION_RECORD.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md"
+echo "  ./scripts/check-platform-support-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo '  ./scripts/check-github-publication-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md "$(git rev-parse HEAD)"'
 
 echo
