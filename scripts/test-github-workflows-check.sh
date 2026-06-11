@@ -58,6 +58,7 @@ jobs:
       - run: ./scripts/test-doc-link-check.sh
       - run: ./scripts/test-public-tree-size-check.sh
       - run: ./scripts/test-lockfile-policy-check.sh
+      - run: ./scripts/test-branding-decision-check.sh
       - run: ./scripts/test-dependency-review-runner.sh
       - run: ./scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md
       - run: ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md

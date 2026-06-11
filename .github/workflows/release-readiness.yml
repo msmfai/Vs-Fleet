@@ -78,6 +78,9 @@ jobs:
       - name: Support decision gate self-test
         run: ./scripts/test-support-decision-check.sh
 
+      - name: Branding decision gate self-test
+        run: ./scripts/test-branding-decision-check.sh
+
       - name: History release gate self-test
         run: ./scripts/test-history-release-check.sh
 
