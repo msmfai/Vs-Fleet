@@ -91,6 +91,7 @@ jobs:
       - run: ./scripts/test-local-data-decision-check.sh
       - run: ./scripts/test-workflow-supply-chain-decision-check.sh
       - run: ./scripts/test-github-publication-evidence-check.sh
+      - run: ./scripts/test-generate-github-publication-evidence.sh
       - run: ./scripts/test-public-branch-evidence-check.sh
       - run: ./scripts/test-generate-public-branch-evidence.sh
       - run: ./scripts/test-check-public-release-branch.sh

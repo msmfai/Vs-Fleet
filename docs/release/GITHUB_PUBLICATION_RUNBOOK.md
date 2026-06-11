@@ -155,10 +155,18 @@ Record the release custody evidence before the first public tag or pre-release:
    Readiness" workflow on the exact commit.
 5. Record exact CI and Release Readiness evidence in
    `docs/release/PUBLIC_CI_EVIDENCE.md`.
-6. Record exact repository settings evidence in
+6. Generate exact repository settings evidence in
    `docs/release/GITHUB_PUBLICATION_EVIDENCE.md`, including visibility review,
    issue/discussion/wiki settings, security settings, branch protection, and
-   release custody.
+   release custody:
+
+   ```sh
+   ./scripts/generate-github-publication-evidence.sh <repo-url> <default-branch> <source-ref> <emergency-removal-owner>
+   ```
+
+   Pass `field=value` overrides for any repository setting that differs from
+   the source-only alpha defaults printed by
+   `./scripts/generate-github-publication-evidence.sh --help`.
    These files are release-control evidence: after committing them, their
    checkers allow only known release-control evidence files under
    `docs/release/*_EVIDENCE.md` to differ from the reviewed commit.

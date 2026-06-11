@@ -171,6 +171,8 @@ for required in \
   scripts/test-release-evidence-status.sh \
   scripts/check-github-publication-evidence.sh \
   scripts/test-github-publication-evidence-check.sh \
+  scripts/generate-github-publication-evidence.sh \
+  scripts/test-generate-github-publication-evidence.sh \
   scripts/check-privacy-decision.sh \
   scripts/test-privacy-decision-check.sh \
   scripts/check-dependency-review-decision.sh \

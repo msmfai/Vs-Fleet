@@ -121,6 +121,7 @@ for script in \
   scripts/release-evidence-status.sh \
   scripts/check-github-publication-evidence.sh \
   scripts/check-github-workflows.sh \
+  scripts/generate-github-publication-evidence.sh \
   scripts/check-privacy-decision.sh \
   scripts/check-dependency-review-decision.sh \
   scripts/run-dependency-review.sh \
@@ -168,6 +169,7 @@ for script in \
   scripts/test-generate-public-ci-evidence.sh \
   scripts/test-release-evidence-status.sh \
   scripts/test-github-publication-evidence-check.sh \
+  scripts/test-generate-github-publication-evidence.sh \
   scripts/test-github-workflows-check.sh \
   scripts/test-privacy-decision-check.sh \
   scripts/test-dependency-review-decision-check.sh \
