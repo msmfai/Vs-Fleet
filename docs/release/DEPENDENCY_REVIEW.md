@@ -44,7 +44,7 @@ The second command should print nothing.
 
 ## What to Record
 
-For the alpha release notes, record:
+For `DEPENDENCY_REVIEW_EVIDENCE.md` and the alpha release notes, record:
 
 - date reviewed,
 - commit SHA,
@@ -55,6 +55,9 @@ For the alpha release notes, record:
 
 Use [ALPHA_RELEASE_NOTES_TEMPLATE.md](ALPHA_RELEASE_NOTES_TEMPLATE.md) so this
 evidence is captured in the public GitHub pre-release body.
+
+Run `./scripts/check-dependency-review-decision.sh` from the repository root
+before approving the owner decision record.
 
 ## Current Known Gaps
 
