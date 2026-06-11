@@ -94,6 +94,8 @@ for required in \
   scripts/test-contribution-decision-check.sh \
   scripts/check-ci-evidence-decision.sh \
   scripts/test-ci-evidence-decision-check.sh \
+  scripts/check-privacy-decision.sh \
+  scripts/test-privacy-decision-check.sh \
   scripts/check-dependency-review-decision.sh \
   scripts/test-dependency-review-decision-check.sh \
   scripts/check-release-notes.sh \
@@ -125,6 +127,8 @@ elif ! scripts/check-security-reporting-decision.sh docs/release/OWNER_DECISION_
 elif ! scripts/check-contribution-decision.sh docs/release/OWNER_DECISION_RECORD.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md; then
   fail=1
 elif ! scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"; then
+  fail=1
+elif ! scripts/check-privacy-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
   fail=1
 elif ! scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"; then
   fail=1

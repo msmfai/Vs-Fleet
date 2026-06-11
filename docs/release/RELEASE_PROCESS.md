@@ -38,6 +38,8 @@ Do not publish a public alpha until these are true:
   passes.
 - `./scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"`
   passes.
+- `./scripts/check-privacy-decision.sh docs/release/OWNER_DECISION_RECORD.md .`
+  passes.
 - `./scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"`
   passes.
 - Dependency review has been run for the exact public commit, or the approved
@@ -99,6 +101,7 @@ Do not publish a public alpha until these are true:
    ./scripts/check-security-reporting-decision.sh docs/release/OWNER_DECISION_RECORD.md SECURITY.md
    ./scripts/check-contribution-decision.sh docs/release/OWNER_DECISION_RECORD.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md
    ./scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"
+   ./scripts/check-privacy-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"
    ./scripts/release-check.sh
    ```

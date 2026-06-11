@@ -62,7 +62,8 @@ for section in \
   "### 5. Security Reporting Channel" \
   "### 6. Contribution Intake" \
   "### 7. Public CI Evidence" \
-  "### 8. Dependency Review Evidence"
+  "### 8. Privacy And Telemetry Posture" \
+  "### 9. Dependency Review Evidence"
 do
   if ! block="$(section_block "$required_block" "$section")"; then
     echo "FAIL: owner decision record missing required section: $section"
@@ -87,9 +88,9 @@ fi
 if distribution_block="$(section_block "$required_block" "### 4. Distribution Scope")"; then
   if printf '%s\n' "$distribution_block" | rg -q '^- \[x\] Source plus|^- \[x\] Other:'; then
     for section in \
-      "### 9. macOS Signing and Notarization" \
-      "### 10. Update Channel" \
-      "### 11. Branding Stability"
+      "### 10. macOS Signing and Notarization" \
+      "### 11. Update Channel" \
+      "### 12. Branding Stability"
     do
       if ! block="$(section_block "$binary_block" "$section")"; then
         echo "FAIL: owner decision record missing binary distribution section: $section"
