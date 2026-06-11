@@ -130,6 +130,8 @@ for required in \
   scripts/test-history-release-check.sh \
   scripts/check-public-branch-evidence.sh \
   scripts/test-public-branch-evidence-check.sh \
+  scripts/generate-public-branch-evidence.sh \
+  scripts/test-generate-public-branch-evidence.sh \
   scripts/prepare-public-branch.sh \
   scripts/test-prepare-public-branch.sh \
   scripts/secret-release-check.sh \

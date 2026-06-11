@@ -71,6 +71,12 @@ if ! rg -q 'FLEET_RELEASE_HISTORY_REF=public-alpha ./scripts/release-check.sh' "
   exit 1
 fi
 
+if ! rg -q './scripts/generate-public-branch-evidence.sh public-alpha' "$output"; then
+  echo "FAIL: helper output must show public branch evidence generation" >&2
+  cat "$output" >&2
+  exit 1
+fi
+
 if ! (cd "$repo" && ./scripts/history-release-check.sh missing-owner.md public-alpha) >"$TMPDIR/history-public.out" 2>&1; then
   echo "FAIL: public branch history should be clean" >&2
   cat "$TMPDIR/history-public.out" >&2

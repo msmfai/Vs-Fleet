@@ -87,6 +87,7 @@ jobs:
       - run: ./scripts/test-workflow-supply-chain-decision-check.sh
       - run: ./scripts/test-github-publication-evidence-check.sh
       - run: ./scripts/test-public-branch-evidence-check.sh
+      - run: ./scripts/test-generate-public-branch-evidence.sh
       - run: ./scripts/test-dependency-review-runner.sh
       - run: ./scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md
       - run: ./scripts/check-owner-release-approval.sh docs/release/OWNER_RELEASE_APPROVAL.md

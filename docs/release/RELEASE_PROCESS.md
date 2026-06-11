@@ -257,6 +257,7 @@ not acceptable, create a single-commit public branch:
 ```sh
 ./scripts/prepare-public-branch.sh public-alpha HEAD
 ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md public-alpha
+./scripts/generate-public-branch-evidence.sh public-alpha HEAD docs/release/PUBLIC_BRANCH_EVIDENCE.md
 ./scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md "$(git rev-parse HEAD)"
 FLEET_RELEASE_HISTORY_REF=public-alpha ./scripts/release-check.sh
 ```
