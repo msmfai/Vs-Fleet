@@ -21,7 +21,8 @@ relicensing rights over contributor code. Revisit a Contributor License
 Agreement (CLA) before commercial relicensing. Released versions remain
 available under their release license. Keep reusable library/API crates
 permissive. AGPL-3.0-only is a contingency for a future hosted control plane or
-hosted-reseller trigger.
+hosted-reseller trigger. Copyleft is not a monetization plan for internal use;
+payment needs a concrete paid model and distribution or hosted-service pressure.
 EOF
   cat >"$dco" <<'EOF'
 # DCO
