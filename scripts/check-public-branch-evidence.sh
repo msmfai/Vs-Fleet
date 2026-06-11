@@ -51,7 +51,18 @@ trees_match_except_release_control() {
 
   local diff_names
   diff_names="$(git -C "$root" diff --name-only "$left" "$right")"
-  diff_names="$(printf '%s\n' "$diff_names" | awk -v allowed="$allowed" 'NF && $0 != allowed { print }')"
+  diff_names="$(
+    printf '%s\n' "$diff_names" | awk -v allowed="$allowed" '
+      NF &&
+      $0 != allowed &&
+      $0 != "docs/release/PUBLIC_BRANCH_EVIDENCE.md" &&
+      $0 != "docs/release/PUBLIC_CI_EVIDENCE.md" &&
+      $0 != "docs/release/GITHUB_PUBLICATION_EVIDENCE.md" &&
+      $0 != "docs/release/DEPENDENCY_REVIEW_EVIDENCE.md" {
+        print
+      }
+    '
+  )"
   [ -z "$diff_names" ]
 }
 

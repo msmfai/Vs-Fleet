@@ -172,6 +172,23 @@ if ! (cd "$repo" && "$ROOT/scripts/check-dependency-review-decision.sh" \
   exit 1
 fi
 
+cat >"$repo/docs/release/PUBLIC_BRANCH_EVIDENCE.md" <<'EOF'
+# Public Branch Evidence
+Public branch evidence status: PASS
+EOF
+git -C "$repo" add docs/release/PUBLIC_BRANCH_EVIDENCE.md
+git -C "$repo" commit -q -m "record another release-control evidence file"
+other_evidence_commit="$(git -C "$repo" rev-parse HEAD)"
+
+if ! (cd "$repo" && "$ROOT/scripts/check-dependency-review-decision.sh" \
+  docs/release/OWNER_DECISION_RECORD.md \
+  docs/release/DEPENDENCY_REVIEW_EVIDENCE.md \
+  "$other_evidence_commit") >"$TMPDIR/other-evidence-commit.out" 2>&1; then
+  echo "FAIL: dependency evidence should allow other release-control evidence files to differ" >&2
+  cat "$TMPDIR/other-evidence-commit.out" >&2
+  exit 1
+fi
+
 printf 'unexpected dependency-reviewed payload drift\n' >"$repo/README.md"
 git -C "$repo" add README.md
 git -C "$repo" commit -q -m "drift reviewed payload"
