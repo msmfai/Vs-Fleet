@@ -33,12 +33,20 @@ require_text "$ci" 'cargo clippy --workspace --all-targets --all-features -- -D 
   "workspace clippy with warnings denied"
 require_text "$ci" 'cargo test --workspace --all-targets --all-features' \
   "workspace test command"
+require_text "$ci" "\\*\\*/Cargo\\.lock" "Cargo cache keys include lockfiles"
 require_text "$ci" 'cargo llvm-cov report --fail-under-lines 80' \
   "workspace coverage floor"
 require_text "$ci" 'cargo llvm-cov report --package fleet-protocol --package fleet-hub --fail-under-lines 85' \
   "protocol and hub coverage floor"
 require_text "$ci" 'pnpm -r build' "recursive package build"
 require_text "$ci" 'pnpm -r test' "recursive package test"
+require_text "$ci" 'pnpm install --frozen-lockfile --ignore-scripts' \
+  "strict frozen pnpm install"
+if rg -q 'pnpm install --frozen-lockfile --ignore-scripts[[:space:]]*\|\|' "$ci"; then
+  echo "FAIL: $ci must not fall back from frozen pnpm install"
+  exit 1
+fi
+require_text "$ci" 'pnpm-lock\.yaml' "pnpm cache key includes lockfile"
 
 require_text "$release" '^name:[[:space:]]*Release Readiness$' "workflow name Release Readiness"
 require_text "$release" 'workflow_dispatch:' "manual workflow_dispatch trigger"
@@ -47,6 +55,7 @@ require_text "$release" './scripts/test-dependabot-config-check.sh' "Dependabot 
 require_text "$release" './scripts/test-secret-release-check.sh' "secret exposure self-test"
 require_text "$release" './scripts/test-doc-link-check.sh' "documentation link self-test"
 require_text "$release" './scripts/test-public-tree-size-check.sh' "public tree size self-test"
+require_text "$release" './scripts/test-lockfile-policy-check.sh' "lockfile policy self-test"
 require_text "$release" './scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md' \
   "owner decision gate"
 require_text "$release" './scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md' \
@@ -54,6 +63,7 @@ require_text "$release" './scripts/history-release-check.sh docs/release/OWNER_D
 require_text "$release" './scripts/secret-release-check.sh' "secret exposure gate"
 require_text "$release" './scripts/check-doc-links.sh' "documentation link gate"
 require_text "$release" './scripts/check-public-tree-size.sh' "public tree size gate"
+require_text "$release" './scripts/check-lockfile-policy.sh' "lockfile policy gate"
 require_text "$release" './scripts/release-check.sh' "release hygiene gate"
 require_text "$release" 'cargo clippy --workspace --all-targets --all-features -- -D warnings' \
   "source alpha clippy check"

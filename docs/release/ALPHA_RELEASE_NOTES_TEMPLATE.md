@@ -43,6 +43,7 @@ Record exact commands and where they ran.
 - Rust workspace checks: `[commands/results]`
 - Fleet host checks: `[commands/results]`
 - JavaScript/package checks: `[commands/results]`
+- Lockfile policy: `[./scripts/check-lockfile-policy.sh result]`
 - Dependency review: `[commands/results or owner-approved skip]`
 - Documentation link audit: `[./scripts/check-doc-links.sh result]`
 - Public tree size audit: `[./scripts/check-public-tree-size.sh result]`

@@ -10,9 +10,11 @@ Run this before public GitHub visibility and before every source alpha tag.
 
 ## Inputs to Review
 
-- Rust workspace manifests and `Cargo.lock`.
-- Standalone host manifest: `crates/fleet-host/Cargo.toml`.
-- npm manifests and lockfiles under `packages/*`.
+- Rust workspace manifests and root `Cargo.lock`.
+- Standalone host manifest and lockfile:
+  `crates/fleet-host/Cargo.toml` and `crates/fleet-host/Cargo.lock`.
+- pnpm workspace lockfile: `pnpm-lock.yaml`.
+- npm manifests and package lockfiles under `packages/*`.
 - GitHub Actions workflows that fetch third-party actions.
 - Bundled artifacts produced by release scripts, especially bridge VSIX files and
   app bundles.
@@ -24,6 +26,7 @@ From the repository root:
 ```sh
 cargo tree --workspace --all-features
 cargo metadata --format-version 1 --locked > /tmp/fleet-cargo-metadata.json
+( cd crates/fleet-host && cargo metadata --format-version 1 --locked > /tmp/fleet-host-cargo-metadata.json )
 ```
 
 For JavaScript packages:
@@ -37,6 +40,7 @@ For generated release artifacts:
 
 ```sh
 ./scripts/release-check.sh
+./scripts/check-lockfile-policy.sh
 git ls-files | rg '(^|/)coverage/|(^|/)node_modules/|(^|/)out/|\.vsix$|Fleet\.app/'
 ```
 
@@ -48,6 +52,7 @@ For `DEPENDENCY_REVIEW_EVIDENCE.md` and the alpha release notes, record:
 
 - date reviewed,
 - commit SHA,
+- lockfiles checked,
 - dependency commands run,
 - any ignored vulnerability or license findings and why they are acceptable for
   alpha,

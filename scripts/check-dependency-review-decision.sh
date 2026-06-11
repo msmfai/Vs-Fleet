@@ -120,6 +120,8 @@ case "$checked" in
     require_concrete_field "Reviewed date"
     require_field_value "cargo tree" "pass"
     require_field_value "cargo metadata --locked" "pass"
+    require_field_value "fleet-host cargo metadata --locked" "pass"
+    require_field_value "lockfile policy" "pass"
     require_field_value "fleet-bridge npm audit" "pass"
     require_field_value "extension npm audit" "pass"
     require_field_value "generated artifact check" "pass"

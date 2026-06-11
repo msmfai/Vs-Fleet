@@ -82,6 +82,8 @@ write_evidence "$evidence_run" PASS "$COMMIT" \
   "Reviewed date: 2026-06-11
 cargo tree: pass
 cargo metadata --locked: pass
+fleet-host cargo metadata --locked: pass
+lockfile policy: pass
 fleet-bridge npm audit: pass
 extension npm audit: pass
 generated artifact check: pass

@@ -64,6 +64,7 @@ Set these before public visibility:
 - GitHub Actions is enabled for the release-readiness and source-check workflows.
 - `.github/dependabot.yml` is present and `./scripts/check-dependabot-config.sh
   .github/dependabot.yml` passes before public visibility.
+- `./scripts/check-lockfile-policy.sh` passes before public visibility.
 - `./scripts/check-github-workflows.sh .github/workflows/ci.yml
   .github/workflows/release-readiness.yml` passes before recording public CI
   evidence.
@@ -120,6 +121,7 @@ Reference: <https://docs.github.com/en/repositories/configuring-branches-and-mer
    ./scripts/secret-release-check.sh
    ./scripts/check-doc-links.sh
    ./scripts/check-public-tree-size.sh
+   ./scripts/check-lockfile-policy.sh
    ./scripts/release-check.sh
    ./scripts/check-release-notes.sh path/to/release-notes.md "$(git rev-parse HEAD)"
    ```
@@ -137,6 +139,7 @@ Abort publication if any of these are true:
 - `./scripts/secret-release-check.sh` fails.
 - `./scripts/check-doc-links.sh` fails.
 - `./scripts/check-public-tree-size.sh` fails.
+- `./scripts/check-lockfile-policy.sh` fails.
 - The exact public commit differs from the commit recorded in CI or dependency
   review evidence.
 - The selected security reporting channel is not actually available.
