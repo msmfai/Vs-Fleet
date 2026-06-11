@@ -69,7 +69,24 @@ Choose what public users can treat as the supported source-alpha surface.
 Current default recommendation: keep the first public alpha scoped to the local
 macOS host and local `code serve-web` workflow.
 
-### 5. Distribution Scope
+### 5. Editor Server Licensing Boundary
+
+Choose how the public alpha handles editor server components.
+
+- [ ] User-provided VS Code only. Fleet may launch the user's local
+  `code serve-web` install, but Fleet does not download, bundle, host, or
+  redistribute Microsoft's VS Code Server, Microsoft Marketplace extensions, or
+  Microsoft remote extensions.
+- [ ] OSS server only. Supported workflows use `code-server` or
+  `openvscode-server` with Open VSX; no Microsoft VS Code Server or Marketplace
+  dependency.
+- [ ] Other: `TODO`
+
+Current default recommendation: user-provided VS Code only for the local source
+alpha; require an OSS server/Open VSX path before supporting deployed remote or
+container workflows.
+
+### 6. Distribution Scope
 
 Choose what the first public alpha promises.
 
@@ -81,7 +98,7 @@ Choose what the first public alpha promises.
 
 Current default recommendation: source-only alpha.
 
-### 6. Security Reporting Channel
+### 7. Security Reporting Channel
 
 Choose the private vulnerability path before public visibility.
 
@@ -91,7 +108,7 @@ Choose the private vulnerability path before public visibility.
 
 Current default recommendation: GitHub Private Vulnerability Reporting.
 
-### 7. Contribution Intake
+### 8. Contribution Intake
 
 Choose how to handle first outside PRs after the license is applied.
 
@@ -104,7 +121,7 @@ Choose how to handle first outside PRs after the license is applied.
 Current default recommendation: accept small focused PRs only after the license
 is applied; no CLA for alpha.
 
-### 8. Public CI Evidence
+### 9. Public CI Evidence
 
 Choose the CI gate for the public branch.
 
@@ -116,7 +133,7 @@ Choose the CI gate for the public branch.
 Current default recommendation: require GitHub Actions green on the exact public
 branch/commit.
 
-### 9. Privacy And Telemetry Posture
+### 10. Privacy And Telemetry Posture
 
 Choose the privacy/logging promise before public visibility.
 
@@ -130,7 +147,7 @@ Choose the privacy/logging promise before public visibility.
 Current default recommendation: no telemetry by default, with explicit local log
 contents and scrub-before-sharing warnings in public docs.
 
-### 10. Dependency Review Evidence
+### 11. Dependency Review Evidence
 
 Choose what dependency evidence is required for the exact public commit.
 
@@ -149,7 +166,7 @@ invite-only.
 These do not block a source-only alpha, but they must be decided before any
 public app bundle.
 
-### 11. macOS Signing and Notarization
+### 12. macOS Signing and Notarization
 
 - [ ] No public binaries until Developer ID signing and notarization are
   automated.
@@ -159,7 +176,7 @@ public app bundle.
 Current default recommendation: no public binaries until signing and notarization
 are automated.
 
-### 12. Update Channel
+### 13. Update Channel
 
 - [ ] No auto-update in alpha.
 - [ ] GitHub Releases only.
@@ -169,7 +186,7 @@ are automated.
 Current default recommendation: no auto-update in alpha; GitHub Releases only
 for source tags.
 
-### 13. Branding Stability
+### 14. Branding Stability
 
 - [ ] `Fleet` name and current icon are alpha placeholders.
 - [ ] `Fleet` name is stable, icon may change.

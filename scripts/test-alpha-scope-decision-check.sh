@@ -26,7 +26,7 @@ Decision record status: $status
   eval harness paths as supported user workflows.
 - [$([ "$checked" = "other" ] && echo x || echo ' ')] Other: \`Private source review only\`
 
-### 5. Distribution Scope
+### 5. Editor Server Licensing Boundary
 EOF
 }
 

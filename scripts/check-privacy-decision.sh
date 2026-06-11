@@ -20,7 +20,7 @@ if ! rg -q '^Decision record status: APPROVED$' "$owner_record"; then
 fi
 
 privacy_block="$(
-  sed -n '/^### 9\. Privacy And Telemetry Posture$/,/^### 10\. Dependency Review Evidence$/p' "$owner_record"
+  sed -n '/^### 10\. Privacy And Telemetry Posture$/,/^### 11\. Dependency Review Evidence$/p' "$owner_record"
 )"
 
 checked_count="$(printf '%s\n' "$privacy_block" | rg -c '^- \[x\] ' || true)"

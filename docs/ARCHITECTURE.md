@@ -26,6 +26,11 @@ Remote, SSH, Docker/container, visual probe, and eval harness paths are useful
 development infrastructure. They are not public support commitments for the
 initial source alpha unless a release note explicitly promotes them.
 
+The local source alpha is a user-provided VS Code workflow: Fleet may launch the
+user's local `code serve-web` install, but Fleet does not download, bundle,
+host, or redistribute Microsoft's VS Code Server, Microsoft Marketplace
+extensions, or Microsoft remote extensions.
+
 ## Components
 
 | Component | Path | Role |

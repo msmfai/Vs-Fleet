@@ -20,7 +20,7 @@ if ! rg -q '^Decision record status: APPROVED$' "$owner_record"; then
 fi
 
 scope_block="$(
-  sed -n '/^### 4\. Alpha Scope$/,/^### 5\. Distribution Scope$/p' "$owner_record"
+  sed -n '/^### 4\. Alpha Scope$/,/^### 5\. Editor Server Licensing Boundary$/p' "$owner_record"
 )"
 
 checked_count="$(printf '%s\n' "$scope_block" | rg -c '^- \[x\] ' || true)"

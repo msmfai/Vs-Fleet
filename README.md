@@ -89,6 +89,12 @@ local metadata such as workspace paths, local URLs, session labels, process
 command lines, and editor state. Scrub logs and review artifacts before sharing
 them publicly.
 
+## Editor Server Boundary
+
+The source alpha uses the user's local `code serve-web` install. Fleet does not
+download, bundle, host, or redistribute Microsoft's VS Code Server, Microsoft
+Marketplace extensions, or Microsoft remote extensions.
+
 See [SECURITY.md](SECURITY.md) for the current alpha security policy.
 See [SUPPORT.md](SUPPORT.md) for the current alpha support boundary.
 
