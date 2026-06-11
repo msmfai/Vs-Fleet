@@ -16,14 +16,9 @@ Environment overrides:
 
 ## Process Ownership
 
-Fleet is a stateless client for live sessions. Externally registered sessions
-push state to Fleet and are not owned by the host. Quitting Fleet must not kill
-external servers.
+Fleet is a stateless client for live sessions. Externally registered sessions push state to Fleet and are not owned by the host. Quitting Fleet must not kill external servers.
 
-The host may create local `code serve-web` sessions as a convenience. Closing a
-Fleet-spawned server from the Fleet UI is the explicit action that removes that
-server process. Quitting Fleet does not promise to delete spawned editor
-userdata or logs.
+The host may create local `code serve-web` sessions as a convenience. Closing a Fleet-spawned server from the Fleet UI is the explicit action that removes that server process. Quitting Fleet does not promise to delete spawned editor userdata or logs.
 
 ## Manual Cleanup
 

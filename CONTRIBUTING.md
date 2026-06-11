@@ -1,9 +1,9 @@
 # Contributing
 
 Fleet has a source-alpha license and contribution posture: `MIT OR Apache-2.0`,
-DCO sign-off, and no CLA for the alpha. Small issue reports and technical
-feedback are welcome during alpha. Broad outside code contributions should wait
-unless the maintainer explicitly asks for them.
+DCO sign-off, and no CLA for the alpha. Small issue reports, technical
+feedback, and focused patches are welcome during alpha. Broad outside code
+changes are triaged narrowly until the project has more maintainer capacity.
 
 ## Before opening a pull request
 
@@ -16,10 +16,7 @@ unless the maintainer explicitly asks for them.
 
 ## AI-assisted changes
 
-AI-assisted contributions are allowed only when the contributor has reviewed and
-understands the change, has the right to submit it under the project license,
-and does not include private prompts, private model transcripts, private logs,
-workspace paths, generated build outputs, raw logs, or machine-specific paths.
+AI-assisted contributions are allowed only when the contributor has reviewed and understands the change, has the right to submit it under the project license, and does not include private prompts, private model transcripts, private logs, workspace paths, generated build outputs, raw logs, or machine-specific paths.
 The contributor is responsible for the submitted code, tests, and provenance.
 
 ## Contribution licensing

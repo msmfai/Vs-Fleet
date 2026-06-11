@@ -70,8 +70,7 @@ from the UI is the explicit owner action that removes the server process.
 
 ## Cleanup
 
-Fleet does not promise an automated source-alpha uninstaller. Close any
-Fleet-spawned servers from the Fleet UI before deleting runtime data, then run:
+Fleet does not promise an automated source-alpha uninstaller. Close any Fleet-spawned servers from the Fleet UI before deleting runtime data, then run:
 
 ```sh
 rm -rf ~/.fleet/run ~/.fleet/mux

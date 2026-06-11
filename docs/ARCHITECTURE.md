@@ -96,9 +96,7 @@ files and `~/.fleet/mux` for spawned editor workspaces, server logs, VS Code
 `--server-data-dir` userdata, reporter sockets, and Claude shim files.
 
 Manual cleanup is `rm -rf ~/.fleet/run ~/.fleet/mux` after closing
-Fleet-spawned servers from the UI. Quitting Fleet does not promise to delete
-spawned editor userdata or logs, and it must not kill externally registered
-sessions.
+Fleet-spawned servers from the UI. Quitting Fleet does not promise to delete spawned editor userdata or logs, and it must not kill externally registered sessions.
 
 ## Release Boundary
 

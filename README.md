@@ -89,16 +89,12 @@ No public roadmap commitments are made during alpha. Public issues, labels, and
 milestones are triage hints only, not delivery promises, unless a later owner
 decision publishes a concrete roadmap.
 
-`Fleet` is a provisional source-alpha working name. This repository makes no
-trademark claim to the name, and stable package or binary publication under
-Fleet namespaces is deferred until the owner completes the public name decision.
+`Fleet` is a provisional source-alpha working name. This repository makes no trademark claim to the name, and stable package or binary publication under Fleet namespaces is deferred until the owner completes the public name decision.
 
 ## Security and privacy
 
 Fleet is local-first and has no intended telemetry by default. It can still log
-local metadata such as workspace paths, local URLs, session labels, process
-command lines, and editor state. Scrub logs and review artifacts before sharing
-them publicly.
+local metadata such as workspace paths, local URLs, session labels, process command lines, and editor state. Scrub logs and review artifacts before sharing them publicly.
 
 Local source-alpha runtime data lives under `~/.fleet/run` and `~/.fleet/mux`
 unless `FLEET_RUNTIME_DIR` or `FLEET_MUX_DIR` is set. Manual cleanup is
