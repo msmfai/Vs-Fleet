@@ -101,7 +101,8 @@ Decision record status: $status
 
 ### 8. Contribution Intake
 
-- [x] Accept small focused PRs under the chosen project license using the PR template certification.
+- [ ] Accept small focused PRs under the chosen project license using the PR template certification.
+- [x] Require DCO sign-off.
 - [ ] Other: \`TODO\`
 
 ### 9. Public CI Evidence
@@ -234,6 +235,7 @@ write_record "$clean_source" APPROVED clean source undecided
 expect_pass "approved clean source-only record" "$clean_source"
 expect_output "approved clean source-only record" 'Release readiness: OWNER DECISIONS COMPLETE'
 expect_output "approved clean source-only record" 'FLEET_RELEASE_HISTORY_REF=public-alpha ./scripts/release-check.sh'
+expect_output "approved clean source-only record" 'Contribution intake: require DCO sign-off'
 
 current_source="$TMPDIR/current-source.md"
 write_record "$current_source" APPROVED current source undecided

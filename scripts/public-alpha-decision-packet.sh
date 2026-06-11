@@ -151,11 +151,12 @@ fi
 
 echo
 echo "Recommended alpha defaults to review:"
-echo "- License: MIT OR Apache-2.0, unless you deliberately want network copyleft."
+echo "- License: MIT OR Apache-2.0 for source alpha; reserve AGPL-3.0-only plus a commercial exception for a future CLI/hosted-control-plane trigger."
 echo "- History: cleaned/squashed first public branch."
 echo "- Scope: local macOS host plus local code serve-web workflow only."
 echo "- Distribution: source-only alpha."
 echo "- CI: GitHub Actions green on the exact public commit."
+echo "- Contribution intake: require DCO sign-off; no CLA for source alpha unless future commercial exceptions or proprietary relicensing become a goal."
 echo "- Support: best-effort alpha support only."
 echo "- Versioning: alpha pre-release tags only; no stable compatibility promise."
 echo "- Community intake: scoped public bug and alpha-feedback issues only; no blank issues."

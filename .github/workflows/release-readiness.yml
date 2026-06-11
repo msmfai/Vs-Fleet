@@ -30,6 +30,12 @@ jobs:
       - name: License decision gate self-test
         run: ./scripts/test-license-decision-check.sh
 
+      - name: License intent gate self-test
+        run: ./scripts/test-license-intent-check.sh
+
+      - name: DCO sign-off gate self-test
+        run: ./scripts/test-dco-signoff.sh
+
       - name: Namespace decision gate self-test
         run: ./scripts/test-namespace-decision-check.sh
 
@@ -131,6 +137,9 @@ jobs:
 
       - name: Documentation link gate
         run: ./scripts/check-doc-links.sh
+
+      - name: License intent gate
+        run: ./scripts/check-license-intent.sh
 
       - name: Public tree size gate
         run: ./scripts/check-public-tree-size.sh

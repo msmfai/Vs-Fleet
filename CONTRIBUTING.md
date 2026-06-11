@@ -24,15 +24,23 @@ The contributor is responsible for the submitted code, tests, and provenance.
 
 ## Contribution licensing
 
-This section must be finalized before accepting outside code contributions.
-Until then, contributors should assume that unsolicited code PRs may be deferred
-or closed.
+Outside code contributions require Developer Certificate of Origin (DCO)
+sign-off. Add a `Signed-off-by` line to every commit:
 
-Recommended policy once the license is chosen:
+```text
+Signed-off-by: Your Name <your.email@example.com>
+```
+
+Use `git commit -s` to add it automatically.
 
 - Contributors certify that they have the right to submit their work.
 - Contributions are licensed under the same license as the project.
-- A Developer Certificate of Origin sign-off is sufficient; no CLA by default.
+- No Contributor License Agreement (no CLA) is required for source alpha.
+
+A DCO does not assign copyright and does not preserve commercial exception or
+future proprietary relicensing rights over contributor-owned code. The project
+must revisit the CLA decision before accepting outside code if that becomes a
+goal.
 
 ## Local checks
 

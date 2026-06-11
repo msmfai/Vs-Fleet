@@ -16,14 +16,16 @@ prep work guessed.
 Choose one and then apply it to `LICENSE`, Rust manifests, npm manifests, and
 lockfiles.
 
-- [ ] MIT OR Apache-2.0 dual license.
+- [x] MIT OR Apache-2.0 dual license.
 - [ ] MIT only.
 - [ ] Apache-2.0 only.
 - [ ] AGPL-3.0-only.
 - [ ] Other: `TODO`
 
 Current default recommendation: MIT OR Apache-2.0 for a permissive Rust-friendly
-alpha, unless you deliberately want network copyleft.
+alpha. Keep reusable library/API crates permissive; reserve AGPL-3.0-only plus
+a commercial exception as a future CLI/hosted-control-plane contingency only
+after a concrete monetization trigger.
 
 ### 2. Public History
 
@@ -114,12 +116,13 @@ Choose how to handle first outside PRs after the license is applied.
 
 - [ ] Accept small focused PRs under the chosen project license using the PR
   template certification.
-- [ ] Require DCO sign-off.
+- [x] Require DCO sign-off.
 - [ ] Keep code PRs closed; accept issues and docs feedback only.
 - [ ] Other: `TODO`
 
-Current default recommendation: accept small focused PRs only after the license
-is applied; no CLA for alpha.
+Current default recommendation: require DCO sign-off for outside code
+contributions; no CLA for source alpha. Revisit CLA before accepting code if
+commercial exceptions or proprietary relicensing become a goal.
 
 ### 9. Public CI Evidence
 

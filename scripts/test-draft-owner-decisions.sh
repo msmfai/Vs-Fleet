@@ -20,6 +20,7 @@ for pattern in \
   '^\| GitHub org/user \| example \|$' \
   '^\| GitHub repo name \| vs-fleet \|$' \
   '^- \[x\] Source-only alpha\.' \
+  '^- \[x\] Require DCO sign-off\.$' \
   '^- \[x\] `Fleet` name and current icon are alpha placeholders\.$' \
   '^- \[x\] Alpha pre-release tags only\.' \
   '^- \[x\] Open public issues only for scoped bug reports and alpha feedback;' \
