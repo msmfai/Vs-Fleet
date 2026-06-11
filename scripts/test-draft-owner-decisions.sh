@@ -96,4 +96,16 @@ if "$ROOT/scripts/draft-owner-decisions.sh" 'bad`owner' repo >"$TMPDIR/bad.out" 
   exit 1
 fi
 
+if "$ROOT/scripts/draft-owner-decisions.sh" 'bad owner' repo >"$TMPDIR/bad-owner-syntax.out" 2>&1; then
+  echo "FAIL: invalid GitHub owner syntax should be rejected" >&2
+  cat "$TMPDIR/bad-owner-syntax.out" >&2
+  exit 1
+fi
+
+if "$ROOT/scripts/draft-owner-decisions.sh" example 'bad/repo' >"$TMPDIR/bad-repo-syntax.out" 2>&1; then
+  echo "FAIL: invalid GitHub repo syntax should be rejected" >&2
+  cat "$TMPDIR/bad-repo-syntax.out" >&2
+  exit 1
+fi
+
 echo "Owner decision draft tests passed."

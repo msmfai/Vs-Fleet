@@ -28,6 +28,16 @@ if printf '%s\n%s\n' "$github_owner" "$github_repo" | rg -q '`|[[:cntrl:]]'; the
   exit 1
 fi
 
+if [[ ! "$github_owner" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]]; then
+  echo "FAIL: GitHub owner must use letters, numbers, or single hyphens with no spaces, slashes, or leading/trailing hyphen" >&2
+  exit 1
+fi
+
+if [[ ! "$github_repo" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "FAIL: GitHub repo must use letters, numbers, dots, underscores, or hyphens with no spaces or slashes" >&2
+  exit 1
+fi
+
 write_draft() {
   cat <<EOF
 # Owner Decision Record
