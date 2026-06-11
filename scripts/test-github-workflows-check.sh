@@ -89,6 +89,7 @@ jobs:
       - run: ./scripts/test-public-branch-evidence-check.sh
       - run: ./scripts/test-generate-public-branch-evidence.sh
       - run: ./scripts/test-dependency-review-runner.sh
+      - run: ./scripts/test-release-notes-check.sh
       - run: ./scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md
       - run: ./scripts/check-owner-release-approval.sh docs/release/OWNER_RELEASE_APPROVAL.md
       - run: ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md
@@ -196,5 +197,10 @@ no_dependency_runner="$TMPDIR/no-dependency-runner.yml"
 write_release "$no_dependency_runner"
 perl -0pi -e 's/\n      - run: \.\/scripts\/test-dependency-review-runner\.sh\n//' "$no_dependency_runner"
 expect_fail "Release Readiness must keep dependency review runner self-test" "$ci" "$no_dependency_runner"
+
+no_release_notes="$TMPDIR/no-release-notes.yml"
+write_release "$no_release_notes"
+perl -0pi -e 's/\n      - run: \.\/scripts\/test-release-notes-check\.sh\n//' "$no_release_notes"
+expect_fail "Release Readiness must keep release notes self-test" "$ci" "$no_release_notes"
 
 echo "GitHub workflow check tests passed."

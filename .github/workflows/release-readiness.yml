@@ -138,6 +138,9 @@ jobs:
       - name: Release hygiene gate self-test
         run: ./scripts/test-release-check.sh
 
+      - name: Release notes gate self-test
+        run: ./scripts/test-release-notes-check.sh
+
       - name: History exposure gate
         run: ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md
 
