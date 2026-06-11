@@ -20,7 +20,7 @@ if ! rg -q '^Decision record status: APPROVED$' "$owner_record"; then
 fi
 
 security_block="$(
-  sed -n '/^### 6\. Security Reporting Channel$/,/^### 7\. Contribution Intake$/p' "$owner_record"
+  sed -n '/^### 7\. Security Reporting Channel$/,/^### 8\. Contribution Intake$/p' "$owner_record"
 )"
 
 checked_count="$(printf '%s\n' "$security_block" | rg -c '^- \[x\] ' || true)"

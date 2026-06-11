@@ -26,7 +26,7 @@ if ! rg -q '^Decision record status: APPROVED$' "$owner_record"; then
 fi
 
 contribution_block="$(
-  sed -n '/^### 7\. Contribution Intake$/,/^### 8\. Public CI Evidence$/p' "$owner_record"
+  sed -n '/^### 8\. Contribution Intake$/,/^### 9\. Public CI Evidence$/p' "$owner_record"
 )"
 
 checked_count="$(printf '%s\n' "$contribution_block" | rg -c '^- \[x\] ' || true)"

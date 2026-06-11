@@ -19,7 +19,7 @@ Decision record status: $status
 
 ## Required Before Public GitHub Visibility
 
-### 10. Dependency Review Evidence
+### 11. Dependency Review Evidence
 
 - [$([ "$checked" = "run" ] && echo x || echo ' ')] Run the dependency review commands in \`docs/release/DEPENDENCY_REVIEW.md\`
   and record findings in the release notes.

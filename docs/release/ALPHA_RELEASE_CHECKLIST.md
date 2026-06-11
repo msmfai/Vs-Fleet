@@ -27,6 +27,8 @@ closed or explicitly accepted.
 - [ ] Fill `docs/release/OWNER_DECISION_RECORD.md` for required owner choices.
 - [ ] Choose the supported source-alpha scope and run
   `./scripts/check-alpha-scope-decision.sh`.
+- [ ] Choose the editor server licensing boundary and run
+  `./scripts/check-editor-server-boundary-decision.sh`.
 - [x] Decide whether the public root README is a product README or an
   engineering spec, then make the first screen match that decision.
 - [x] Add `SECURITY.md` with supported versions and report channel.
@@ -110,6 +112,10 @@ closed or explicitly accepted.
 - `scripts/check-alpha-scope-decision.sh` validates that the approved source
   alpha scope matches the README, quickstart, architecture overview, and release
   notes template.
+- `scripts/check-editor-server-boundary-decision.sh` validates that the
+  approved editor server boundary matches public docs, so the source alpha does
+  not imply Fleet redistributes Microsoft's VS Code Server or Marketplace
+  components.
 - `scripts/check-distribution-decision.sh` validates that the approved
   distribution scope matches source-only package fences, release docs, and any
   binary release process required for app-bundle distribution.

@@ -16,7 +16,7 @@ Decision record status: $status
 
 ## Required Before Public GitHub Visibility
 
-### 9. Privacy And Telemetry Posture
+### 10. Privacy And Telemetry Posture
 
 - [$([ "$checked" = "local" ] && echo x || echo ' ')] No telemetry by default. Local logs and artifacts may contain workspace
   paths, local URLs, session labels, process command lines, and editor state;
@@ -25,7 +25,7 @@ Decision record status: $status
   visibility.
 - [$([ "$checked" = "other" ] && echo x || echo ' ')] Other: \`Private deployment only\`
 
-### 10. Dependency Review Evidence
+### 11. Dependency Review Evidence
 EOF
 }
 

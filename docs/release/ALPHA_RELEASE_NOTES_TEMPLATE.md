@@ -55,6 +55,8 @@ Record exact commands and where they ran.
 
 ## Security And Privacy Notes
 
+- Editor server boundary: user's local `code serve-web` only; Fleet does not
+  redistribute Microsoft's VS Code Server.
 - Fleet is local-first and has no intended telemetry by default.
 - Logs and artifacts can contain workspace paths, local URLs, session labels,
   process command lines, and editor state.

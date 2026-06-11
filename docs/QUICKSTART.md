@@ -17,8 +17,9 @@ and `UNLICENSED` is removed from the package metadata. See
 - Git.
 
 Fleet's supported alpha workflow uses the user's local `code serve-web` install.
-Fleet does not publish, host, or redistribute a VS Code Server binary in this
-source-only alpha path.
+Fleet does not download, bundle, host, or redistribute Microsoft's VS Code
+Server, Microsoft Marketplace extensions, or Microsoft remote extensions in
+this source-only alpha path.
 
 ## Build
 

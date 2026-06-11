@@ -61,12 +61,13 @@ for section in \
   "### 1. License" \
   "### 2. Public History" \
   "### 4. Alpha Scope" \
-  "### 5. Distribution Scope" \
-  "### 6. Security Reporting Channel" \
-  "### 7. Contribution Intake" \
-  "### 8. Public CI Evidence" \
-  "### 9. Privacy And Telemetry Posture" \
-  "### 10. Dependency Review Evidence"
+  "### 5. Editor Server Licensing Boundary" \
+  "### 6. Distribution Scope" \
+  "### 7. Security Reporting Channel" \
+  "### 8. Contribution Intake" \
+  "### 9. Public CI Evidence" \
+  "### 10. Privacy And Telemetry Posture" \
+  "### 11. Dependency Review Evidence"
 do
   if ! block="$(section_block "$required_block" "$section")"; then
     echo "FAIL: owner decision record missing required section: $section"
@@ -90,12 +91,12 @@ if [ -n "$namespace_todos" ]; then
   missing_required=1
 fi
 
-if distribution_block="$(section_block "$required_block" "### 5. Distribution Scope")"; then
+if distribution_block="$(section_block "$required_block" "### 6. Distribution Scope")"; then
   if printf '%s\n' "$distribution_block" | rg -q '^- \[x\] Source plus|^- \[x\] Other:'; then
     for section in \
-      "### 11. macOS Signing and Notarization" \
-      "### 12. Update Channel" \
-      "### 13. Branding Stability"
+      "### 12. macOS Signing and Notarization" \
+      "### 13. Update Channel" \
+      "### 14. Branding Stability"
     do
       if ! block="$(section_block "$binary_block" "$section")"; then
         echo "FAIL: owner decision record missing binary distribution section: $section"

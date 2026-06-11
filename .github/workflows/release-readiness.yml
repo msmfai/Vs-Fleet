@@ -33,6 +33,9 @@ jobs:
       - name: Alpha scope decision gate self-test
         run: ./scripts/test-alpha-scope-decision-check.sh
 
+      - name: Editor server boundary gate self-test
+        run: ./scripts/test-editor-server-boundary-decision-check.sh
+
       - name: Distribution decision gate self-test
         run: ./scripts/test-distribution-decision-check.sh
 
