@@ -27,6 +27,8 @@ closed or explicitly accepted.
   command lines, raw logs, or failed eval output.
 - [ ] Run `./scripts/history-release-check.sh` and either publish cleaned
   history or explicitly accept current branch history exposure.
+- [ ] Run dependency review for the exact public branch, or explicitly accept
+  skipping it in the owner decision record.
 - [x] State the alpha support boundary: best-effort, breaking changes expected,
   not production-ready.
 - [ ] Confirm package namespaces before publishing anything to crates.io,
@@ -43,7 +45,6 @@ closed or explicitly accepted.
 - [x] Add a code of conduct if you want public contributions.
 - [x] Add a manual release-readiness CI workflow for the exact public ref.
 - [ ] Run CI on the exact public branch after artifact cleanup.
-- [ ] Run dependency review for the exact public branch.
 
 ## Current evidence from the repository
 

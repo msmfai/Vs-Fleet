@@ -101,12 +101,26 @@ Choose the CI gate for the public branch.
 Current default recommendation: require GitHub Actions green on the exact public
 branch/commit.
 
+### 8. Dependency Review Evidence
+
+Choose what dependency evidence is required for the exact public commit.
+
+- [ ] Run the dependency review commands in `docs/release/DEPENDENCY_REVIEW.md`
+  and record findings in the release notes.
+- [ ] Publish the first source alpha without dependency review and accept
+  advisory/license review risk.
+- [ ] Other: `TODO`
+
+Current default recommendation: run and record the dependency review before
+public visibility; do not defer it unless the release is deliberately
+invite-only.
+
 ## Required Before Binary Distribution
 
 These do not block a source-only alpha, but they must be decided before any
 public app bundle.
 
-### 8. macOS Signing and Notarization
+### 9. macOS Signing and Notarization
 
 - [ ] No public binaries until Developer ID signing and notarization are
   automated.
@@ -116,7 +130,7 @@ public app bundle.
 Current default recommendation: no public binaries until signing and notarization
 are automated.
 
-### 9. Update Channel
+### 10. Update Channel
 
 - [ ] No auto-update in alpha.
 - [ ] GitHub Releases only.
@@ -126,7 +140,7 @@ are automated.
 Current default recommendation: no auto-update in alpha; GitHub Releases only
 for source tags.
 
-### 10. Branding Stability
+### 11. Branding Stability
 
 - [ ] `Fleet` name and current icon are alpha placeholders.
 - [ ] `Fleet` name is stable, icon may change.

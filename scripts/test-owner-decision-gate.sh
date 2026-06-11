@@ -83,19 +83,24 @@ Decision record status: $status
 - [x] Require GitHub Actions green on the exact branch/commit before public visibility.
 - [ ] Other: \`TODO\`
 
+### 8. Dependency Review Evidence
+
+- [x] Run the dependency review commands in \`docs/release/DEPENDENCY_REVIEW.md\` and record findings in the release notes.
+- [ ] Other: \`TODO\`
+
 ## Required Before Binary Distribution
 
-### 8. macOS Signing and Notarization
+### 9. macOS Signing and Notarization
 
 - [$signing_checked] No public binaries until Developer ID signing and notarization are automated.
 - [ ] Other: \`TODO\`
 
-### 9. Update Channel
+### 10. Update Channel
 
 - [$update_checked] No auto-update in alpha.
 - [ ] Other: \`TODO\`
 
-### 10. Branding Stability
+### 11. Branding Stability
 
 - [$branding_checked] \`Fleet\` name and current icon are alpha placeholders.
 - [ ] Other: \`TODO\`
