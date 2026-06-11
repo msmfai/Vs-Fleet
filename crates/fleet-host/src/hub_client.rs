@@ -217,6 +217,17 @@ fn push(
     rendered: RenderedInbox,
     notification_outcomes: &[NotificationOutcome],
 ) {
+    let previous = shared.lock().ok().map(|g| g.clone());
+    if !should_emit_inbox_update(previous.as_ref(), &rendered, notification_outcomes) {
+        tracing::debug!(
+            connected = rendered.connected,
+            tabs = rendered.tabs.len(),
+            waiting = rendered.waiting_count,
+            "unchanged inbox payload skipped"
+        );
+        return;
+    }
+
     // Observability: the window renders from this exact payload, so logging it
     // proves (without needing to inspect the webview) what the window shows.
     let summary: Vec<String> = rendered
@@ -231,7 +242,6 @@ fn push(
         "inbox → window: [{}]",
         summary.join(", ")
     );
-    let previous = shared.lock().ok().map(|g| g.clone());
     log_notification_outcomes(notification_outcomes);
     deliver_notification_outcomes(app, notification_outcomes);
     update_window_indicators(app, previous.as_ref(), &rendered, notification_outcomes);
@@ -239,6 +249,19 @@ fn push(
         *g = rendered.clone();
     }
     let _ = app.emit("inbox", rendered);
+}
+
+fn should_emit_inbox_update(
+    previous: Option<&RenderedInbox>,
+    rendered: &RenderedInbox,
+    notification_outcomes: &[NotificationOutcome],
+) -> bool {
+    if previous != Some(rendered) {
+        return true;
+    }
+    notification_outcomes
+        .iter()
+        .any(|outcome| !matches!(outcome, NotificationOutcome::Noop))
 }
 
 fn update_window_indicators(
@@ -528,6 +551,27 @@ mod tests {
         #[cfg(target_os = "macos")]
         assert_eq!(update.badge_label, None);
         assert_eq!(update.attention, AttentionUpdate::None);
+    }
+
+    #[test]
+    fn repeated_inbox_update_is_not_emitted_to_webview() {
+        let previous = inbox(0, true);
+        let rendered = inbox(0, true);
+
+        assert!(!should_emit_inbox_update(Some(&previous), &rendered, &[]));
+        assert!(!should_emit_inbox_update(
+            Some(&previous),
+            &rendered,
+            &[NotificationOutcome::Noop]
+        ));
+    }
+
+    #[test]
+    fn changed_inbox_update_is_emitted_to_webview() {
+        let previous = inbox(0, true);
+        let rendered = inbox(1, true);
+
+        assert!(should_emit_inbox_update(Some(&previous), &rendered, &[]));
     }
 
     #[test]
