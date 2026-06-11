@@ -45,6 +45,11 @@ for required in \
   CONTRIBUTING.md \
   SUPPORT.md \
   CODE_OF_CONDUCT.md \
+  docs/QUICKSTART.md \
+  docs/ARCHITECTURE.md \
+  docs/release/RELEASE_PROCESS.md \
+  docs/release/DEPENDENCY_REVIEW.md \
+  .github/workflows/release-readiness.yml \
   .github/PULL_REQUEST_TEMPLATE.md \
   .github/ISSUE_TEMPLATE/bug_report.yml \
   .github/ISSUE_TEMPLATE/alpha_feedback.yml
