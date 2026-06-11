@@ -59,6 +59,8 @@ closed or explicitly accepted.
 - [ ] Choose the support commitment in
   `docs/release/OWNER_DECISION_RECORD.md` and run
   `./scripts/check-support-decision.sh`.
+- [ ] Choose whether the `Fleet` name and icon are alpha placeholders or stable
+  public assets in `docs/release/OWNER_DECISION_RECORD.md`.
 - [ ] Draft GitHub pre-release notes from
   `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` and remove all placeholders.
 - [ ] Run the release-notes checker with the expected commit:
@@ -141,7 +143,7 @@ closed or explicitly accepted.
   redacted commit/path/line findings, and passes on the current scanned refs.
 - `docs/release/OWNER_DECISION_RECORD.md` is present but still marked
   `PENDING`; `scripts/release-check.sh` requires `APPROVED` before public
-  visibility.
+  visibility and now requires a branding stability choice before public alpha.
 - `scripts/check-license-decision.sh` validates that the approved owner license
   choice matches the root `LICENSE`, Rust package metadata, npm package
   metadata, and package lockfile root metadata.
@@ -174,6 +176,8 @@ closed or explicitly accepted.
   results or an accepted skipped-review risk.
 - `scripts/check-support-decision.sh` validates that the approved support
   commitment matches `SUPPORT.md`, the README, and the release notes template.
+- The release-notes checker requires a concrete branding line, so the first
+  GitHub pre-release cannot leave name/icon stability as an unresolved choice.
 - Root `README.md` is now a public alpha front door; the long engineering spec
   was moved to `docs/ENGINEERING_SPEC.md`.
 - `crates/fleet-host/artifacts/**` is now a local ignored artifact area; raw

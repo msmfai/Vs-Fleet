@@ -26,7 +26,7 @@ if ! rg -q '^Decision record status: APPROVED$' "$owner_record"; then
 fi
 
 support_block="$(
-  sed -n '/^### 12\. Support Commitment$/,/^## Required Before Binary Distribution$/p' "$owner_record"
+  sed -n '/^### 12\. Support Commitment$/,/^### 13\. Branding Stability$/p' "$owner_record"
 )"
 
 checked_count="$(printf '%s\n' "$support_block" | rg -c '^- \[x\] ' || true)"

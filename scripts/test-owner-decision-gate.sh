@@ -9,7 +9,8 @@ write_record() {
   local file=$1
   local status=$2
   local distribution=$3
-  local binary=$4
+  local branding=$4
+  local binary=$5
 
   local source_checked=' '
   local unsigned_checked=' '
@@ -23,10 +24,16 @@ write_record() {
     *) echo "unknown distribution fixture: $distribution" >&2; exit 2 ;;
   esac
 
+  if [ "$branding" = "decided" ]; then
+    branding_checked='x'
+  elif [ "$branding" != "undecided" ]; then
+    echo "unknown branding fixture: $branding" >&2
+    exit 2
+  fi
+
   if [ "$binary" = "decided" ]; then
     signing_checked='x'
     update_checked='x'
-    branding_checked='x'
   elif [ "$binary" != "undecided" ]; then
     echo "unknown binary fixture: $binary" >&2
     exit 2
@@ -116,21 +123,21 @@ Decision record status: $status
   release lines.
 - [ ] Other: \`TODO\`
 
+### 13. Branding Stability
+
+- [$branding_checked] \`Fleet\` name and current icon are alpha placeholders.
+- [ ] Other: \`TODO\`
+
 ## Required Before Binary Distribution
 
-### 13. macOS Signing and Notarization
+### 14. macOS Signing and Notarization
 
 - [$signing_checked] No public binaries until Developer ID signing and notarization are automated.
 - [ ] Other: \`TODO\`
 
-### 14. Update Channel
+### 15. Update Channel
 
 - [$update_checked] No auto-update in alpha.
-- [ ] Other: \`TODO\`
-
-### 15. Branding Stability
-
-- [$branding_checked] \`Fleet\` name and current icon are alpha placeholders.
 - [ ] Other: \`TODO\`
 EOF
 }
@@ -168,24 +175,29 @@ expect_fail_contains() {
 }
 
 source_only="$TMPDIR/source-only.md"
-write_record "$source_only" APPROVED source undecided
+write_record "$source_only" APPROVED source decided undecided
 expect_pass "source-only alpha does not require binary-only decisions" "$source_only"
 
+branding_missing="$TMPDIR/branding-missing.md"
+write_record "$branding_missing" APPROVED source undecided undecided
+expect_fail_contains "source-only alpha requires a branding decision" "$branding_missing" \
+  "### 13\\. Branding Stability must have exactly one checked choice; found 0"
+
 binary_missing="$TMPDIR/binary-missing.md"
-write_record "$binary_missing" APPROVED unsigned undecided
-expect_fail "public app bundle requires signing/update/branding decisions" "$binary_missing"
+write_record "$binary_missing" APPROVED unsigned decided undecided
+expect_fail "public app bundle requires signing/update decisions" "$binary_missing"
 
 binary_decided="$TMPDIR/binary-decided.md"
-write_record "$binary_decided" APPROVED unsigned decided
+write_record "$binary_decided" APPROVED unsigned decided decided
 expect_pass "public app bundle passes after binary-only decisions are recorded" "$binary_decided"
 
 pending="$TMPDIR/pending.md"
-write_record "$pending" PENDING source undecided
+write_record "$pending" PENDING source decided undecided
 expect_fail_contains "pending records are rejected" "$pending" \
   "owner decision record is not approved"
 
 pending_missing="$TMPDIR/pending-missing.md"
-write_record "$pending_missing" PENDING source undecided
+write_record "$pending_missing" PENDING source decided undecided
 perl -0pi -e 's/- \[x\] MIT only\./- [ ] MIT only./' "$pending_missing"
 expect_fail_contains "pending records still report missing choices" "$pending_missing" \
   "### 1\\. License must have exactly one checked choice; found 0"

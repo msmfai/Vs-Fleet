@@ -24,6 +24,7 @@ runbook:
 - Privacy/logging posture.
 - Dependency review evidence.
 - Support commitment.
+- Branding stability for the public alpha name and icon.
 
 ## Public Visibility
 

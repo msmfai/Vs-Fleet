@@ -26,19 +26,19 @@ Decision record status: $status
 
 ### 7. Security Reporting Channel
 
+### 13. Branding Stability
+
+- [x] \`Fleet\` name and current icon are alpha placeholders.
+
 ## Required Before Binary Distribution
 
-### 13. macOS Signing and Notarization
+### 14. macOS Signing and Notarization
 
 - [$([ "$checked" = "source" ] && echo ' ' || echo x)] Publish unsigned binaries and document Gatekeeper warnings.
 
-### 14. Update Channel
+### 15. Update Channel
 
 - [$([ "$checked" = "source" ] && echo ' ' || echo x)] No auto-update in alpha.
-
-### 15. Branding Stability
-
-- [$([ "$checked" = "source" ] && echo ' ' || echo x)] \`Fleet\` name and current icon are alpha placeholders.
 EOF
 }
 

@@ -60,6 +60,8 @@ Do not publish a public alpha until these are true:
   and npm surfaces.
 - `./scripts/check-support-decision.sh docs/release/OWNER_DECISION_RECORD.md SUPPORT.md .`
   passes.
+- Branding stability for the `Fleet` name and icon is explicitly selected in
+  `docs/release/OWNER_DECISION_RECORD.md`.
 - Dependency review has been run for the exact public commit, or the approved
   owner decision record explicitly accepts publishing without it.
 - `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` records the exact commit,
@@ -186,8 +188,9 @@ Do not publish a public alpha until these are true:
 
 13. Draft release notes from
    [ALPHA_RELEASE_NOTES_TEMPLATE.md](ALPHA_RELEASE_NOTES_TEMPLATE.md). Replace
-   every placeholder with exact commit, scope, verification, dependency review,
-   history exposure, security, support, and known-rough-edge evidence.
+   every placeholder with exact commit, scope, branding status, verification,
+   dependency review, history exposure, security, support, and known-rough-edge
+   evidence.
 
 14. Validate the drafted release notes:
 

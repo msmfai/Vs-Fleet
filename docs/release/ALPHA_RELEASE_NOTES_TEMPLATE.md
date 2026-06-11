@@ -10,6 +10,7 @@ publishing.
 - Commit: `[full commit SHA]`
 - Date: `[YYYY-MM-DD]`
 - Distribution: `[source-only | source plus approved binary scope]`
+- Branding: `[alpha placeholders | Fleet name stable, icon may change | name and icon stable]`
 - Owner decision record: `[link to approved OWNER_DECISION_RECORD.md at this commit]`
 
 ## Alpha Scope
