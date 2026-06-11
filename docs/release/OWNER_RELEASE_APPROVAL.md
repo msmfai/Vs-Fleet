@@ -66,8 +66,10 @@ Use these as the recommended source-alpha choices:
 - `GITHUB_PUBLICATION_EVIDENCE.md` is `PASS` for the exact repository settings.
 - `DEPENDENCY_REVIEW_EVIDENCE.md` records dependency review for the exact public
   commit, unless the owner explicitly accepts skipping it.
-- `scripts/release-check.sh` passes with `FLEET_RELEASE_HISTORY_REF` set to the
-  public branch if cleaned history is selected.
+- `scripts/check-public-release-branch.sh <public-branch> <source-ref-sha>`
+  passes if cleaned history is selected. If the owner explicitly accepts current
+  branch history exposure instead, `scripts/release-check.sh` passes on the
+  current branch.
 
 ## Mechanical Approval Path
 
