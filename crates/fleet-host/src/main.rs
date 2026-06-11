@@ -57,6 +57,7 @@ fn host_log_path() -> PathBuf {
     embedded_hub_runtime_dir().join("fleet-host.log")
 }
 
+#[cfg(test)]
 fn host_log_path_from_runtime_dir(runtime_dir: PathBuf) -> PathBuf {
     runtime_dir.join("fleet-host.log")
 }
