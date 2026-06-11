@@ -21,6 +21,12 @@ write_valid_notes() {
 - Branding: Fleet name and icon are alpha placeholders
 - Owner decision record: docs/release/OWNER_DECISION_RECORD.md at this commit
 
+## Alpha Readiness Warning
+
+Fleet is too rough for a broad open-source launch, package announcement, binary
+distribution, or stable-project presentation. This release is a narrow
+source-only alpha for technical review of the supported local macOS workflow.
+
 ## Alpha Scope
 
 This alpha is intended for local macOS source builds and local code serve-web
@@ -157,6 +163,11 @@ missing="$TMPDIR/missing.md"
 write_valid_notes "$missing"
 perl -0pi -e 's/\n## Verification\n/\n/' "$missing"
 expect_fail "missing required section is rejected" "$missing"
+
+missing_warning="$TMPDIR/missing-warning.md"
+write_valid_notes "$missing_warning"
+perl -0pi -e 's/\n## Alpha Readiness Warning\n.*?\n## Alpha Scope\n/\n## Alpha Scope\n/s' "$missing_warning"
+expect_fail "missing alpha readiness warning is rejected" "$missing_warning"
 
 missing_secret="$TMPDIR/missing-secret.md"
 write_valid_notes "$missing_secret"

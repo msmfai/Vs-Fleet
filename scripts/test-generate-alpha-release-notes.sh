@@ -141,7 +141,9 @@ for pattern in \
   '^- Distribution: source-only$' \
   '^- Project license: MIT OR Apache-2.0$' \
   '^- Vulnerability reporting path: GitHub Private Vulnerability Reporting enabled$' \
-  '^- History exposure audit: cleaned public history; public root commit '
+  '^- History exposure audit: cleaned public history; public root commit ' \
+  '^Fleet is too rough for a broad open-source launch, package announcement, binary$' \
+  '^source-only alpha for technical review of the supported local macOS workflow\.$'
 do
   if ! rg -q "$pattern" "$notes"; then
     echo "FAIL: generated notes missing pattern: $pattern" >&2

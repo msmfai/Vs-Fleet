@@ -13,6 +13,12 @@ publishing.
 - Branding: `[alpha placeholders | Fleet name stable, icon may change | name and icon stable]`
 - Owner decision record: `[link to approved OWNER_DECISION_RECORD.md at this commit]`
 
+## Alpha Readiness Warning
+
+Fleet is too rough for a broad open-source launch, package announcement, binary
+distribution, or stable-project presentation. This release is a narrow
+source-only alpha for technical review of the supported local macOS workflow.
+
 ## Alpha Scope
 
 This alpha is intended for:

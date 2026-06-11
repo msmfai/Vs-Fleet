@@ -18,6 +18,7 @@ fail=0
 
 for heading in \
   "## Release" \
+  "## Alpha Readiness Warning" \
   "## Alpha Scope" \
   "## Supported Platform And Toolchain" \
   "## Roadmap And Non-Goals" \
@@ -79,6 +80,17 @@ fi
 
 if ! rg -qi 'macOS source build only|macOS source alpha only' "$file"; then
   echo "FAIL: release notes must state the supported macOS source-alpha platform"
+  fail=1
+fi
+
+if ! rg -qi 'too rough for a broad open-source launch' "$file" ||
+  ! rg -qi 'package announcement' "$file" ||
+  ! rg -qi 'binary' "$file" ||
+  ! rg -qi 'distribution' "$file" ||
+  ! rg -qi 'stable-project presentation|stable project presentation' "$file" ||
+  ! rg -qi 'narrow' "$file" ||
+  ! rg -qi 'source-only alpha' "$file"; then
+  echo "FAIL: release notes must plainly warn that this is too rough for broad launch and only a narrow source-only alpha"
   fail=1
 fi
 
