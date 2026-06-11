@@ -1,25 +1,17 @@
 # Contributing
 
-Fleet has a source-alpha license and contribution posture: `MIT OR Apache-2.0`,
-DCO sign-off, and no CLA for the alpha. Small issue reports, technical
-feedback, and focused patches are welcome during alpha. Broad outside code
-changes are triaged narrowly until the project has more maintainer capacity.
+Fleet is an experimental project licensed under MIT. Small issue reports,
+technical feedback, and focused patches are welcome. Large or speculative code
+changes are reviewed conservatively while the project is small.
 
 ## Before opening a pull request
 
-- Check `docs/release/PUBLIC_ALPHA_DECISIONS.md` for unresolved release
-  decisions.
 - Keep changes focused and tested.
-- Do not include generated build outputs, local logs, screenshots with private
-  data, credentials, or machine-specific paths.
+- Do not include generated build outputs, local logs, private screenshots,
+  credentials, or machine-specific paths.
 - Do not add dependencies without explaining why they are needed.
 
-## AI-assisted changes
-
-AI-assisted contributions are allowed only when the contributor has reviewed and understands the change, has the right to submit it under the project license, and does not include private prompts, private model transcripts, private logs, workspace paths, generated build outputs, raw logs, or machine-specific paths.
-The contributor is responsible for the submitted code, tests, and provenance.
-
-## Contribution licensing
+## Contribution Licensing
 
 Outside code contributions require Developer Certificate of Origin (DCO)
 sign-off. Add a `Signed-off-by` line to every commit:
@@ -31,15 +23,10 @@ Signed-off-by: Your Name <your.email@example.com>
 Use `git commit -s` to add it automatically.
 
 - Contributors certify that they have the right to submit their work.
-- Contributions are licensed under the same license as the project.
-- No Contributor License Agreement (no CLA) is required for source alpha.
+- Contributions are licensed under the MIT License.
+- No Contributor License Agreement is required.
 
-A DCO does not assign copyright and does not preserve commercial exception or
-future proprietary relicensing rights over contributor-owned code. The project
-must revisit the CLA decision before accepting outside code if that becomes a
-goal.
-
-## Local checks
+## Local Checks
 
 Common checks used in this repository:
 
@@ -47,8 +34,4 @@ Common checks used in this repository:
 cargo fmt --all -- --check
 cargo test --workspace --all-targets --all-features
 node --check crates/fleet-host/ui/main.js
-./scripts/release-check.sh
 ```
-
-The release check is expected to fail until the owner decision record and other
-public-alpha approval gates are complete.

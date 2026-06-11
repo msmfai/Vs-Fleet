@@ -13,12 +13,12 @@
 | 0.1 | First skeleton. v1-local scope frozen; remote as extension points. |
 | 1.0 | Full spec. Topology corrected to **phone-home registration** (sessions register into a Hub the client owns; the client does not dial out). Unit of tracking fixed as **a VS Code-Server environment ("session")**. Detection layer rewritten around confirmed research: Claude `Notification` **and** `PermissionRequest` hooks are broken in the VS Code extension UI; OSC 9/777 are dropped by the integrated terminal but recoverable via the **stable Shell Integration read-stream**; Codex **app-server JSON-RPC** is the authoritative Codex channel. Deployed environments standardized on **code-server/openvscode-server** (Microsoft VS Code Server licensing forbids the intended use). Host framework fixed as **Tauri**. Transport fixed as **WebSocket**. Durable identity fixed as **MQTT-style persistent sessions**. Wayland foreign-window focus marked impossible-to-guarantee. Competitive risk (VS Code **Agents window**) recorded. |
 
-## Related living docs
+## Related Docs
 
-- [North Star](../NORTH_STAR.md) - current dogfooding scope and architecture direction.
-- [Requirements](../REQUIREMENTS.md) - runtime/build dependencies and known open items.
-- [Research](../research/README.md) - source-controlled dossiers for upstream behavior
-  and Fleet design implications.
+- [Architecture](ARCHITECTURE.md) - current implementation architecture.
+- [Quickstart](QUICKSTART.md) - source build and run path.
+- [Research](../research/README.md) - source-controlled dossiers for upstream
+  behavior and Fleet design implications.
 
 ---
 
@@ -46,7 +46,7 @@ Fleet is a local-first **observability and orchestration layer for terminal-base
 ## 4. Design principles (override convenience)
 - **4.1 Observer, not owner.** The terminal stays a real terminal; keystrokes go straight to the agent.
 - **4.2 Local is the source of truth.** The Hub runs on the user's machine (or a small endpoint they control); all faces are clients of it.
-- **4.3 The protocol is the product.** The central artifact is the session-state protocol (§7). The sidebar is renderer #1. Every other face (CLI, tray, phone) consumes the same protocol with no Hub changes.
+- **4.3 The protocol is the product.** The central contract is the session-state protocol (§7). The sidebar is renderer #1. Every other face (CLI, tray, phone) consumes the same protocol with no Hub changes.
 - **4.4 Phone-home registration.** Environments register *into* the Hub; the client does not discover or dial out to environments. Deploy produces more registrants; it does not produce owned children with a special lifecycle.
 - **4.5 The editor is the OS.** Fleet relies on VS Code-family remote/server features to make a container or remote host's filesystem behave as a local workspace. The reporter runs wherever the VS Code Server runs, so local/container/remote are one detection codepath. Location is metadata (a glyph + attach hint), not a separate transport Fleet implements.
 - **4.6 Detection is source-side and out-of-band-first.** Do not depend on what a terminal *renders* or *forwards*. Detect from the agent's own signals (hooks, control protocol) delivered to the reporter directly. The in-editor terminal read-stream is a useful *additional* transport, not the foundation (§8).
@@ -61,7 +61,7 @@ Fleet is a local-first **observability and orchestration layer for terminal-base
 - **State** — `working | waiting | idle | done | error | dead` (§7.2).
 - **Urgency** — when `waiting`: `approval` (highest) | `question` | `idle-done` (lowest).
 - **Reporter** — the per-environment process that detects agent state and phones home to the Hub (§9).
-- **Hub** — the always-reachable endpoint that accepts registrations, holds canonical merged state, and serves faces (§10). Co-located with the client by default; relocatable per §10.2. (This is the artifact previously mislabeled "broker.")
+- **Hub** — the always-reachable endpoint that accepts registrations, holds canonical merged state, and serves faces (§10). Co-located with the client by default; relocatable per §10.2.
 - **Face / client / renderer** — any consumer of the Hub protocol (sidebar host app, CLI, tray, phone).
 
 ## 6. Architecture overview

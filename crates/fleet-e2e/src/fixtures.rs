@@ -14,7 +14,7 @@
 //! / completion markers. Keeping them as `const &str` (not generated) means a
 //! reviewer can read exactly what the agent "said".
 
-// ── Codex hook fixtures (PLAN S11–S13; default hooks-first path) ───────────────
+// ── Codex hook fixtures (the engineering spec; default hooks-first path) ───────────────
 
 /// Codex `SessionStart` — a thread opened. `session_id` is the durable `thread.id`.
 pub fn codex_session_start(thread: &str, cwd: &str) -> String {
@@ -63,7 +63,7 @@ pub fn codex_session_end(thread: &str, cwd: &str) -> String {
     format!(r#"{{"hook_event_name":"SessionEnd","session_id":"{thread}","cwd":"{cwd}"}}"#)
 }
 
-// ── Claude hook fixtures (PLAN S15–S17) ───────────────────────────────────────
+// ── Claude hook fixtures (the engineering spec) ───────────────────────────────────────
 
 /// Claude `SessionStart` — a session opened → idle.
 pub fn claude_session_start(session: &str, cwd: &str) -> String {

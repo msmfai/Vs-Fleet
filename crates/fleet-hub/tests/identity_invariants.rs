@@ -1,6 +1,4 @@
-//! Property / fuzz tests that **lock the three S6 durable-identity invariants**
-//! (PLAN S6, WORK_GRAPH §3 G1). These are the heavy-unit-test exit criteria for
-//! the IDENTITY node:
+//! Property / fuzz tests that lock the durable-identity invariants:
 //!
 //! 1. monotonic per-run `seq`, applied **idempotently** by `(durable_id, seq)`;
 //! 2. **ordered replay** by `seq` (last-writer-by-seq), not by arrival;

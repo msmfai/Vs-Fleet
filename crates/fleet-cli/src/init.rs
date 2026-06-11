@@ -38,7 +38,7 @@
 //!   the state before `fleet init`.
 //!
 //! # PLAN references
-//! - S14 (node INIT), PLAN §3 invariant 6 (reversible), §3 invariant 5
+//! - S14 , engineering spec §3 invariant 6 (reversible), §3 invariant 5
 //!   (confidence honesty), D10 (hooks-first), D14 (stable VSCode APIs only).
 
 use std::{
@@ -177,7 +177,7 @@ fn build_claude_hooks(reporter_socket: &Path) -> serde_json::Value {
     // and the hook type is embedded literally.
     //
     // The `|| true` ensures Claude never fails a hook relay error (observer,
-    // not owner — we must not break Claude's own flow, PLAN §3 invariant 3).
+    // not owner — we must not break Claude's own flow, engineering spec §3 invariant 3).
     let make_hook = |hook_type: &str| -> serde_json::Value {
         serde_json::json!({
             "hooks": [{
@@ -189,7 +189,7 @@ fn build_claude_hooks(reporter_socket: &Path) -> serde_json::Value {
                 // shape alone can't disambiguate Claude vs Codex), and terminate
                 // with a newline. `nc -U` delivers it to the reporter socket;
                 // `|| true` keeps Claude's own flow alive on any relay error
-                // (observer-not-owner, PLAN §3 invariant 3).
+                // (observer-not-owner, engineering spec §3 invariant 3).
                 "command": format!(
                     "printf 'claude %s\\n' \"$(cat | tr -d '\\r\\n')\" | nc -U {socket_path} 2>/dev/null || true",
                 ),
@@ -428,7 +428,7 @@ fn inject_codex_config(table: &mut toml::Table) -> bool {
         }
     }
 
-    // [tui] notifications = true — OSC9 corroboration channel (PLAN §2).
+    // [tui] notifications = true — OSC9 corroboration channel (engineering spec §2).
     {
         let tui = table
             .entry("tui")

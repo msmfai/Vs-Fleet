@@ -1,4 +1,4 @@
-// Fleet behaviour-suite — FROZEN CONTRACTS (§3 of PLAN.md).
+// Fleet behaviour-suite — FROZEN CONTRACTS (§3 of the local eval plan).
 //
 // This file is the shared contract reference for every `behaviours/*.mjs`. It
 // exports nothing executable — only JSDoc @typedefs so every track codes against

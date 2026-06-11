@@ -1,4 +1,4 @@
-//! Single-instance refusal at the daemon level (PLAN D2; G0: "lockfile/
+//! Single-instance refusal at the daemon level (the design;  "lockfile/
 //! single-instance").
 //!
 //! The `lockfile` unit tests prove the `InstanceLock` primitive. This test

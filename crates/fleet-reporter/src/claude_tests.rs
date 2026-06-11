@@ -1,4 +1,4 @@
-// Inline unit tests for the Claude detection adapter (PLAN S15 / node CLHOOK).
+// Inline unit tests for the Claude detection adapter.
 //
 // Included from `claude.rs` via `include!`. Covers: hook-event parsing (incl.
 // camelCase aliases + schema-drift tolerance), every modelled transition,

@@ -1,6 +1,6 @@
 //! The Hub server: tokio runtime, WebSocket listener (always) + unix-socket
 //! fast path (`cfg(unix)`), shared merge engine, subscribe→snapshot, delta
-//! broadcast (PLAN S2, D2, D7).
+//! broadcast (the engineering spec, D2, D7).
 //!
 //! Transport (D7): a WebSocket listener binds **always** (universal, cross-OS);
 //! on `cfg(unix)` a unix-domain socket also binds as the local fast path. Both
@@ -36,7 +36,7 @@ const BROADCAST_CAPACITY: usize = 1024;
 
 /// Shared Hub state handed to every connection task.
 ///
-/// State lives in a durable [`StateStore`] (PLAN S7, D3): every accepted reporter
+/// State lives in a durable [`StateStore`] (the engineering spec): every accepted reporter
 /// delta is appended to a SQLite event log **then** projected into memory and
 /// broadcast, so a Hub restart restores all sessions/runs from the log. Opening
 /// the store with an existing log replays it, restoring the projection before

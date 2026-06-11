@@ -3,8 +3,8 @@
 //! This crate is the single source of truth for everything that crosses the
 //! Hub↔reporter↔face boundary: the [`Session`]/[`AgentRun`] objects, the
 //! [`State`]/[`Urgency`]/[`Confidence`] enums, the Hub→face [`Event`]s, and the
-//! face→Hub [`Command`]s. It is transport-agnostic (WebSocket or unix socket;
-//! PLAN D7) and JSON-encoded (PLAN D6).
+//! face→Hub [`Command`]s. It is transport-agnostic (WebSocket or unix socket)
+//! and JSON-encoded.
 //!
 //! Locked design choices honored here:
 //! - **D6 — JSON wire format**: every type is `serde` JSON round-trippable.

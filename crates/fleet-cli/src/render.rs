@@ -3,7 +3,7 @@
 //! This module contains NO I/O, NO async, NO network — only deterministic
 //! transformations of protocol objects into renderable rows. This makes it
 //! straightforward to unit-test the full snapshot→delta→display pipeline without
-//! a live Hub. The G0 gate criterion ("CLI render-snapshot") is exercised here.
+//! a live Hub. The test criterion ("CLI render-snapshot") is exercised here.
 //!
 //! **Reducer contract:**
 //! - [`State`] is the mutable in-memory view owned by the CLI face.

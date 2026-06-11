@@ -1,4 +1,4 @@
-// Inline unit tests for the Codex detection adapter (PLAN S11–S13 / node CODEX).
+// Inline unit tests for the Codex detection adapter.
 //
 // Included from `codex.rs` via `include!`. Covers: hook-event parsing (incl.
 // camelCase aliases + schema-drift tolerance), every modelled transition, the

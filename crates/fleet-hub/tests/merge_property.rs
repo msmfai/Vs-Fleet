@@ -1,4 +1,4 @@
-//! Property test for the merge-engine rollup invariant (G0 gate criterion:
+//! Property test for the merge-engine rollup invariant (test criterion:
 //! "Hub merge-engine property test `rollup = most-urgent across runs`").
 //!
 //! Strategy: generate an arbitrary set of runs with arbitrary states/urgencies,

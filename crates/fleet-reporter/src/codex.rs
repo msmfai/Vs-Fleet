@@ -1,4 +1,4 @@
-//! Codex detection adapter (PLAN S11–S13 / node CODEX).
+//! Codex detection adapter.
 //!
 //! > ⚠️ **LIVE-UNTESTED (2026-06).** The Codex hook *config* (`fleet init`,
 //! > composable `[[hooks.*]]`) and this adapter are aligned to OpenAI's official
@@ -9,12 +9,11 @@
 //! > `--dangerously-bypass-hook-trust`), run `codex exec`, and confirm the real
 //! > payload matches the fixtures here.
 //!
-//! This module is the **default, hooks-first** Codex integration. Per the locked
-//! decision **D10** and the resolution in `PLAN.md` §2, Fleet does **not** tap a
-//! hand-launched Codex TUI's `app-server` (passive observation of a hand-launched
-//! TUI is maintainer-confirmed infeasible on stock Codex — each client starts its
-//! own app-server instance, one active client per thread). Instead Fleet consumes
-//! the **Codex hooks** that cmux ships on `main` (a CLI-driven `~/.codex/hooks.json`
+//! This module is the **default, hooks-first** Codex integration. Fleet does not
+//! tap a hand-launched Codex TUI's `app-server` because passive observation of a
+//! hand-launched TUI is infeasible on stock Codex: each client starts its own
+//! app-server instance, one active client per thread. Instead Fleet consumes the
+//! **Codex hooks** that cmux ships on `main` (a CLI-driven `~/.codex/hooks.json`
 //! install; canonical key `[features] hooks`, default-on):
 //!
 //! | Hook event | Meaning | Fleet state |

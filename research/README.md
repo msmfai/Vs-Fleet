@@ -1,6 +1,6 @@
 # Research
 
-Source-controlled research dossiers for Fleet design decisions.
+Source-controlled research dossiers for Fleet the designs.
 
 These are not scratch notes. Each dossier should capture:
 

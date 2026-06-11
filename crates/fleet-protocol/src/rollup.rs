@@ -2,7 +2,7 @@
 //! "worst / most-urgent across runs" (README §7.1, §7.3).
 //!
 //! This lives in the protocol crate so every face and the Hub agree on the
-//! ordering (the G0 gate property-tests `rollup == most-urgent across runs`).
+//! ordering (property tests `rollup == most-urgent across runs`).
 
 use crate::objects::AgentRun;
 use crate::state::{State, Urgency};

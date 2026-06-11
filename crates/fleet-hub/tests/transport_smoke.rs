@@ -1,4 +1,4 @@
-//! Transport smoke tests (G0 gate criterion: "transport tests (WS **and**
+//! Transport smoke tests (test criterion: "transport tests (WS **and**
 //! unix)").
 //!
 //! These drive the Hub over its real listeners with a real client:

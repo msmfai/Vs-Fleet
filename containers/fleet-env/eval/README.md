@@ -1,13 +1,12 @@
 # Fleet behaviour-test suite
 
-## Public alpha support boundary
+## Support Boundary
 
-This directory is development and release-verification infrastructure. It is
+This directory contains development and verification infrastructure. It is
 included in the source tree for maintainers, but containerized evals, Docker or
 Colima setup, screenshot review tooling, and remote/container Fleet workflows
-are not supported public alpha user paths. The supported source-alpha workflow
-is the local macOS Fleet host with local user-provided `code serve-web`
-sessions.
+are not currently supported user paths. The supported workflow is the local
+macOS Fleet host with local user-provided `code serve-web` sessions.
 
 Headless, parallel, reproducible **behaviour tests** for Fleet environments. Each
 test boots a containerized `fleet-env` (code-server + Claude Code + the Fleet
@@ -16,7 +15,7 @@ actually happened** by reading back a state snapshot — plus measures machine s
 (procs / mem / fs changes) before and after and captures screenshots. This is
 manual-behaviour verification (OSWorld-style "did the action produce the expected
 effect"), **not** RL — no rewards, no training. See [`PLAN.md`](./PLAN.md) for the
-full design and the §3 frozen contracts.
+eval-suite design.
 
 A **run** is the matrix of `(scenario × behaviour)`: for every selected scenario we
 boot one env (free-port allocated) and run each applicable behaviour against it,
@@ -26,7 +25,7 @@ recording `{pass, detail, evidence, machineΔ, timings, screenshots}`.
 
 ## Requirements
 
-- **Docker + colima** (never Apple `container build` — see `PLAN.md §8`).
+- **Docker + colima** (never Apple `container build`).
   `colima start --cpu 4 --memory 8` before a run.
 - The `fleet-env:latest` image built (`containers/fleet-env/Containerfile`), plus any
   language-variant images for `+python` / `+node` / `+rust` scenarios (Track G).
@@ -131,9 +130,9 @@ FLEET_EVAL_HTML=artifacts/eval.html \
 `make eval` is the single entrypoint: it produces all three reports, GCs orphan
 containers, and exits non-zero on unexpected failures. Point your CI at `eval.xml`
 for the test report and publish `eval.html`, `eval.json`, and `artifacts/*.png`.
-Use `make review HOST=0.0.0.0` on a machine with those artifacts to browse them. Use
-`RETRIES=1`–`2` in CI to absorb the occasional published-port flap (`PLAN.md §8`)
-without going red on a genuinely-passing behaviour.
+Use `make review HOST=0.0.0.0` on a machine with those artifacts to browse them.
+Use `RETRIES=1`-`2` in CI to absorb the occasional published-port flap without
+going red on a genuinely-passing behaviour.
 
 ---
 
@@ -274,9 +273,9 @@ eval/
 
 - **Stale bridge port `:51778`** — a previous run left the hub bound. Free it before
   re-running. `make gc` clears orphan *containers*, not host sockets.
-- **Boots time out / port flaps** — colima quirk (`PLAN.md §8`); lower `PARALLEL`, or
-  add `RETRIES=`. The harness waits for a real `302/200`, then retries the Playwright
-  nav a few times.
+- **Boots time out / port flaps** — lower `PARALLEL`, or add `RETRIES=`. The
+  harness waits for a real `302/200`, then retries the Playwright nav a few
+  times.
 - **Everything SKIPs** — the bridge only advertises `command` / `query` until Track E
   ships more capabilities; behaviours with `needs:[…]` beyond those skip by design.
   Same for `+lang` scenarios before Track G images exist.
@@ -285,5 +284,5 @@ eval/
 - **The bridge never connects** — the ext-host only starts once a workbench client
   opens; Playwright must open the editor (it also is the screenshot channel). Confirm
   the image disables `security.workspace.trust` and the bridge has
-  `extensionKind:["workspace"]` (`PLAN.md §8`).
+  `extensionKind:["workspace"]`.
 ```

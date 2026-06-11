@@ -1,13 +1,11 @@
-//! Integration tests: the S16 inferred-waiting Claude adapter (node CLINFER) vs
-//! **recorded hook-event JSON fixtures** + **recorded transcript-JSONL fixtures**
-//! on disk (gate G2: "each adapter vs recorded fixtures ... transcript JSONL";
-//! "inference debounce timing"; "schema-drift fuzz").
+//! Integration tests for the inferred-waiting Claude adapter against recorded
+//! hook-event JSON fixtures and recorded transcript-JSONL fixtures on disk.
 //!
 //! These do NOT require a real claude/VS Code install. We drive the lifecycle hook
 //! fixtures under `tests/fixtures/claude/` through the S16 debounce machine and the
-//! transcript fixtures under `tests/fixtures/transcript/` through the S16
-//! `corroborate_jsonl` drift-guard, asserting the one S16 acceptance (PLAN S16 /
-//! §21, native-UI surface): a `PreToolUse`-without-`Stop` debounce yields
+//! transcript fixtures under `tests/fixtures/transcript/` through the
+//! `corroborate_jsonl` drift-guard, asserting the native-UI surface behavior: a
+//! `PreToolUse`-without-`Stop` debounce yields
 //! `waiting`+`approval` at **`confidence: inferred`** (never `high`), with the JSONL
 //! corroborating or vetoing the inference.
 

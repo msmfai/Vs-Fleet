@@ -1,5 +1,5 @@
 //! S6 durable-identity / reclaim integration tests across the reporter and the
-//! **real** `fleet-hub` server (PLAN S6 demo).
+//! **real** `fleet-hub` server (demo).
 //!
 //! These prove the end-to-end reclaim story the spec calls out:
 //! - bounce the reporter mid-lifecycle → the entry is **reclaimed, not
@@ -130,7 +130,7 @@ async fn wait_settled(state: &HubState, secs: u64, pred: impl Fn(&[Session]) -> 
         .expect("condition not stably met before timeout");
 }
 
-/// PLAN S6 demo (part 1): bounce the reporter mid-lifecycle → entry reclaimed,
+/// demo (part 1): bounce the reporter mid-lifecycle → entry reclaimed,
 /// not duplicated; buffered deltas replay across the gap.
 #[tokio::test]
 async fn reporter_bounce_reclaims_entry_no_ghost() {
@@ -213,7 +213,7 @@ async fn reporter_bounce_reclaims_entry_no_ghost() {
     }
 }
 
-/// PLAN S6 demo (part 2): a duplicate + an out-of-order delta delivered straight
+/// demo (part 2): a duplicate + an out-of-order delta delivered straight
 /// to the Hub (simulating an at-least-once / reordering channel) → no ghost, no
 /// regression. Driven through the Hub's stamped ingest path (the same path the
 /// reporter's wire frames hit).

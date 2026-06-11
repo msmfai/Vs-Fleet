@@ -1,4 +1,4 @@
-//! Reconnect backoff policy (PLAN S5).
+//! Reconnect backoff policy (the engineering spec).
 //!
 //! A pure, deterministic exponential-backoff state machine the reporter uses to
 //! decide how long to wait before re-attempting an outbound connection after a

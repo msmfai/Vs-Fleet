@@ -11,7 +11,7 @@
 //! [`BadgeMarker`] is the single renderable unit this module exposes. The host
 //! shell maps each variant to its icon asset (e.g. a filled circle vs an
 //! outlined circle). Keeping the mapping here — in pure Rust, free of any
-//! window dependency — satisfies the `◆G3` gate criterion for confidence
+//! window dependency — satisfies the the reducer test gate criterion for confidence
 //! render and lets the host be a thin pass-through.
 //!
 //! ## Confidence honesty (invariant 5)
@@ -70,8 +70,8 @@ impl BadgeMarker {
 
     /// Map a [`Confidence`] value to its [`BadgeMarker`].
     ///
-    /// This is the **total, injective** render mapping required by PLAN S22 /
-    /// §15.3 and the `◆G3` gate criterion:
+    /// This is the **total, injective** render mapping required by the engineering spec /
+    /// §15.3 and the the reducer test gate criterion:
     ///
     /// | Confidence | BadgeMarker | Visual |
     /// |---|---|---|
@@ -116,7 +116,7 @@ mod tests {
     use super::*;
     use fleet_protocol::Confidence;
 
-    // ── Core render-marker invariants (PLAN S22 / §15.3) ─────────────────────
+    // ── Core render-marker invariants (the engineering spec / §15.3) ─────────────────────
 
     /// `Confidence::High` renders as [`BadgeMarker::Solid`].
     ///

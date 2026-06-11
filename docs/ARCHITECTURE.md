@@ -1,7 +1,7 @@
 # Architecture
 
-Fleet is a local-first control surface for terminal-based AI coding sessions.
-The alpha implementation is intentionally small: a local Hub, phone-home
+Fleet is a local-first control surface for terminal-based coding sessions. The
+current implementation is intentionally small: a local Hub, phone-home
 reporters/bridges, and a macOS Tauri host that renders registered sessions.
 
 ## Mental Model
@@ -11,9 +11,9 @@ does not poll a static server list. The host may create local sessions as a
 convenience, but externally registered sessions are not owned by the host and
 must survive a Fleet restart.
 
-## Supported Alpha Surface
+## Supported Surface
 
-The supported source-alpha path is:
+The current supported path is:
 
 - macOS Fleet host.
 - Local `code serve-web` sessions spawned from the host.
@@ -22,14 +22,13 @@ The supported source-alpha path is:
 - Embedded local Hub process started by the host when no external Hub URL is
   provided.
 
-Remote, SSH, Docker/container, visual probe, and eval harness paths are useful
-development infrastructure. They are not public support commitments for the
-initial source alpha unless a release note explicitly promotes them.
+Remote, SSH, Docker/container, visual probe, and eval harness paths exist in
+the tree, but they are not currently supported user workflows.
 
-The local source alpha is a user-provided VS Code workflow: Fleet may launch the
-user's local `code serve-web` install, but Fleet does not download, bundle,
-host, or redistribute Microsoft's VS Code Server, Microsoft Marketplace
-extensions, or Microsoft remote extensions.
+Fleet is a user-provided VS Code workflow: Fleet may launch the user's local
+`code serve-web` install, but Fleet does not download, bundle, host, or
+redistribute Microsoft's VS Code Server, Microsoft Marketplace extensions, or
+Microsoft remote extensions.
 
 ## Components
 
@@ -85,22 +84,19 @@ developer environments and can log local metadata:
 - process command lines,
 - editor and agent state.
 
-Logs and review artifacts must be scrubbed before being posted publicly. The
-release gate rejects tracked release-facing text artifacts that contain common
-machine-local absolute paths.
+Logs and screenshots must be scrubbed before being posted publicly.
 
 ## Local Data And Cleanup
 
-The source alpha writes local runtime data under `~/.fleet/run` for Hub runtime
-files and `~/.fleet/mux` for spawned editor workspaces, server logs, VS Code
-`--server-data-dir` userdata, reporter sockets, and Claude shim files.
+Fleet writes local runtime data under `~/.fleet/run` for Hub runtime files and
+`~/.fleet/mux` for spawned editor workspaces, server logs, VS Code
+`--server-data-dir` userdata, reporter sockets, and agent shim files.
 
 Manual cleanup is `rm -rf ~/.fleet/run ~/.fleet/mux` after closing
 Fleet-spawned servers from the UI. Quitting Fleet does not promise to delete spawned editor userdata or logs, and it must not kill externally registered sessions.
 
 ## Release Boundary
 
-For the initial source alpha, treat the repo as source code plus build
-instructions. Do not publish packages, app bundles, extension marketplace
-artifacts, or container images until the release checklist has explicit decisions
-for licensing, namespace, signing/notarization, and support scope.
+Treat the repo as source code plus build instructions. The project does not
+currently publish signed app bundles, extension marketplace packages, or
+container images.

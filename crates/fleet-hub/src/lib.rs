@@ -1,4 +1,4 @@
-//! Fleet Hub library (PLAN S2).
+//! Fleet Hub library (the engineering spec).
 //!
 //! The Hub is the single authoritative broker (engineering spec §4.3, §6): reporters push
 //! session/run deltas in; faces subscribe and receive a snapshot followed by a
@@ -10,9 +10,9 @@
 //! - [`wire::ClientMessage`] — the Hub-internal inbound vocabulary (`subscribe`,
 //!   reporter deltas, face commands).
 //! - [`server`] — the tokio server binding a WebSocket listener (always) and a
-//!   unix-domain socket on `cfg(unix)` (PLAN D7), with subscribe→snapshot and
+//!   unix-domain socket on `cfg(unix)`, with subscribe→snapshot and
 //!   delta broadcast.
-//! - [`lockfile::InstanceLock`] — the single-instance guard (PLAN D2).
+//! - [`lockfile::InstanceLock`] — the single-instance guard.
 //!
 //! Locked decisions honored: **D1** (Rust), **D2** (never auto-exit; lockfile
 //! single-instance), **D6** (JSON wire), **D7** (WebSocket everywhere + unix

@@ -12,8 +12,8 @@ publish = false
 name = "fleet_host_core"
 
 # A pure-Rust view-model: NO I/O, NO async, NO window/GUI glue. It consumes
-# protocol snapshots+deltas and projects them into an `InboxView` (PLAN S19,
-# WORK_GRAPH G3). The thin Tauri shell wraps this crate but lives elsewhere.
+# protocol snapshots+deltas and projects them into an `InboxView`. The thin
+# Tauri shell wraps this crate but lives elsewhere.
 [dependencies]
 fleet-protocol = { path = "../fleet-protocol" }
 serde = { workspace = true }

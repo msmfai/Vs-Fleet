@@ -1,8 +1,7 @@
-//! Fleet v1 **Definition of Done** acceptance suite (engineering spec §21, items 1–11;
-//! WORK_GRAPH §3 gate `◆G4`).
+//! Fleet v1 **Definition of Done** acceptance suite (engineering spec §21, items 1–11).
 //!
 //! Each `#[test]` below is **one** §21 item, named for it. Every test COMPOSES the
-//! real, gate-green components through [`fleet_e2e`]'s harness:
+//! real components through [`fleet_e2e`]'s harness:
 //!
 //! - a real in-process **Hub** ([`fleet_hub`] merge engine + SQLite event log +
 //!   WebSocket server) on a loopback ephemeral port,

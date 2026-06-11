@@ -4,7 +4,7 @@
  * Injects Fleet's per-window identity into every shell launched in the editor's
  * integrated terminal, using the STABLE `EnvironmentVariableCollection` API.
  * This is the sanctioned, licensing-clean analog of cmux's env injection
- * (PLAN §1): cmux *owns* the terminals it spawns and injects `CMUX_SURFACE_ID` /
+ * (engineering spec §1): cmux *owns* the terminals it spawns and injects `CMUX_SURFACE_ID` /
  * `CMUX_SOCKET_PATH`; Fleet refuses to own the terminal (§4.1/§4.5, invariant 3
  * observer-not-owner), so it injects the same kind of identity from *inside* the
  * editor without spawning anything.
@@ -28,7 +28,7 @@
  *     `dispose()` (which calls `clear()`), and the platform also auto-clears the
  *     collection on uninstall (see BUILD-TIME RE-VERIFY below).
  *
- * ── BUILD-TIME RE-VERIFY (PLAN §6, against @types/vscode index.d.ts ^1.93) ────
+ * ── BUILD-TIME RE-VERIFY (engineering spec §6, against @types/vscode index.d.ts ^1.93) ────
  *
  * Findings encoded as comments per the brief, grounded in the authoritative API
  * doc-comments (not memory):
@@ -39,11 +39,11 @@
  *     the collection is cleared." So on uninstall the platform drops our
  *     mutators; we do NOT have to manually wipe them on the way out. This
  *     resolves the historical "env not cleared on uninstall" worry (vscode
- *     #234384, closed completed Dec 2024 — PLAN §6). We STILL call `clear()` in
+ *     #234384, closed completed Dec 2024 — engineering spec §6). We STILL call `clear()` in
  *     `dispose()` for an in-session disable/reload (where uninstall semantics do
  *     not apply) and so a re-activate starts from a known-clean collection.
  *     Because the platform auto-clears on uninstall, the "relaunch terminal to
- *     drop stale env" affordance is NOT needed (PLAN §6) — already-open
+ *     drop stale env" affordance is NOT needed (engineering spec §6) — already-open
  *     terminals keep the old env until relaunched, which is the platform's
  *     documented behavior, not a Fleet bug.
  *
@@ -52,7 +52,7 @@
  *     `GlobalEnvironmentVariableCollection`; `getScoped({ workspaceFolder })`
  *     narrows to a workspace folder, and `EnvironmentVariableScope` exposes ONLY
  *     `workspaceFolder` — there is NO per-terminal scope (vscode #138109, closed
- *     by-design — PLAN §6). Consequence: identity injection is coarser than
+ *     by-design — engineering spec §6). Consequence: identity injection is coarser than
  *     cmux's per-surface scheme — EVERY integrated-terminal shell in this window
  *     inherits the SAME `FLEET_SESSION_ID`. That is correct for Fleet's model:
  *     `FLEET_SESSION_ID` is the *window's* id, and per-run identity is assigned

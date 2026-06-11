@@ -1,6 +1,5 @@
 //! Integration tests: the Claude detection adapter vs **recorded hook-event JSON
-//! fixtures** on disk (PLAN S15 / node CLHOOK; gate G2 "each adapter vs recorded
-//! fixtures").
+//! fixtures** on disk (the engineering spec ;//! fixtures").
 //!
 //! These do NOT require a real claude/VS Code install — the fixtures under
 //! `tests/fixtures/claude/` are recorded Claude Code hook payloads (shapes mirror

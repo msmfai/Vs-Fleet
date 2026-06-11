@@ -1,4 +1,4 @@
-// Fleet behaviour-suite — FROZEN CONTRACTS (§3.4 of PLAN.md).
+// Fleet behaviour-suite — FROZEN CONTRACTS (§3.4 of the local eval plan).
 //
 // Shared contract reference for every `scenarios/*.mjs`. JSDoc-only; the registry
 // ignores files starting with '_', so this is never auto-discovered as a scenario.

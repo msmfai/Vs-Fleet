@@ -1,4 +1,4 @@
-//! Single-instance lockfile guard (PLAN D2: "lockfile single-instance").
+//! Single-instance lockfile guard (the design: "lockfile single-instance").
 //!
 //! The Hub never auto-exits (D2); the user quits it explicitly. To make a
 //! *second* `fleet-hub` launch refuse rather than fight over the socket, the
@@ -158,7 +158,7 @@ fn pid_is_alive(pid: u32) -> bool {
 fn pid_is_alive(pid: u32) -> bool {
     // On non-unix we can't cheaply probe without extra deps; treat any recorded
     // pid as alive so we err on the side of refusing a second instance rather
-    // than stomping a live one. (Windows is best-effort per PLAN §22.)
+    // than stomping a live one. (Windows is best-effort per engineering spec §22.)
     pid != 0
 }
 

@@ -17,8 +17,7 @@ inference drawn from them.
 
   Fleet implications:
 
-  - Fleet can run `code serve-web` for personal/own-hardware dogfooding, but the
-    product line still needs the documented license boundary from `NORTH_STAR.md`.
+  - Fleet can run `code serve-web` for user-provided local VS Code workflows.
   - Do not create multiple simultaneous workbench clients for the same server.
     Persistent tabs should mean one hidden/visible client per Fleet server.
 

@@ -1,7 +1,7 @@
 //! Tab sort ordering — slice S20 (node `UISORT`).
 //!
 //! S20 layers the `(unread, urgency, age)` ordering on top of the inbox's
-//! default insertion order (PLAN S20: "a waiting tab rises to top by (unread,
+//! default insertion order (the engineering spec: "a waiting tab rises to top by (unread,
 //! urgency, age) with a ticking waiting-age timer"). The view-model already
 //! exposes everything this needs on [`crate::SessionTab`] (`unread`, `urgency`,
 //! `waiting_since`), so this slice fills *this file alone* — it never touches

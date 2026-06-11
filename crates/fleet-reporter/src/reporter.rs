@@ -1,4 +1,4 @@
-//! The real reporter framework (PLAN S5 / node REPCORE).
+//! The real reporter framework.
 //!
 //! This is the heart of S5: an outbound connection to the Hub that
 //! **registers** a session, **assigns a fleet run-id**, sends **heartbeats**,
@@ -141,13 +141,13 @@ pub struct ReporterCore {
     config: ReporterConfig,
     buffer: DeltaBuffer,
     /// The last-known session shell, re-sent first on every (re)connect so the
-    /// Hub can reconcile after a restart (PLAN S5 "kill+restore Hub → reconciles").
+    /// Hub can reconcile after a restart (the engineering spec "kill+restore Hub → reconciles").
     registered_session: Option<Session>,
     /// The reporter's authoritative view of each known run, keyed by run-id, in
     /// insertion order. Carried inside the registration/heartbeat session object
     /// so a whole-object `session.upsert` (the Hub's merge semantics) reconciles
     /// the full session — runs included — rather than wiping them. This is what
-    /// makes Hub-restart reconciliation correct (PLAN S5).
+    /// makes Hub-restart reconciliation correct.
     known_runs: std::collections::BTreeMap<String, AgentRun>,
     /// Insertion order of run-ids (BTreeMap orders by key, which we don't want
     /// for run *display* order; keep a parallel vec for stable ordering).
@@ -946,7 +946,7 @@ mod tests {
         task.await.unwrap().unwrap();
 
         // The session.upsert (registration) must appear at least twice: once per
-        // connection, so the Hub reconciles after the drop (PLAN S5).
+        // connection, so the Hub reconciles after the drop.
         let reg_count = hub
             .delivered()
             .iter()

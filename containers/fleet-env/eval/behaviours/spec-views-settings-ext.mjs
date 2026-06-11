@@ -1436,7 +1436,7 @@ a workbench client connected (Playwright opened the editor in reset()), a correc
 bridge reports active:true. This is also transitively true whenever any behaviour passes
 (they all go through the bridge), but an explicit assertion makes the diagnosis unambiguous.
 
-WHY IT MATTERS: installed-but-inactive is the EXACT silent failure mode from PLAN §8. If
+WHY IT MATTERS: installed-but-inactive is the EXACT silent failure mode from engineering spec §8. If
 this goes red while EXT.010 (present) is green, the trust/extensionKind/manifest wiring
 regressed — a precise, loud signal rather than a mysterious suite-wide skip/hang.
 needs:[extensions] → SKIP cleanly without the cap.`,

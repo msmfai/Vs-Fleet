@@ -4,7 +4,7 @@
  * Prepends a directory of *transparent* `claude`/`codex` wrapper scripts to the
  * integrated-terminal `PATH`, so the user STILL TYPES `claude`/`codex` but gets
  * hooks pointed at the Fleet reporter. This is the editor-scoped, licensing-clean
- * analog of cmux's PATH-shimmed `claude` wrapper (PLAN §1, cmux
+ * analog of cmux's PATH-shimmed `claude` wrapper (engineering spec §1, cmux
  * `Resources/bin/cmux-claude-wrapper`), done from inside the editor via the
  * STABLE `EnvironmentVariableCollection.prepend` API rather than by owning the
  * terminal.
@@ -39,13 +39,13 @@
  *     the wrapper `exec`s the real agent so Fleet never sits between the user's
  *     keystrokes and the agent, and never owns the PTY.
  *   - Confidence-honesty / "any reliability flag is opt-in + surfaced, never
- *     silent" (PLAN §1 job 2, §3 invariant 3) — we DO NOT default
+ *     silent" (engineering spec §1 job 2, §3 invariant 3) — we DO NOT default
  *     `--allow-dangerously-skip-permissions` (or any `bypassPermissions`). Such
  *     flags are injected ONLY when the user explicitly opts in via config, and
  *     when injected they are SURFACED (the wrapper echoes a one-line notice to
  *     stderr, and `injectedReliabilityFlags()` reports them so the UI can show
  *     them). cmux's own wrapper never passes this flag, and a cmux test enforces
- *     its absence (PLAN §1) — so it is NOT precedent-proven; we keep it strictly
+ *     its absence (engineering spec §1) — so it is NOT precedent-proven; we keep it strictly
  *     opt-in.
  *   - Reversible (invariant 6) — `dispose()` removes the `PATH` mutator (and the
  *     platform auto-clears the whole collection on uninstall, see ENVINJ).

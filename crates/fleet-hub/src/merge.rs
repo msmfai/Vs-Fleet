@@ -1,4 +1,4 @@
-//! The canonical merge engine (README §4.3, §7.4; PLAN S2).
+//! The canonical merge engine (README §4.3, §7.4; the engineering spec).
 //!
 //! The Hub holds exactly one authoritative copy of fleet state — a map of
 //! [`Session`]s, each owning its [`AgentRun`]s — and every face is a pure
@@ -11,7 +11,7 @@
 //!
 //! `rollup_state` is the **most-urgent state across a session's runs** and
 //! `rollup_urgency` the **most-urgent urgency** likewise, using the shared
-//! ordering in [`fleet_protocol::rollup`]. This is the one invariant the G0 gate
+//! ordering in [`fleet_protocol::rollup`]. This is the one invariant the test
 //! property-tests: after *any* sequence of deltas, every session's stored rollup
 //! equals the recomputed max over its current runs.
 //!
@@ -277,7 +277,7 @@ impl MergeEngine {
     /// already muted and not soloed.
     ///
     /// Muting silences pings for the session without removing it from the inbox
-    /// (README §15.4 / PLAN S25). State is still visible; only notifications are
+    /// (README §15.4 / the engineering spec). State is still visible; only notifications are
     /// suppressed.
     pub fn apply_mute(&mut self, session_id: &str) -> Vec<Event> {
         if !self.sessions.contains_key(session_id) {
@@ -629,7 +629,7 @@ mod tests {
         assert_eq!(ids, vec!["a", "c"]);
     }
 
-    // ── mute / unmute / solo (PLAN S25) ─────────────────────────────────────
+    // ── mute / unmute / solo (the engineering spec) ─────────────────────────────────────
 
     #[test]
     fn mute_sets_flag_and_emits_updated() {

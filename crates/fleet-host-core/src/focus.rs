@@ -1,7 +1,7 @@
 //! Focus / jump-to-next-unread — slice **S23** (node `FOCUS`).
 //!
 //! This is the host face's editor-focus seam. It has two halves that the
-//! `◆G3` gate ("per-OS focus with mocked OS calls + focus-confirmation
+//! the reducer test gate ("per-OS focus with mocked OS calls + focus-confirmation
 //! telemetry") pins:
 //!
 //! 1. **Pure selection** (no OS, no I/O) — given the current [`InboxView`],
@@ -18,7 +18,7 @@
 //!    trusted*. The unit tests drive it through a [`MockBackend`], never a real
 //!    OS call (so the test suite runs with no codex/VS Code/window manager).
 //!
-//! ## Why a strategy + confirmation telemetry (PLAN S23, §15.3, invariant 5)
+//! ## Why a strategy + confirmation telemetry (the engineering spec, §15.3, invariant 5)
 //!
 //! Activation reliability differs sharply per platform, and the UI must **never
 //! falsely claim it focused a window**:
@@ -60,7 +60,7 @@ pub fn focus_command(session_id: &str) -> Command {
 /// Find the **next unread** tab at or after `from` (wrapping once), returning its
 /// index in [`InboxView::tabs`].
 ///
-/// "Jump-to-next-unread" (PLAN S23): starting just **after** `from`, scan forward
+/// "Jump-to-next-unread" (the engineering spec): starting just **after** `from`, scan forward
 /// wrapping around, and return the first tab whose [`SessionTab::unread`] is set.
 /// `from = None` starts the scan at index 0. Returns `None` when no tab is unread.
 ///
@@ -94,7 +94,7 @@ pub fn next_unread_tab(view: &InboxView, from: Option<usize>) -> Option<(usize, 
     next_unread(view, from).map(|i| (i, &view.tabs[i]))
 }
 
-/// Cycle to the next tab after `from` **without** the unread filter (PLAN S24's
+/// Cycle to the next tab after `from` **without** the unread filter (the engineering spec's
 /// "cycle-without-clearing" relies on plain cycle order; S23 uses it for the
 /// jump keybind when nothing is unread).
 ///
@@ -268,7 +268,7 @@ pub enum BackendResult {
 
 /// The **honest** outcome the host surfaces. Only [`FocusOutcome::Confirmed`]
 /// lets the UI claim it focused the window; every other variant must be shown as
-/// "attempted" so the UI never falsely claims success (PLAN S23, invariant 5).
+/// "attempted" so the UI never falsely claims success (the engineering spec, invariant 5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FocusOutcome {
     /// The window is confirmed frontmost — the UI may show "focused".
@@ -292,7 +292,7 @@ impl FocusOutcome {
     ///
     /// **Only** [`FocusOutcome::Confirmed`] returns `true`. This is the single
     /// predicate the host gates its "focused ✓" affordance on, guaranteeing the
-    /// UI never overstates success (PLAN S23 focus-confirmation telemetry).
+    /// UI never overstates success (the engineering spec focus-confirmation telemetry).
     pub fn is_confirmed_success(self) -> bool {
         matches!(self, FocusOutcome::Confirmed)
     }
@@ -335,7 +335,7 @@ pub trait FocusBackend {
 /// Drive a single focus attempt through a backend, applying the strategy's
 /// confirmation policy to produce the **honest** [`FocusOutcome`].
 ///
-/// This is the platform-agnostic core the `◆G3` gate exercises with a mocked
+/// This is the platform-agnostic core the the reducer test gate exercises with a mocked
 /// backend. The policy:
 ///
 /// | backend result | confirmation possible | → outcome |

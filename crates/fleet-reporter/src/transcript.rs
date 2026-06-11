@@ -1,4 +1,4 @@
-//! Claude **transcript-JSONL** corroboration reader (PLAN S16 / node CLINFER).
+//! Claude **transcript-JSONL** corroboration reader.
 //!
 //! This is the S16 *inferred-waiting* corroboration channel. It is **not** the
 //! hook-JSON channel (that is [`crate::claude`] / [`crate::claude_shim`]). The two
@@ -14,17 +14,17 @@
 //!   native-UI inference path reads to *corroborate* a `PreToolUse`-without-`Stop`
 //!   debounce — specifically, a `tool_use` content block with **no matching
 //!   `tool_result`** means the agent is blocked awaiting the tool's
-//!   completion/approval (PLAN S16). This is the only place that JSONL is parsed,
+//!   completion/approval. This is the only place that JSONL is parsed,
 //!   so the G2 drift-guard ("malformed JSONL → degrades, never panics or
 //!   overstates") lives and is exercised **here**.
 //!
-//! ## Why a separate, *best-effort, schema-drift-guarded* reader (PLAN S16)
+//! ## Why a separate, *best-effort, schema-drift-guarded* reader
 //!
 //! The transcript line schema is **community-documented and version-sensitive**
-//! (PLAN S16 verbatim): the field that anchors a tool call (`tool_use.id`) and the
+//! The engineering spec notes: the field that anchors a tool call (`tool_use.id`) and the
 //! field that resolves it (`tool_result.tool_use_id`) are *not* a stable public
 //! contract. So this reader **parses best-effort behind a schema-drift guard that
-//! degrades gracefully rather than mis-stating** (PLAN S16). Concretely:
+//! degrades gracefully rather than mis-stating**. Concretely:
 //!
 //! 1. **Per-line isolation.** A malformed/blank/non-object line is *skipped*, never
 //!    fatal — a drifted line in the middle of a transcript never discards the lines
@@ -113,7 +113,7 @@ enum Line {
 /// `message` whose `content` is an array of typed blocks. We tolerate **both** the
 /// nested `message.content` shape and a flattened top-level `content` shape, and
 /// both `snake_case` and `camelCase` id spellings — defensively, because the line
-/// schema is not a stable contract (PLAN S16).
+/// schema is not a stable contract.
 #[derive(Debug, Deserialize)]
 struct RawLine {
     #[serde(default, alias = "role")]
@@ -205,7 +205,7 @@ fn parse_line(line: &str) -> Option<Line> {
 
 /// Scan a window of transcript-JSONL text and produce the [`Corroboration`].
 ///
-/// **Drift-guarded by construction** (PLAN S16): each line is parsed in isolation;
+/// **Drift-guarded by construction**: each line is parsed in isolation;
 /// a malformed line increments `skipped_lines` and is otherwise ignored, so the
 /// scan **degrades gracefully and never panics**. The outstanding set only contains
 /// `tool_use` ids that were both seen and anchored *and* never resolved by a

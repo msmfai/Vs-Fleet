@@ -1,13 +1,12 @@
 # Local Data And Uninstall
 
-Fleet source alpha writes only local runtime data. It has no intended telemetry
-by default.
+Fleet writes only local runtime data. It has no intended telemetry by default.
 
 ## Runtime Data Locations
 
 - `~/.fleet/run`: embedded Hub lock, socket, token, and host log.
 - `~/.fleet/mux`: Fleet-spawned editor workspaces, server logs, VS Code
-  `--server-data-dir` userdata, reporter sockets, and Claude shim files.
+  `--server-data-dir` userdata, reporter sockets, and agent shim files.
 
 Environment overrides:
 
@@ -23,7 +22,7 @@ The host may create local `code serve-web` sessions as a convenience. Closing a 
 ## Manual Cleanup
 
 Close any Fleet-spawned servers from the Fleet UI before deleting runtime data.
-Then remove the source-alpha runtime directories:
+Then remove the runtime directories:
 
 ```sh
 rm -rf ~/.fleet/run ~/.fleet/mux
@@ -33,6 +32,6 @@ If `FLEET_RUNTIME_DIR` or `FLEET_MUX_DIR` was set, delete those configured
 directories instead.
 
 Deleting `~/.fleet/mux` removes Fleet-created editor workspaces, logs, reporter
-sockets, generated VS Code server userdata, and Claude shim files. It does not
+sockets, generated VS Code server userdata, and agent shim files. It does not
 remove the user's VS Code installation or repositories outside the Fleet runtime
 directories.

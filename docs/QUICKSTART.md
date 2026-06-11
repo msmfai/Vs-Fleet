@@ -1,11 +1,7 @@
 # Quickstart
 
-This is the current source-only alpha path. It is intended for local macOS
-dogfooding and technical review, not for packaged binary distribution.
-
-Fleet is licensed as `MIT`; public visibility remains gated by
-the owner decision record and release checklist in
-`docs/release/ALPHA_RELEASE_CHECKLIST.md`.
+This is the current source-only local macOS path. Fleet does not currently ship
+signed or notarized binary releases.
 
 ## Prerequisites
 
@@ -16,10 +12,9 @@ the owner decision record and release checklist in
   "Shell Command: Install 'code' command in PATH" if needed.
 - Git.
 
-Fleet's supported alpha workflow uses the user's local `code serve-web` install.
-Fleet does not download, bundle, host, or redistribute Microsoft's VS Code
-Server, Microsoft Marketplace extensions, or Microsoft remote extensions in
-this source-only alpha path.
+Fleet uses the user's local `code serve-web` install. Fleet does not download,
+bundle, host, or redistribute Microsoft's VS Code Server, Microsoft Marketplace
+extensions, or Microsoft remote extensions.
 
 ## Build
 
@@ -66,11 +61,12 @@ Local runtime files are under the user's home directory by default:
 
 Fleet is a stateless client for externally registered sessions. Quitting Fleet
 must not kill already-running external servers. Closing a Fleet-spawned server
-from the UI is the explicit owner action that removes the server process.
+from the UI is the explicit user action that removes the server process.
 
 ## Cleanup
 
-Fleet does not promise an automated source-alpha uninstaller. Close any Fleet-spawned servers from the Fleet UI before deleting runtime data, then run:
+Close any Fleet-spawned servers from the Fleet UI before deleting runtime data,
+then run:
 
 ```sh
 rm -rf ~/.fleet/run ~/.fleet/mux
@@ -82,7 +78,7 @@ for the complete local data contract.
 
 ## Useful Environment Overrides
 
-Use these only when debugging or dogfooding a non-default setup:
+Use these only when debugging a non-default setup:
 
 | Variable | Purpose |
 |---|---|
@@ -95,16 +91,5 @@ Use these only when debugging or dogfooding a non-default setup:
 | `FLEET_SPAWN_CWD` | Working directory for local child processes Fleet spawns. |
 | `FLEET_SPAWN_REPO` | Clone a repo into each spawned workspace. Supports full URLs, `gh:owner/repo`, `gl:owner/repo`, or `owner/repo`. |
 
-Remote, SSH, and container spawn modes exist in the tree but are not supported
-alpha commitments yet.
-
-## Release Gate
-
-Run the public-release hygiene check from the repository root:
-
-```sh
-./scripts/release-check.sh
-```
-
-It is expected to fail until the remaining owner decisions, history review, and
-publication checklist are resolved.
+Remote, SSH, and container spawn modes exist in the tree but are not currently
+supported user workflows.

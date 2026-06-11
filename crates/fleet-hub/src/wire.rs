@@ -8,7 +8,7 @@
 //! contract is frozen upstream, the Hub owns this minimal inbound vocabulary
 //! locally so S2 can stand up end-to-end.
 //!
-//! Design choices (consistent with the protocol crate, PLAN D6/§7.6):
+//! Design choices (consistent with the protocol crate, the design/§7.6):
 //! - **JSON, internally tagged** on a `type` discriminator — human-debuggable.
 //! - **`schema_version` tolerated, never required** on inbound: an older client
 //!   may omit it; a newer one may add fields. We do not `deny_unknown_fields`.

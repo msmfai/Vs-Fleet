@@ -6,13 +6,13 @@ TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 repo="$TMPDIR/repo"
-mkdir -p "$repo/docs/release"
+mkdir -p "$repo/docs/reference"
 
 cat >"$repo/README.md" <<'EOF'
 # Link Fixture
 
 [Quickstart](docs/QUICKSTART.md)
-[Release process](/docs/release/RELEASE_PROCESS.md)
+[Reference](/docs/reference/REFERENCE.md)
 [External](https://example.invalid/path)
 [Section](#local-section)
 
@@ -27,8 +27,8 @@ cat >"$repo/docs/QUICKSTART.md" <<'EOF'
 [Root](../README.md)
 EOF
 
-cat >"$repo/docs/release/RELEASE_PROCESS.md" <<'EOF'
-# Release Process
+cat >"$repo/docs/reference/REFERENCE.md" <<'EOF'
+# Reference
 
 [Quickstart](../QUICKSTART.md)
 EOF
@@ -54,7 +54,7 @@ expect_fail() {
 }
 
 expect_pass "valid relative, root-relative, external, and anchor links" \
-  README.md docs/QUICKSTART.md docs/release/RELEASE_PROCESS.md
+  README.md docs/QUICKSTART.md docs/reference/REFERENCE.md
 
 cat >>"$repo/README.md" <<'EOF'
 

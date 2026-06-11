@@ -61,8 +61,7 @@ report="$(
 Dependency review status: PASS
 
 This report records the dependency review checks for the current commit. Keep
-the command output or release notes with the release, but do not commit a
-repo-local evidence file.
+the command output or release notes with the release.
 
 Commit: \`$commit\`
 Reviewed date: \`$reviewed_date\`

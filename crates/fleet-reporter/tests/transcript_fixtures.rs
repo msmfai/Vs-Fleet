@@ -1,5 +1,5 @@
 //! Integration tests: the Claude transcript-JSONL corroboration reader vs
-//! **recorded transcript-JSONL fixtures** on disk (PLAN S16 / node CLINFER; gate
+//! **recorded transcript-JSONL fixtures** on disk (the engineering spec ; gate
 //! G2 "each adapter vs recorded fixtures … transcript JSONL").
 //!
 //! These do NOT require a real claude/VS Code install — the fixtures under

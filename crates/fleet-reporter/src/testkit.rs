@@ -1,5 +1,5 @@
 //! Deterministic in-memory transport for testing the reporter framework
-//! (PLAN S5). Lets tests script connect failures, mid-flush connection drops,
+//! (the engineering spec). Lets tests script connect failures, mid-flush connection drops,
 //! and inspect the exact ordered stream of frames the reporter delivered.
 //!
 //! This is compiled into the library (not gated behind `#[cfg(test)]`) so that

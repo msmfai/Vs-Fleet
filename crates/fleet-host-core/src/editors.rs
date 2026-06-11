@@ -7,7 +7,7 @@
 //! `--folder-uri vscode-remote://...`), `detect`, focus strategy. Ship rows for
 //! all three; show only installed ones as launch targets."*
 //!
-//! The hard rule (PLAN S26 / §12.1): **NO per-editor branching code.** Every
+//! The hard rule (the engineering spec / §12.1): **NO per-editor branching code.** Every
 //! editor is one [`EditorDescriptor`] *row* in the [`EDITORS`] table, and a
 //! single [`launch_command`] / [`focus_editor`] launcher reads the row's fields.
 //! Adding Cursor or Windsurf is adding a row, never a `match editor { … }`.

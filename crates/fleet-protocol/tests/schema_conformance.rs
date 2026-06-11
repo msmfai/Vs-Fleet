@@ -1,4 +1,4 @@
-//! JSON Schema conformance (G0 gate criterion: JSON-Schema conformance BOTH
+//! JSON Schema conformance (test criterion: JSON-Schema conformance BOTH
 //! directions; emit a JSON Schema artifact and validate against it).
 //!
 //! Direction 1 (encode→validate): values produced by our serializers validate

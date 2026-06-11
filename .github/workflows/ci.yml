@@ -97,8 +97,7 @@ jobs:
       - name: Summary
         run: cargo llvm-cov report --summary-only
 
-      # Phase-gate floors (WORK_GRAPH.md §3): workspace >= 80%, the G0-frozen
-      # protocol + hub contracts >= 85%.
+      # Coverage floors: workspace >= 80%, protocol + hub contracts >= 85%.
       - name: Enforce workspace floor (lines >= 80%)
         run: cargo llvm-cov report --fail-under-lines 80
 

@@ -1,10 +1,10 @@
-//! Ordered outbound delta buffer (PLAN S5).
+//! Ordered outbound delta buffer (the engineering spec).
 //!
 //! The reporter never blocks the agent it observes: every state change becomes a
 //! [`Delta`] that is *enqueued* immediately. When the Hub connection is up the
 //! driver drains the buffer in order; when it is down, deltas accumulate here and
 //! are flushed — **in the same order they were produced** — the instant the
-//! connection is re-established (PLAN S5 "BUFFERS deltas while disconnected, …
+//! connection is re-established (the engineering spec "BUFFERS deltas while disconnected, …
 //! flush-on-reconnect (ordered)").
 //!
 //! # Sequencing

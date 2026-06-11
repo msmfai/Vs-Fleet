@@ -5,9 +5,9 @@
 //! Launches Microsoft's official **VS Code** web server (`code serve-web`) with a SHARED
 //! `fleet-bridge` extension install and a PER-SERVER `--server-data-dir` (so concurrent
 //! servers don't collide). `serve-web` reads extensions from `<server-data-dir>/extensions`,
-//! so Fleet installs the bridge there before launch. (Was code-server; switched to the
-//! official server for the full MS Marketplace + clean aarch64-darwin packaging — fine for
-//! personal / own-hardware use; see NORTH_STAR on the licensing line.)
+//! so Fleet installs the bridge there before launch. Fleet uses the official server for
+//! the full MS Marketplace and clean aarch64-darwin packaging in user-provided local
+//! VS Code installs.
 //!
 //! Each server also gets the **agent-state pipeline** so its rail tab reflects a
 //! running agent:
