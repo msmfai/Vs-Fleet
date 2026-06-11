@@ -39,6 +39,12 @@ require_text "$intent" 'copyright' "DCO copyright term"
 require_text "$intent" 'does not give|does not provide' "DCO limitation phrasing"
 require_text "$intent" 'relicensing' "DCO relicensing limitation"
 require_text "$intent" 'Contributor License Agreement|CLA' "CLA revisit warning"
+require_text "$intent" 'monetization plan|business-model decision|paid model' \
+  "copyleft monetization caveat"
+require_text "$intent" 'internal use|run a local developer tool internally' \
+  "internal-use copyleft limitation"
+require_text "$intent" 'distribution|hosted-service|hosted service' \
+  "copyleft trigger boundary"
 require_text "$intent" 'released versions remain' "released-version irrevocability warning"
 require_text "$intent" 'available' "released-version availability term"
 require_text "$intent" 'AGPL-3\.0-only' "AGPL contingency naming"

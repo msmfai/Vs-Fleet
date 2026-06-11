@@ -13,6 +13,15 @@ The permissive license is the default for Fleet's reusable library and protocol
 surfaces. The goal is to let people inspect, fork, package, and embed the local
 developer-tool pieces without forcing an early business-model decision.
 
+## Monetization Caveat
+
+Do not treat copyleft as a monetization plan for the source alpha. Fleet's
+initial user is expected to run a local developer tool internally, and internal
+use of a local tool does not create the distribution or hosted-service pressure
+that GPL-family license strategies rely on. A paid model should come from a
+concrete product surface, such as support, enterprise features, hosted
+coordination, or commercial terms for a real proprietary embedder.
+
 ## Contribution Posture
 
 Outside code contributions require Developer Certificate of Origin (DCO)
