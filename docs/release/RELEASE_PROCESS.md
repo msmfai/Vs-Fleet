@@ -59,7 +59,7 @@ Do not publish a public alpha until these are true:
 5. Run the remaining JavaScript checks:
 
    ```sh
-   ( cd packages/extension && npm ci && npm test )
+   ( cd packages/extension && npm ci && npm run build && npm test )
    ```
 
    If using the CI path instead, require the `pnpm -r build` and `pnpm -r test`
