@@ -55,6 +55,14 @@ do
   fi
 done
 
+if [ ! -f docs/release/OWNER_DECISION_RECORD.md ]; then
+  echo "FAIL: missing docs/release/OWNER_DECISION_RECORD.md"
+  fail=1
+elif ! rg -q '^Decision record status: APPROVED$' docs/release/OWNER_DECISION_RECORD.md; then
+  echo "FAIL: owner decision record is not approved"
+  fail=1
+fi
+
 if [ "$fail" -ne 0 ]; then
   echo
   echo "Release check failed. See docs/release/PUBLIC_ALPHA_DECISIONS.md."

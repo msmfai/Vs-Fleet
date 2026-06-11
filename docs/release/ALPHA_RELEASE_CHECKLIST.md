@@ -16,6 +16,7 @@ closed or explicitly accepted.
 - [ ] Add a root `LICENSE` file.
 - [ ] Replace `UNLICENSED` in `Cargo.toml`, `crates/fleet-host/Cargo.toml`, and
   package manifests/lockfiles.
+- [ ] Fill `docs/release/OWNER_DECISION_RECORD.md` for required owner choices.
 - [x] Decide whether the public root README is a product README or an
   engineering spec, then make the first screen match that decision.
 - [x] Add `SECURITY.md` with supported versions and report channel.
@@ -49,6 +50,9 @@ closed or explicitly accepted.
   template are present.
 - `docs/QUICKSTART.md`, `docs/ARCHITECTURE.md`, and
   `docs/release/RELEASE_PROCESS.md` are present.
+- `docs/release/OWNER_DECISION_RECORD.md` is present but still marked
+  `PENDING`; `scripts/release-check.sh` requires `APPROVED` before public
+  visibility.
 - Root `README.md` is now a public alpha front door; the long engineering spec
   was moved to `docs/ENGINEERING_SPEC.md`.
 - `crates/fleet-host/artifacts/**` is now a local ignored artifact area; raw

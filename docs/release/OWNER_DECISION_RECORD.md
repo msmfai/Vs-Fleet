@@ -1,0 +1,137 @@
+# Owner Decision Record
+
+Decision record status: PENDING
+
+Do not publish the repository publicly until this file has explicit owner
+choices for every "Required before public GitHub visibility" item.
+
+This file is intentionally separate from the recommendation docs: it is the
+place where the project owner records the actual decision, not what the release
+prep work guessed.
+
+## Required Before Public GitHub Visibility
+
+### 1. License
+
+Choose one and then apply it to `LICENSE`, Rust manifests, npm manifests, and
+lockfiles.
+
+- [ ] MIT OR Apache-2.0 dual license.
+- [ ] MIT only.
+- [ ] Apache-2.0 only.
+- [ ] AGPL-3.0-only.
+- [ ] Other: `TODO`
+
+Current default recommendation: MIT OR Apache-2.0 for a permissive Rust-friendly
+alpha, unless you deliberately want network copyleft.
+
+### 2. Public History
+
+Choose how the first public GitHub history should look.
+
+- [ ] Publish the current branch history and accept that old commits may contain
+  removed local artifacts or failed eval evidence.
+- [ ] Publish a cleaned/squashed history for the first public branch.
+
+Current default recommendation: cleaned/squashed history before first public
+visibility.
+
+### 3. Public Namespace
+
+Fill these before publishing packages or telling users names are stable.
+
+| Surface | Decision |
+|---|---|
+| GitHub org/user | `TODO` |
+| GitHub repo name | `TODO` |
+| Product name | `Fleet` or `TODO` |
+| Rust crate prefix | `fleet-*` or `TODO` |
+| npm package names | `fleet-extension`, `fleet-bridge`, or `TODO` |
+| VS Code Marketplace publisher | `fleet-team` or `TODO` |
+| Open VSX publisher | `fleet-team` or `TODO` |
+| macOS bundle id | `dev.fleet.host` or `TODO` |
+
+Current default recommendation: confirm the GitHub repo and bundle id now; defer
+marketplace/crates/npm publication until after source alpha.
+
+### 4. Distribution Scope
+
+Choose what the first public alpha promises.
+
+- [ ] Source-only alpha. No public app bundle, crates.io, npm, Open VSX, VS Code
+  Marketplace, or container image publishing.
+- [ ] Source plus unsigned macOS app bundle.
+- [ ] Source plus signed/notarized macOS app bundle.
+- [ ] Other: `TODO`
+
+Current default recommendation: source-only alpha.
+
+### 5. Security Reporting Channel
+
+Choose the private vulnerability path before public visibility.
+
+- [ ] Enable GitHub Private Vulnerability Reporting.
+- [ ] Add a private security email/contact to `SECURITY.md`.
+- [ ] Other: `TODO`
+
+Current default recommendation: GitHub Private Vulnerability Reporting.
+
+### 6. Contribution Intake
+
+Choose how to handle first outside PRs after the license is applied.
+
+- [ ] Accept small focused PRs under the chosen project license using the PR
+  template certification.
+- [ ] Require DCO sign-off.
+- [ ] Keep code PRs closed; accept issues and docs feedback only.
+- [ ] Other: `TODO`
+
+Current default recommendation: accept small focused PRs only after the license
+is applied; no CLA for alpha.
+
+### 7. Public CI Evidence
+
+Choose the CI gate for the public branch.
+
+- [ ] Require GitHub Actions green on the exact branch/commit before public
+  visibility.
+- [ ] Accept local check output only for the first publish.
+- [ ] Other: `TODO`
+
+Current default recommendation: require GitHub Actions green on the exact public
+branch/commit.
+
+## Required Before Binary Distribution
+
+These do not block a source-only alpha, but they must be decided before any
+public app bundle.
+
+### 8. macOS Signing and Notarization
+
+- [ ] No public binaries until Developer ID signing and notarization are
+  automated.
+- [ ] Publish unsigned binaries and document Gatekeeper warnings.
+- [ ] Other: `TODO`
+
+Current default recommendation: no public binaries until signing and notarization
+are automated.
+
+### 9. Update Channel
+
+- [ ] No auto-update in alpha.
+- [ ] GitHub Releases only.
+- [ ] In-app updater.
+- [ ] Other: `TODO`
+
+Current default recommendation: no auto-update in alpha; GitHub Releases only
+for source tags.
+
+### 10. Branding Stability
+
+- [ ] `Fleet` name and current icon are alpha placeholders.
+- [ ] `Fleet` name is stable, icon may change.
+- [ ] Name and icon are stable.
+- [ ] Other: `TODO`
+
+Current default recommendation: name may be stable if the namespace check passes;
+icon remains alpha.
