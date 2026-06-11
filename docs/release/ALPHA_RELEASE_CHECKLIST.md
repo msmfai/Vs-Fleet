@@ -26,6 +26,8 @@ visibility.
   docs match the owner record.
 - [ ] Answer `docs/release/PUBLIC_ALPHA_OWNER_PROMPT.md`, then copy the final
   choices into `docs/release/OWNER_DECISION_RECORD.md`.
+- [ ] Review `docs/release/OWNER_RELEASE_APPROVAL.md`; do not publish if the
+  owner does not accept the source-only alpha constraints listed there.
 - [ ] Optionally run
   `./scripts/draft-owner-decisions.sh <github-owner> <github-repo> docs/release/OWNER_DECISION_RECORD.draft.md`
   to create a PENDING review draft with recommended source-alpha defaults.

@@ -27,6 +27,9 @@ jobs:
       - name: Owner decision gate self-test
         run: ./scripts/test-owner-decision-gate.sh
 
+      - name: Owner release approval sheet self-test
+        run: ./scripts/test-owner-release-approval-check.sh
+
       - name: License decision gate self-test
         run: ./scripts/test-license-decision-check.sh
 
@@ -158,6 +161,9 @@ jobs:
 
       - name: Owner decision gate
         run: ./scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md
+
+      - name: Owner release approval sheet gate
+        run: ./scripts/check-owner-release-approval.sh docs/release/OWNER_RELEASE_APPROVAL.md
 
       - name: Verify no generated artifacts are tracked
         run: |

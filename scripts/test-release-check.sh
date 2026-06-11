@@ -76,6 +76,7 @@ for doc in \
   docs/release/NAME_COLLISION_REVIEW.md \
   docs/release/WORKFLOW_SUPPLY_CHAIN.md \
   docs/release/LICENSE_INTENT.md \
+  docs/release/OWNER_RELEASE_APPROVAL.md \
   docs/release/PUBLIC_ALPHA_OWNER_PROMPT.md \
   docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md \
   docs/release/ALPHA_RELEASE_CHECKLIST.md \
@@ -94,6 +95,7 @@ done
 
 for script in \
   scripts/check-owner-decisions.sh \
+  scripts/check-owner-release-approval.sh \
   scripts/draft-owner-decisions.sh \
   scripts/public-alpha-decision-packet.sh \
   scripts/history-release-check.sh \
@@ -130,6 +132,7 @@ for script in \
   scripts/check-workflow-supply-chain-decision.sh \
   scripts/check-dco-signoff.sh \
   scripts/test-owner-decision-gate.sh \
+  scripts/test-owner-release-approval-check.sh \
   scripts/test-draft-owner-decisions.sh \
   scripts/test-public-alpha-decision-packet.sh \
   scripts/test-history-release-check.sh \
