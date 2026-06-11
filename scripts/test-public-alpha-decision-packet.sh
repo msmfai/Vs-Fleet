@@ -246,7 +246,8 @@ expect_output "approved clean source-only record" 'check-public-release-branch\.
 expect_output "approved clean source-only record" 'generate-public-ci-evidence\.sh <branch> <ci-run-url> <release-readiness-run-url> <source-ref>'
 expect_output "approved clean source-only record" 'release-evidence-status\.sh'
 expect_output "approved clean source-only record" 'Contribution intake: require DCO sign-off'
-expect_output "approved clean source-only record" 'VS Code Marketplace publisher: deferred for source alpha'
+expect_output "approved clean source-only record" 'VS Code Marketplace publisher: fleet-team'
+expect_output "approved clean source-only record" 'these values are manifest namespace decisions'
 
 mkdir -p "$TMPDIR/release-docs"
 cp "$clean_source" "$TMPDIR/release-docs/OWNER_DECISION_RECORD.md"
