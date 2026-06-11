@@ -161,4 +161,34 @@ if ! rg -q 'NAMESPACE_FAIL' "$output"; then
   exit 1
 fi
 
+write_script "scripts/check-owner-decisions.sh" 'echo OWNER_FAIL
+exit 1'
+write_script "scripts/history-release-check.sh" 'echo HISTORY_FAIL
+exit 1'
+
+output_owner_pending="$TMPDIR/release-check-owner-pending.out"
+if (cd "$repo" && ./scripts/release-check.sh) >"$output_owner_pending" 2>&1; then
+  echo "FAIL: release check should fail when owner and history gates fail" >&2
+  cat "$output_owner_pending" >&2
+  exit 1
+fi
+
+if ! rg -q 'OWNER_FAIL' "$output_owner_pending"; then
+  echo "FAIL: release check did not report the owner gate failure" >&2
+  cat "$output_owner_pending" >&2
+  exit 1
+fi
+
+if ! rg -q 'HISTORY_FAIL' "$output_owner_pending"; then
+  echo "FAIL: release check did not run history gate while owner record was unapproved" >&2
+  cat "$output_owner_pending" >&2
+  exit 1
+fi
+
+if rg -q 'LICENSE_FAIL|NAMESPACE_FAIL' "$output_owner_pending"; then
+  echo "FAIL: release check ran owner-dependent gates before owner approval" >&2
+  cat "$output_owner_pending" >&2
+  exit 1
+fi
+
 echo "Release check aggregation tests passed."
