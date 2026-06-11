@@ -9,6 +9,11 @@ Answer the owner-facing worksheet in
 actual selected choices in [OWNER_DECISION_RECORD.md](OWNER_DECISION_RECORD.md).
 Use [OWNER_RELEASE_APPROVAL.md](OWNER_RELEASE_APPROVAL.md) as the short-form
 approval sheet and roughness check before marking the owner record approved.
+Use [PUBLIC_ALPHA_READINESS_ASSESSMENT.md](PUBLIC_ALPHA_READINESS_ASSESSMENT.md)
+as the explicit "is this too rough?" assessment: source-only alpha can be
+acceptable after the gates pass; binaries, package publication, production
+support, and remote/container support are not acceptable first-public-release
+claims.
 Run `./scripts/public-alpha-decision-packet.sh` to list the current unresolved
 owner choices and the follow-up commands implied by the selected history and
 distribution answers.

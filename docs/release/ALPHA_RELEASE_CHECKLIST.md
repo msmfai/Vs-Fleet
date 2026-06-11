@@ -28,6 +28,10 @@ visibility.
   choices into `docs/release/OWNER_DECISION_RECORD.md`.
 - [ ] Review `docs/release/OWNER_RELEASE_APPROVAL.md`; do not publish if the
   owner does not accept the source-only alpha constraints listed there.
+- [ ] Review `docs/release/PUBLIC_ALPHA_READINESS_ASSESSMENT.md`; do not
+  publish if the first public release claims binaries, package publication,
+  production support, stable APIs, or remote/container support.
+- [ ] Run `./scripts/check-public-alpha-readiness-assessment.sh`.
 - [ ] Optionally run
   `./scripts/draft-owner-decisions.sh <github-owner> <github-repo> docs/release/OWNER_DECISION_RECORD.draft.md`
   to create a PENDING review draft with recommended source-alpha defaults.
@@ -180,6 +184,9 @@ visibility.
   `SECURITY.md` and `CONTRIBUTING.md` are present.
 - `SUPPORT.md`, `CODE_OF_CONDUCT.md`, GitHub issue templates, and a pull request
   template are present.
+- `docs/release/PUBLIC_ALPHA_READINESS_ASSESSMENT.md` records the current
+  honest readiness verdict: source-only alpha after gates pass, not binaries,
+  package-index publication, production support, or remote/container support.
 - `scripts/check-github-intake-templates.sh` validates that GitHub issue/PR
   templates keep blank issues disabled, preserve alpha scope, redirect
   vulnerability details away from public issues, and require contribution

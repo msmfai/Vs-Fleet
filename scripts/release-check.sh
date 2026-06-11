@@ -90,6 +90,7 @@ for required in \
   docs/ARCHITECTURE.md \
   docs/LOCAL_DATA_AND_UNINSTALL.md \
   docs/release/RELEASE_PROCESS.md \
+  docs/release/PUBLIC_ALPHA_READINESS_ASSESSMENT.md \
   docs/release/DEPENDENCY_REVIEW.md \
   docs/release/DEPENDENCY_REVIEW_EVIDENCE.md \
   docs/release/GITHUB_PUBLICATION_RUNBOOK.md \
@@ -122,6 +123,8 @@ for required in \
   scripts/test-owner-decision-gate.sh \
   scripts/check-owner-release-approval.sh \
   scripts/test-owner-release-approval-check.sh \
+  scripts/check-public-alpha-readiness-assessment.sh \
+  scripts/test-public-alpha-readiness-assessment-check.sh \
   scripts/draft-owner-decisions.sh \
   scripts/test-draft-owner-decisions.sh \
   scripts/public-alpha-decision-packet.sh \
@@ -235,6 +238,10 @@ if ! scripts/check-license-intent.sh; then
 fi
 
 if ! scripts/check-owner-release-approval.sh docs/release/OWNER_RELEASE_APPROVAL.md; then
+  fail=1
+fi
+
+if ! scripts/check-public-alpha-readiness-assessment.sh docs/release/PUBLIC_ALPHA_READINESS_ASSESSMENT.md; then
   fail=1
 fi
 

@@ -66,6 +66,8 @@ require_text "$release" './scripts/test-public-alpha-decision-packet.sh' \
   "public alpha decision packet self-test"
 require_text "$release" './scripts/test-owner-release-approval-check.sh' \
   "owner release approval sheet self-test"
+require_text "$release" './scripts/test-public-alpha-readiness-assessment-check.sh' \
+  "public alpha readiness assessment self-test"
 require_text "$release" './scripts/test-license-intent-check.sh' "license intent self-test"
 require_text "$release" './scripts/test-apply-license-decision.sh' \
   "license decision apply helper self-test"
