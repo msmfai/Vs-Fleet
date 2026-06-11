@@ -60,6 +60,8 @@ require_text "$release" '^permissions:$' "top-level workflow permissions"
 require_text "$release" '^[[:space:]]+contents:[[:space:]]*read$' "read-only contents permission"
 require_text "$release" './scripts/test-release-check.sh' "release-check self-test"
 require_text "$release" './scripts/test-release-notes-check.sh' "release notes self-test"
+require_text "$release" './scripts/test-generate-alpha-release-notes.sh' \
+  "alpha release notes generator self-test"
 require_text "$release" './scripts/test-draft-owner-decisions.sh' \
   "owner decision draft helper self-test"
 require_text "$release" './scripts/test-public-alpha-decision-packet.sh' \

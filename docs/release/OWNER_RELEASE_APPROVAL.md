@@ -91,6 +91,7 @@ Use these as the recommended source-alpha choices:
    ```sh
    ./scripts/release-evidence-status.sh
    ./scripts/check-public-release-branch.sh <public-branch> <source-ref-sha>
+   ./scripts/generate-alpha-release-notes.sh v0.1.0-alpha.1 <source-ref-sha> path/to/release-notes.md
    ```
 
 Do not publish publicly while this sheet or any evidence file remains pending.

@@ -203,6 +203,8 @@ for required in \
   scripts/test-workflow-supply-chain-decision-check.sh \
   scripts/test-release-check.sh \
   scripts/check-release-notes.sh \
+  scripts/generate-alpha-release-notes.sh \
+  scripts/test-generate-alpha-release-notes.sh \
   scripts/test-release-notes-check.sh \
   .github/PULL_REQUEST_TEMPLATE.md \
   .github/ISSUE_TEMPLATE/config.yml \
