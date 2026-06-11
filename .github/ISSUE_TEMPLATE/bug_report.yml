@@ -1,0 +1,87 @@
+name: Bug report
+description: Report a reproducible problem in the supported local alpha path.
+title: "[bug]: "
+labels: ["bug", "alpha"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Fleet is pre-release alpha software. Please scrub workspace paths, local URLs, logs, screenshots, and command lines before posting.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Alpha scope
+      options:
+        - label: This is about the local macOS Fleet host, local code serve-web sessions, reporter, bridge, or CLI.
+          required: true
+        - label: I understand remote/container deployment and binary distribution are experimental unless explicitly documented.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit or build
+      description: Commit SHA, branch, or app build version if available.
+      placeholder: "commit abc1234, branch build/fleet-v1"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Fleet host app
+        - VS Code bridge
+        - Reporter
+        - Hub/protocol
+        - CLI
+        - Build/test/release tooling
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Use exact commands and UI actions where possible.
+      placeholder: |
+        1. Build with ...
+        2. Launch ...
+        3. Click ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: |
+        macOS version:
+        CPU:
+        VS Code / code CLI version:
+        Rust version:
+        Node version:
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or screenshots
+      description: Paste only redacted excerpts. Do not attach raw local logs if they contain private paths, tokens, URLs, or command lines.

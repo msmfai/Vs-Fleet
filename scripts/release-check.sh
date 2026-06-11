@@ -40,15 +40,20 @@ if git ls-files | rg '(^|/)coverage/|(^|/)node_modules/|(^|/)out/|\.vsix$|Fleet\
 fi
 rm -f /tmp/fleet-release-check.$$
 
-if [ ! -f SECURITY.md ]; then
-  echo "FAIL: missing SECURITY.md"
-  fail=1
-fi
-
-if [ ! -f CONTRIBUTING.md ]; then
-  echo "FAIL: missing CONTRIBUTING.md"
-  fail=1
-fi
+for required in \
+  SECURITY.md \
+  CONTRIBUTING.md \
+  SUPPORT.md \
+  CODE_OF_CONDUCT.md \
+  .github/PULL_REQUEST_TEMPLATE.md \
+  .github/ISSUE_TEMPLATE/bug_report.yml \
+  .github/ISSUE_TEMPLATE/alpha_feedback.yml
+do
+  if [ ! -f "$required" ]; then
+    echo "FAIL: missing $required"
+    fail=1
+  fi
+done
 
 if [ "$fail" -ne 0 ]; then
   echo

@@ -15,14 +15,14 @@ closed or explicitly accepted.
 - [ ] Choose and apply a project license.
 - [ ] Add a root `LICENSE` file.
 - [ ] Replace `UNLICENSED` in `Cargo.toml`, `crates/fleet-host/Cargo.toml`, and
-  package manifests.
+  package manifests/lockfiles.
 - [x] Decide whether the public root README is a product README or an
   engineering spec, then make the first screen match that decision.
 - [x] Add `SECURITY.md` with supported versions and report channel.
 - [x] Add `CONTRIBUTING.md` and a contribution licensing policy.
 - [x] Remove or redact tracked artifacts that include local paths, process
   command lines, raw logs, or failed eval output.
-- [ ] State the alpha support boundary: best-effort, breaking changes expected,
+- [x] State the alpha support boundary: best-effort, breaking changes expected,
   not production-ready.
 - [ ] Confirm package namespaces before publishing anything to crates.io,
   Open-VSX, VS Code Marketplace, npm, or GitHub Releases.
@@ -32,18 +32,21 @@ closed or explicitly accepted.
 - [ ] Add a short public quickstart for the currently working local path.
 - [ ] Add an architecture overview that distinguishes production code from
   research/eval scaffolding.
-- [ ] Add a privacy note describing local-only operation and log contents.
+- [x] Add a privacy note describing local-only operation and log contents.
 - [ ] Add a release process for source tags and app bundles.
-- [ ] Add issue templates for bug reports and alpha feedback.
-- [ ] Add a code of conduct if you want public contributions.
+- [x] Add issue templates for bug reports and alpha feedback.
+- [x] Add a code of conduct if you want public contributions.
 - [ ] Run CI on the exact public branch after artifact cleanup.
 
 ## Current evidence from the repository
 
-- Root `Cargo.toml` and `packages/*/package.json` currently declare
-  `UNLICENSED`.
+- Root `Cargo.toml`, `crates/fleet-host/Cargo.toml`,
+  `packages/*/package.json`, and `packages/*/package-lock.json` currently
+  declare `UNLICENSED`.
 - No root `LICENSE` is tracked yet. `SECURITY.md` and `CONTRIBUTING.md` are
   present.
+- `SUPPORT.md`, `CODE_OF_CONDUCT.md`, GitHub issue templates, and a pull request
+  template are present.
 - Root `README.md` is now a public alpha front door; the long engineering spec
   was moved to `docs/ENGINEERING_SPEC.md`.
 - `crates/fleet-host/artifacts/**` is now a local ignored artifact area; raw
@@ -58,8 +61,9 @@ closed or explicitly accepted.
 Yes, for a general public alpha today. It is suitable for a private or
 invite-only technical preview where users know they are looking at an active
 research/build tree. It is not yet suitable as an open-source project front door:
-the legal state is unresolved, the README does not set user expectations, and
-tracked generated evidence leaks local implementation details.
+the legal state is unresolved, package namespaces still need confirmation, and
+prior local artifacts may need history cleanup before first public GitHub
+visibility.
 
 Once the blocking items are closed, a source-only alpha is reasonable. Binary
 distribution should wait until signing/notarization and packaging expectations

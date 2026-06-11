@@ -1,0 +1,48 @@
+name: Alpha feedback
+description: Share feedback on rough edges, release blockers, or expected alpha behavior.
+title: "[alpha feedback]: "
+labels: ["alpha-feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for product/readiness feedback rather than a specific reproducible bug. Scrub private local details before posting.
+  - type: dropdown
+    id: topic
+    attributes:
+      label: Topic
+      options:
+        - First-run/build experience
+        - Local Fleet host workflow
+        - VS Code session management
+        - Agent/reporter state
+        - Documentation
+        - Release packaging
+        - Security/privacy expectations
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What were you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: feedback
+    attributes:
+      label: Feedback
+      description: What felt confusing, missing, too rough, or surprisingly good?
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Why does this matter before or during public alpha?
+  - type: textarea
+    id: suggested_direction
+    attributes:
+      label: Suggested direction
+      description: Optional. What would make this acceptable for you?
