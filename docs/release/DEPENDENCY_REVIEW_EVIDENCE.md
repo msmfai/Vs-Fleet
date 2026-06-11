@@ -7,7 +7,7 @@ become the first public GitHub alpha. Do not mark the owner decision record
 `APPROVED` until this file is concrete and
 `scripts/check-dependency-review-decision.sh` passes.
 
-Commit: `92a63c28b89b516bac4ff7185d57bfe7a26d80c0`
+Commit: `94c28aad7f75b53888e57946facc8ebc6335410e`
 Reviewed date: `2026-06-11`
 Release-control evidence file: `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md`
 
