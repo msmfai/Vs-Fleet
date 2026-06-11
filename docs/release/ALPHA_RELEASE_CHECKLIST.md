@@ -119,8 +119,10 @@ visibility.
 - [ ] Choose GitHub Actions supply-chain posture in
   `docs/release/OWNER_DECISION_RECORD.md` and run
   `./scripts/check-workflow-supply-chain-decision.sh`.
-- [ ] Draft GitHub pre-release notes from
-  `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` and remove all placeholders.
+- [ ] Generate GitHub pre-release notes with
+  `./scripts/generate-alpha-release-notes.sh v0.1.0-alpha.1 <source-ref> path/to/release-notes.md`
+  and add any exact `change=...` or `rough-edge=...` entries needed for this
+  alpha.
 - [ ] Run the release-notes checker with the expected commit:
   `./scripts/check-release-notes.sh path/to/release-notes.md "$(git rev-parse HEAD)"`.
 - [ ] Walk through `docs/release/GITHUB_PUBLICATION_RUNBOOK.md` before changing

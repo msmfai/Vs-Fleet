@@ -168,6 +168,9 @@ jobs:
       - name: Release notes gate self-test
         run: ./scripts/test-release-notes-check.sh
 
+      - name: Alpha release notes generator self-test
+        run: ./scripts/test-generate-alpha-release-notes.sh
+
       - name: History exposure gate
         run: ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md
 

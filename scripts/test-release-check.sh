@@ -189,6 +189,8 @@ for script in \
   scripts/test-dco-signoff.sh \
   scripts/test-release-check.sh \
   scripts/check-release-notes.sh \
+  scripts/generate-alpha-release-notes.sh \
+  scripts/test-generate-alpha-release-notes.sh \
   scripts/test-release-notes-check.sh
 do
   write_script "$script" 'exit 0'

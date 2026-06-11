@@ -67,6 +67,7 @@ jobs:
   release-gate:
     steps:
       - run: ./scripts/test-release-check.sh
+      - run: ./scripts/test-generate-alpha-release-notes.sh
       - run: ./scripts/test-draft-owner-decisions.sh
       - run: ./scripts/test-public-alpha-decision-packet.sh
       - run: ./scripts/test-owner-release-approval-check.sh

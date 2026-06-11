@@ -280,11 +280,16 @@ Do not publish a public alpha until these are true:
    Use an annotated tag if signing is not configured, but record that choice in
    the release notes.
 
-14. Draft release notes from
-   [ALPHA_RELEASE_NOTES_TEMPLATE.md](ALPHA_RELEASE_NOTES_TEMPLATE.md). Replace
-   every placeholder with exact commit, scope, branding status, verification,
-   dependency review, history exposure, security, support, and known-rough-edge
-   evidence.
+14. Generate release notes from the approved owner decisions and concrete
+   release evidence:
+
+   ```sh
+   ./scripts/generate-alpha-release-notes.sh v0.1.0-alpha.1 <source-ref> path/to/release-notes.md
+   ```
+
+   Add `change=...` and `rough-edge=...` arguments if the generated defaults do
+   not fully describe the first alpha. The generator refuses to run until the
+   owner decisions and release evidence pass.
 
 15. Validate the drafted release notes:
 
