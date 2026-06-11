@@ -20,7 +20,7 @@ if ! rg -q '^Decision record status: APPROVED$' "$owner_record"; then
 fi
 
 name_block="$(
-  sed -n '/^### 20\. Public Name Collision And Trademark Posture$/,/^## Required Before Binary Distribution$/p' "$owner_record"
+  sed -n '/^### 20\. Public Name Collision And Trademark Posture$/,/^### 21\. Local Data And Uninstall Policy$/p' "$owner_record"
 )"
 
 checked_count="$(printf '%s\n' "$name_block" | rg -c '^- \[x\] ' || true)"

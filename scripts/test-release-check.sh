@@ -59,6 +59,7 @@ for doc in \
   CODE_OF_CONDUCT.md \
   docs/QUICKSTART.md \
   docs/ARCHITECTURE.md \
+  docs/LOCAL_DATA_AND_UNINSTALL.md \
   docs/release/RELEASE_PROCESS.md \
   docs/release/DEPENDENCY_REVIEW.md \
   docs/release/DEPENDENCY_REVIEW_EVIDENCE.md \
@@ -115,6 +116,7 @@ for script in \
   scripts/check-platform-support-decision.sh \
   scripts/check-roadmap-decision.sh \
   scripts/check-name-collision-decision.sh \
+  scripts/check-local-data-decision.sh \
   scripts/test-owner-decision-gate.sh \
   scripts/test-draft-owner-decisions.sh \
   scripts/test-public-alpha-decision-packet.sh \
@@ -152,6 +154,7 @@ for script in \
   scripts/test-platform-support-decision-check.sh \
   scripts/test-roadmap-decision-check.sh \
   scripts/test-name-collision-decision-check.sh \
+  scripts/test-local-data-decision-check.sh \
   scripts/test-release-check.sh \
   scripts/check-release-notes.sh \
   scripts/test-release-notes-check.sh

@@ -183,17 +183,25 @@ is still `TODO`, ambiguous, or only a recommendation.
     Follow-up: run `./scripts/check-name-collision-decision.sh` after copying
     this choice into `OWNER_DECISION_RECORD.md`.
 
+21. Local data and uninstall policy:
+    Recommended alpha default: document the source-alpha local data locations
+    and manual cleanup commands; do not imply that quitting Fleet removes
+    spawned editor data, logs, or external sessions.
+    Owner answer:
+    Follow-up: run `./scripts/check-local-data-decision.sh` after copying this
+    choice into `OWNER_DECISION_RECORD.md`.
+
 ## Binary-Only Decisions
 
 These are not required for a source-only alpha. They become required before any
 public app bundle.
 
-21. macOS signing and notarization:
+22. macOS signing and notarization:
     Recommended default: no public binaries until Developer ID signing and
     notarization are automated.
     Owner answer:
 
-22. Update channel:
+23. Update channel:
     Recommended default: no auto-update in alpha.
     Owner answer:
 

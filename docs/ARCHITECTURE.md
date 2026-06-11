@@ -89,6 +89,17 @@ Logs and review artifacts must be scrubbed before being posted publicly. The
 release gate rejects tracked release-facing text artifacts that contain common
 machine-local absolute paths.
 
+## Local Data And Cleanup
+
+The source alpha writes local runtime data under `~/.fleet/run` for Hub runtime
+files and `~/.fleet/mux` for spawned editor workspaces, server logs, VS Code
+`--server-data-dir` userdata, reporter sockets, and Claude shim files.
+
+Manual cleanup is `rm -rf ~/.fleet/run ~/.fleet/mux` after closing
+Fleet-spawned servers from the UI. Quitting Fleet does not promise to delete
+spawned editor userdata or logs, and it must not kill externally registered
+sessions.
+
 ## Release Boundary
 
 For the initial source alpha, treat the repo as source code plus build

@@ -78,6 +78,7 @@ for required in \
   CODE_OF_CONDUCT.md \
   docs/QUICKSTART.md \
   docs/ARCHITECTURE.md \
+  docs/LOCAL_DATA_AND_UNINSTALL.md \
   docs/release/RELEASE_PROCESS.md \
   docs/release/DEPENDENCY_REVIEW.md \
   docs/release/DEPENDENCY_REVIEW_EVIDENCE.md \
@@ -161,6 +162,8 @@ for required in \
   scripts/test-roadmap-decision-check.sh \
   scripts/check-name-collision-decision.sh \
   scripts/test-name-collision-decision-check.sh \
+  scripts/check-local-data-decision.sh \
+  scripts/test-local-data-decision-check.sh \
   scripts/test-release-check.sh \
   scripts/check-release-notes.sh \
   scripts/test-release-notes-check.sh \
@@ -275,6 +278,9 @@ else
       fail=1
     fi
     if ! scripts/check-name-collision-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
+      fail=1
+    fi
+    if ! scripts/check-local-data-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
       fail=1
     fi
   fi

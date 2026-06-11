@@ -107,6 +107,9 @@ closed or explicitly accepted.
 - [ ] Choose public name collision/trademark posture in
   `docs/release/OWNER_DECISION_RECORD.md` and run
   `./scripts/check-name-collision-decision.sh`.
+- [ ] Choose local data/uninstall policy in
+  `docs/release/OWNER_DECISION_RECORD.md` and run
+  `./scripts/check-local-data-decision.sh`.
 - [ ] Draft GitHub pre-release notes from
   `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` and remove all placeholders.
 - [ ] Run the release-notes checker with the expected commit:
@@ -269,6 +272,9 @@ closed or explicitly accepted.
   presented as a provisional working name with no trademark claim, replaced
   before public visibility, or backed by a concrete owner-reviewed naming
   clearance record.
+- `scripts/check-local-data-decision.sh` validates that public docs identify
+  source-alpha local runtime paths, manual cleanup commands, environment
+  overrides, and process ownership boundaries before users run Fleet locally.
 - `scripts/check-privacy-decision.sh` validates that the approved
   privacy/telemetry posture matches the README, security policy, architecture
   notes, issue template, and release notes template.
