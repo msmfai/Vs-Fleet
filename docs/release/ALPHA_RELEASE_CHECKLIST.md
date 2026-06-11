@@ -26,6 +26,9 @@ closed or explicitly accepted.
   docs match the owner record.
 - [ ] Answer `docs/release/PUBLIC_ALPHA_OWNER_PROMPT.md`, then copy the final
   choices into `docs/release/OWNER_DECISION_RECORD.md`.
+- [ ] Run `./scripts/public-alpha-decision-packet.sh` and confirm it reports
+  `Release readiness: OWNER DECISIONS COMPLETE` before marking the owner record
+  approved.
 - [ ] Choose the supported source-alpha scope and run
   `./scripts/check-alpha-scope-decision.sh`.
 - [ ] Choose the editor server licensing boundary and run
