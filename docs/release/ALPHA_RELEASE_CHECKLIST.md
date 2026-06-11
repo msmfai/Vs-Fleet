@@ -56,6 +56,9 @@ closed or explicitly accepted.
 - [x] Add Dependabot version-update coverage for GitHub Actions, Cargo, and npm
   dependency surfaces.
 - [ ] Run `./scripts/check-dependabot-config.sh .github/dependabot.yml`.
+- [x] Track release-critical Rust, pnpm, and npm lockfiles.
+- [ ] Run `./scripts/check-lockfile-policy.sh` to verify exact-commit
+  dependency inputs are tracked and not ignored.
 - [ ] Choose the support commitment in
   `docs/release/OWNER_DECISION_RECORD.md` and run
   `./scripts/check-support-decision.sh`.
@@ -132,6 +135,9 @@ closed or explicitly accepted.
 - `.github/dependabot.yml` is present for GitHub Actions, root Cargo workspace,
   standalone Fleet host Cargo crate, and both npm packages; the release gate
   validates those entries with `scripts/check-dependabot-config.sh`.
+- `scripts/check-lockfile-policy.sh` requires root `Cargo.lock`, standalone
+  `crates/fleet-host/Cargo.lock`, root `pnpm-lock.yaml`, and npm package locks
+  to be tracked and not ignored.
 - `.github/workflows/ci.yml` and `.github/workflows/release-readiness.yml` are
   present; `scripts/check-github-workflows.sh` validates that the public-alpha
   evidence workflows still contain the expected Rust, package, coverage, host

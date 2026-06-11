@@ -37,6 +37,7 @@ sessions.
 - Rust workspace checks: passed locally.
 - Fleet host checks: passed locally.
 - JavaScript/package checks: passed locally.
+- Lockfile policy: passed.
 - Dependency review: completed, no accepted findings.
 - Documentation link audit: passed.
 - Public tree size audit: passed.
@@ -139,6 +140,11 @@ missing_doc_links="$TMPDIR/missing-doc-links.md"
 write_valid_notes "$missing_doc_links"
 perl -0pi -e 's/\n- Documentation link audit: passed\.\n/\n/' "$missing_doc_links"
 expect_fail "missing documentation link audit is rejected" "$missing_doc_links"
+
+missing_lockfile="$TMPDIR/missing-lockfile.md"
+write_valid_notes "$missing_lockfile"
+perl -0pi -e 's/\n- Lockfile policy: passed\.\n/\n/' "$missing_lockfile"
+expect_fail "missing lockfile policy is rejected" "$missing_lockfile"
 
 missing_tree_size="$TMPDIR/missing-tree-size.md"
 write_valid_notes "$missing_tree_size"

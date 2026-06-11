@@ -94,6 +94,8 @@ for required in \
   scripts/test-doc-link-check.sh \
   scripts/check-public-tree-size.sh \
   scripts/test-public-tree-size-check.sh \
+  scripts/check-lockfile-policy.sh \
+  scripts/test-lockfile-policy-check.sh \
   scripts/check-dependabot-config.sh \
   scripts/test-dependabot-config-check.sh \
   scripts/check-owner-decisions.sh \
@@ -159,6 +161,10 @@ if ! scripts/check-doc-links.sh; then
 fi
 
 if ! scripts/check-public-tree-size.sh; then
+  fail=1
+fi
+
+if ! scripts/check-lockfile-policy.sh; then
   fail=1
 fi
 

@@ -17,6 +17,8 @@ review commands.
 
 cargo tree: `TODO`
 cargo metadata --locked: `TODO`
+fleet-host cargo metadata --locked: `TODO`
+lockfile policy: `TODO`
 fleet-bridge npm audit: `TODO`
 extension npm audit: `TODO`
 generated artifact check: `TODO`

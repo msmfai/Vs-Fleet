@@ -1,13 +1,11 @@
 # Rust / Cargo
 target/
-Cargo.lock
 
 # Node / pnpm
 node_modules/
 packages/*/node_modules/
 packages/*/out/
 packages/*/coverage/
-pnpm-lock.yaml
 
 # Editor / IDE
 .vscode/settings.json

@@ -62,6 +62,11 @@ if ! rg -q '^- Documentation link audit:' "$file"; then
   fail=1
 fi
 
+if ! rg -q '^- Lockfile policy:' "$file"; then
+  echo "FAIL: release notes must record the lockfile policy result"
+  fail=1
+fi
+
 if ! rg -q '^- Public tree size audit:' "$file"; then
   echo "FAIL: release notes must record the public tree size audit result"
   fail=1

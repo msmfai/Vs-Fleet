@@ -28,6 +28,8 @@ Do not publish a public alpha until these are true:
 - Rust crate manifests retain `publish = false` and extension package manifests
   retain `"private": true` unless the owner decision record explicitly changes
   distribution scope away from source-only alpha.
+- `./scripts/check-lockfile-policy.sh` passes, so root Cargo, standalone host
+  Cargo, pnpm, and package npm lockfiles are tracked for exact-commit review.
 - `./scripts/check-distribution-decision.sh docs/release/OWNER_DECISION_RECORD.md .`
   passes.
 - GitHub Private Vulnerability Reporting is enabled, or `SECURITY.md` names a
@@ -137,6 +139,7 @@ Do not publish a public alpha until these are true:
    ./scripts/check-privacy-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"
    ./scripts/check-dependabot-config.sh .github/dependabot.yml
+   ./scripts/check-lockfile-policy.sh
    ./scripts/check-support-decision.sh docs/release/OWNER_DECISION_RECORD.md SUPPORT.md .
    ./scripts/secret-release-check.sh
    ./scripts/release-check.sh
