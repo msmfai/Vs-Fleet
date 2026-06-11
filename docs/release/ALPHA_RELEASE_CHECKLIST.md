@@ -89,6 +89,8 @@ closed or explicitly accepted.
 - [x] Add an intake-template gate for issue/PR privacy, security, and alpha
   scope warnings.
 - [ ] Run `./scripts/check-github-intake-templates.sh`.
+- [x] Add a documentation link gate for tracked Markdown files.
+- [ ] Run `./scripts/check-doc-links.sh` before publishing release-facing docs.
 - [x] Add a code of conduct if you want public contributions.
 - [x] Add a manual release-readiness CI workflow for the exact public ref.
 - [x] Add a workflow integrity gate for normal CI and Release Readiness.
@@ -114,6 +116,8 @@ closed or explicitly accepted.
   templates keep blank issues disabled, preserve alpha scope, redirect
   vulnerability details away from public issues, and require contribution
   hygiene/test evidence.
+- `scripts/check-doc-links.sh` validates tracked Markdown links to local files
+  so the public GitHub front door does not ship with broken relative docs.
 - `docs/QUICKSTART.md`, `docs/ARCHITECTURE.md`, and
   `docs/release/RELEASE_PROCESS.md` are present.
 - `.github/workflows/release-readiness.yml`,

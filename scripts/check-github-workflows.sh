@@ -45,11 +45,13 @@ require_text "$release" 'workflow_dispatch:' "manual workflow_dispatch trigger"
 require_text "$release" './scripts/test-release-check.sh' "release-check self-test"
 require_text "$release" './scripts/test-dependabot-config-check.sh' "Dependabot config self-test"
 require_text "$release" './scripts/test-secret-release-check.sh' "secret exposure self-test"
+require_text "$release" './scripts/test-doc-link-check.sh' "documentation link self-test"
 require_text "$release" './scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md' \
   "owner decision gate"
 require_text "$release" './scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md' \
   "history exposure gate"
 require_text "$release" './scripts/secret-release-check.sh' "secret exposure gate"
+require_text "$release" './scripts/check-doc-links.sh' "documentation link gate"
 require_text "$release" './scripts/release-check.sh' "release hygiene gate"
 require_text "$release" 'cargo clippy --workspace --all-targets --all-features -- -D warnings' \
   "source alpha clippy check"

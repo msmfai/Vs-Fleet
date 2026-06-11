@@ -57,6 +57,11 @@ if ! rg -q '^- Secret exposure audit:' "$file"; then
   fail=1
 fi
 
+if ! rg -q '^- Documentation link audit:' "$file"; then
+  echo "FAIL: release notes must record the documentation link audit result"
+  fail=1
+fi
+
 field_value() {
   local label=$1
   local line
