@@ -84,6 +84,8 @@ for required in \
   scripts/test-license-decision-check.sh \
   scripts/check-namespace-decision.sh \
   scripts/test-namespace-decision-check.sh \
+  scripts/check-security-reporting-decision.sh \
+  scripts/test-security-reporting-decision-check.sh \
   scripts/check-release-notes.sh \
   scripts/test-release-notes-check.sh \
   .github/workflows/release-readiness.yml \
@@ -105,6 +107,8 @@ elif ! scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md; t
 elif ! scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
   fail=1
 elif ! scripts/check-namespace-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
+  fail=1
+elif ! scripts/check-security-reporting-decision.sh docs/release/OWNER_DECISION_RECORD.md SECURITY.md; then
   fail=1
 fi
 

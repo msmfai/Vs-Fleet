@@ -30,6 +30,9 @@ jobs:
       - name: Namespace decision gate self-test
         run: ./scripts/test-namespace-decision-check.sh
 
+      - name: Security reporting gate self-test
+        run: ./scripts/test-security-reporting-decision-check.sh
+
       - name: History release gate self-test
         run: ./scripts/test-history-release-check.sh
 

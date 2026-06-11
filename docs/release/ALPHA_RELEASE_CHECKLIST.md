@@ -25,6 +25,8 @@ closed or explicitly accepted.
 - [x] Decide whether the public root README is a product README or an
   engineering spec, then make the first screen match that decision.
 - [x] Add `SECURITY.md` with supported versions and report channel.
+- [ ] Run `./scripts/check-security-reporting-decision.sh` after choosing the
+  security reporting channel to verify `SECURITY.md` matches the owner record.
 - [x] Add `CONTRIBUTING.md` and a contribution licensing policy.
 - [x] Remove or redact tracked artifacts that include local paths, process
   command lines, raw logs, or failed eval output.
@@ -85,6 +87,9 @@ closed or explicitly accepted.
   metadata, and package lockfile root metadata.
 - `scripts/check-namespace-decision.sh` validates that the approved namespace
   table matches locally-verifiable Rust, npm, Tauri, and extension metadata.
+- `scripts/check-security-reporting-decision.sh` validates that the approved
+  security reporting choice matches `SECURITY.md`, so the public repo does not
+  publish ambiguous "once enabled" vulnerability reporting instructions.
 - Root `README.md` is now a public alpha front door; the long engineering spec
   was moved to `docs/ENGINEERING_SPEC.md`.
 - `crates/fleet-host/artifacts/**` is now a local ignored artifact area; raw
