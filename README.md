@@ -1,4 +1,4 @@
-> This is a vibe coded app I put together because I had personal use for it, that will be updated when I personally require new features. I'm providing it as is to see if there is more general interest in vs-code multiplexing. If this project gets any more general interest I'll take it more seriously. PRs and issues welcome.
+> This is an agent coded app I put together because I had personal use for it, that will be updated when I personally require new features. I'm providing it as is to see if there is more general interest in vs-code multiplexing. If this project gets any more general interest I'll take it more seriously. PRs and issues welcome.
 
 <p align="center">
   <img src="crates/fleet-host/icons/icon.png" alt="VS Fleet logo" width="512" height="512">
