@@ -14,6 +14,16 @@ answers:
 ./scripts/public-alpha-decision-packet.sh
 ```
 
+To create a review draft with the recommended source-alpha defaults checked,
+run:
+
+```sh
+./scripts/draft-owner-decisions.sh <github-owner> <github-repo> docs/release/OWNER_DECISION_RECORD.draft.md
+```
+
+The draft stays `PENDING`; copy or edit it into `OWNER_DECISION_RECORD.md` only
+after reviewing every checked choice.
+
 ## Required Answers
 
 Copy the answers into `OWNER_DECISION_RECORD.md`; do not publish while any value

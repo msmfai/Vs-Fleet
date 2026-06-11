@@ -10,6 +10,10 @@ actual selected choices in [OWNER_DECISION_RECORD.md](OWNER_DECISION_RECORD.md).
 Run `./scripts/public-alpha-decision-packet.sh` to list the current unresolved
 owner choices and the follow-up commands implied by the selected history and
 distribution answers.
+Run
+`./scripts/draft-owner-decisions.sh <github-owner> <github-repo> docs/release/OWNER_DECISION_RECORD.draft.md`
+if you want a PENDING draft with the recommended source-alpha defaults checked
+before making final choices.
 
 ## Required before public alpha
 

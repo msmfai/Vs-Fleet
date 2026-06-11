@@ -102,6 +102,8 @@ for required in \
   scripts/test-dependabot-config-check.sh \
   scripts/check-owner-decisions.sh \
   scripts/test-owner-decision-gate.sh \
+  scripts/draft-owner-decisions.sh \
+  scripts/test-draft-owner-decisions.sh \
   scripts/public-alpha-decision-packet.sh \
   scripts/test-public-alpha-decision-packet.sh \
   scripts/history-release-check.sh \
