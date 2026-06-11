@@ -83,6 +83,9 @@ for required in \
   docs/release/GITHUB_PUBLICATION_RUNBOOK.md \
   docs/release/PUBLIC_CI_EVIDENCE.md \
   docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md \
+  .github/dependabot.yml \
+  scripts/check-dependabot-config.sh \
+  scripts/test-dependabot-config-check.sh \
   scripts/check-owner-decisions.sh \
   scripts/test-owner-decision-gate.sh \
   scripts/history-release-check.sh \
@@ -122,6 +125,10 @@ do
     fail=1
   fi
 done
+
+if ! scripts/check-dependabot-config.sh .github/dependabot.yml; then
+  fail=1
+fi
 
 if [ ! -f docs/release/OWNER_DECISION_RECORD.md ]; then
   echo "FAIL: missing docs/release/OWNER_DECISION_RECORD.md"

@@ -48,6 +48,9 @@ closed or explicitly accepted.
 - [ ] Record dependency review evidence in
   `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` and run
   `./scripts/check-dependency-review-decision.sh`.
+- [x] Add Dependabot version-update coverage for GitHub Actions, Cargo, and npm
+  dependency surfaces.
+- [ ] Run `./scripts/check-dependabot-config.sh .github/dependabot.yml`.
 - [ ] Choose the support commitment in
   `docs/release/OWNER_DECISION_RECORD.md` and run
   `./scripts/check-support-decision.sh`.
@@ -98,6 +101,9 @@ closed or explicitly accepted.
 - `.github/workflows/release-readiness.yml`,
   `docs/release/DEPENDENCY_REVIEW.md`, and
   `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` are present.
+- `.github/dependabot.yml` is present for GitHub Actions, root Cargo workspace,
+  standalone Fleet host Cargo crate, and both npm packages; the release gate
+  validates those entries with `scripts/check-dependabot-config.sh`.
 - `docs/release/PUBLIC_CI_EVIDENCE.md` is present as the exact commit/run
   evidence record for the first public GitHub alpha.
 - `docs/release/GITHUB_PUBLICATION_RUNBOOK.md` is present for the final

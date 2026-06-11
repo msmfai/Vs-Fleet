@@ -48,6 +48,9 @@ jobs:
       - name: Public CI evidence gate self-test
         run: ./scripts/test-ci-evidence-decision-check.sh
 
+      - name: Dependabot config gate self-test
+        run: ./scripts/test-dependabot-config-check.sh
+
       - name: Privacy decision gate self-test
         run: ./scripts/test-privacy-decision-check.sh
 
