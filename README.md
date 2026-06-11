@@ -154,5 +154,5 @@ See [SUPPORT.md](SUPPORT.md) for the current alpha support boundary.
 
 ## License
 
-Fleet is licensed under `MIT OR Apache-2.0`. See [LICENSE](LICENSE),
-[LICENSE-MIT](LICENSE-MIT), and [LICENSE-APACHE](LICENSE-APACHE).
+Fleet is licensed under `MIT OR Apache-2.0`. See [LICENSE](LICENSE) for the
+project license notice and links to the full MIT and Apache-2.0 texts.
