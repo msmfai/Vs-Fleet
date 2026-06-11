@@ -64,6 +64,7 @@ for doc in \
   docs/release/DEPENDENCY_REVIEW_EVIDENCE.md \
   docs/release/GITHUB_PUBLICATION_RUNBOOK.md \
   docs/release/PUBLIC_CI_EVIDENCE.md \
+  docs/release/PUBLIC_ALPHA_OWNER_PROMPT.md \
   docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md \
   docs/release/ALPHA_RELEASE_CHECKLIST.md \
   docs/release/PUBLIC_ALPHA_DECISIONS.md \

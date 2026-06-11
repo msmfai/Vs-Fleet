@@ -24,7 +24,8 @@ closed or explicitly accepted.
 - [ ] Run `./scripts/check-distribution-decision.sh` after choosing
   distribution scope to verify source-only fences or binary-release process
   docs match the owner record.
-- [ ] Fill `docs/release/OWNER_DECISION_RECORD.md` for required owner choices.
+- [ ] Answer `docs/release/PUBLIC_ALPHA_OWNER_PROMPT.md`, then copy the final
+  choices into `docs/release/OWNER_DECISION_RECORD.md`.
 - [ ] Choose the supported source-alpha scope and run
   `./scripts/check-alpha-scope-decision.sh`.
 - [ ] Choose the editor server licensing boundary and run
