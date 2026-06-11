@@ -19,6 +19,11 @@ fail=0
 for heading in \
   "## Release" \
   "## Alpha Scope" \
+  "## Supported Platform And Toolchain" \
+  "## Roadmap And Non-Goals" \
+  "## Naming And Trademark Posture" \
+  "## Local Data And Cleanup" \
+  "## Workflow Supply Chain" \
   "## What Changed" \
   "## Verification" \
   "## Dependency And License Review" \
@@ -69,6 +74,31 @@ fi
 
 if ! rg -q '^- Public tree size audit:' "$file"; then
   echo "FAIL: release notes must record the public tree size audit result"
+  fail=1
+fi
+
+if ! rg -qi 'macOS source build only|macOS source alpha only' "$file"; then
+  echo "FAIL: release notes must state the supported macOS source-alpha platform"
+  fail=1
+fi
+
+if ! rg -qi 'No public roadmap commitments' "$file"; then
+  echo "FAIL: release notes must state the alpha roadmap commitment boundary"
+  fail=1
+fi
+
+if ! rg -qi 'Fleet.*provisional|provisional.*Fleet' "$file"; then
+  echo "FAIL: release notes must state the Fleet name is provisional"
+  fail=1
+fi
+
+if ! rg -q '~/.fleet/run|`~/.fleet/run`' "$file" || ! rg -q '~/.fleet/mux|`~/.fleet/mux`' "$file"; then
+  echo "FAIL: release notes must state local Fleet data locations"
+  fail=1
+fi
+
+if ! rg -q 'GITHUB_TOKEN' "$file" || ! rg -qi 'no repository secrets|do not use repository secrets' "$file"; then
+  echo "FAIL: release notes must state the workflow token/secrets supply-chain posture"
   fail=1
 fi
 
