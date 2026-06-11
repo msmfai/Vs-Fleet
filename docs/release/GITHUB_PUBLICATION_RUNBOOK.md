@@ -40,9 +40,10 @@ branch.
 
 1. Decide whether the first public branch uses current history or a cleaned /
    squashed history.
-2. Run `./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md`
+2. Run `./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md <branch>`
    on the exact branch to publish.
-3. Run `./scripts/secret-release-check.sh` on the exact branch to publish.
+3. Run `./scripts/secret-release-check.sh <branch>` on the exact branch to
+   publish.
 4. If the history audit fails and the owner did not explicitly accept current
    history exposure, create a cleaned branch with
    `./scripts/prepare-public-branch.sh <public-branch> <source-ref>` and publish
@@ -54,7 +55,8 @@ branch.
    to prove the branch is a one-commit tree snapshot of the approved source.
    In the same private clone, run the aggregate gate with
    `FLEET_RELEASE_HISTORY_REF=<public-branch> ./scripts/release-check.sh` so the
-   history audit scans the public ref rather than every private local ref.
+   history and secret audits scan the public ref rather than every private
+   local ref.
 5. If the secret exposure audit fails, publish a cleaned branch instead. Do not
    publish credential-looking material as an accepted alpha exception.
 6. Review GitHub's repository visibility consequences before changing a private

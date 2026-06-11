@@ -181,9 +181,11 @@ if printf '%s\n' "$required_block" | rg -q '^- \[x\] Publish a cleaned/squashed 
   echo "  ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md public-alpha"
   echo "  ./scripts/generate-public-branch-evidence.sh public-alpha HEAD docs/release/PUBLIC_BRANCH_EVIDENCE.md"
   echo "  ./scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md \"\$(git rev-parse HEAD)\""
+  echo "  ./scripts/secret-release-check.sh public-alpha"
   echo "  FLEET_RELEASE_HISTORY_REF=public-alpha ./scripts/release-check.sh"
 elif printf '%s\n' "$required_block" | rg -q '^- \[x\] Publish the current branch history and accept that old commits may contain'; then
   echo "  ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md"
+  echo "  ./scripts/secret-release-check.sh"
   echo "  ./scripts/release-check.sh"
 else
   echo "  # Choose Public History before selecting the release-check command."
@@ -191,8 +193,10 @@ else
   echo "  ./scripts/prepare-public-branch.sh public-alpha HEAD"
   echo "  ./scripts/generate-public-branch-evidence.sh public-alpha HEAD docs/release/PUBLIC_BRANCH_EVIDENCE.md"
   echo "  ./scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md \"\$(git rev-parse HEAD)\""
+  echo "  ./scripts/secret-release-check.sh public-alpha"
   echo "  FLEET_RELEASE_HISTORY_REF=public-alpha ./scripts/release-check.sh"
   echo "  # Current history:"
+  echo "  ./scripts/secret-release-check.sh"
   echo "  ./scripts/release-check.sh"
 fi
 echo "  ./scripts/run-dependency-review.sh"

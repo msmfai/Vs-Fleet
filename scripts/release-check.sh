@@ -240,7 +240,7 @@ if ! scripts/check-lockfile-policy.sh; then
   fail=1
 fi
 
-if ! scripts/secret-release-check.sh; then
+if ! scripts/secret-release-check.sh "$history_ref"; then
   fail=1
 fi
 
