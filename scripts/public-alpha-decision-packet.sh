@@ -2,6 +2,8 @@
 set -euo pipefail
 
 file="${1:-docs/release/OWNER_DECISION_RECORD.md}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+template_file="${FLEET_OWNER_REPLY_TEMPLATE:-$script_dir/../docs/release/OWNER_DECISION_REPLY_TEMPLATE.md}"
 
 if [ ! -f "$file" ]; then
   echo "Public alpha owner decision packet"
@@ -85,6 +87,26 @@ evidence_status() {
   fi
 
   echo "- $label: $status ($file)"
+}
+
+print_owner_reply_template() {
+  if [ ! -f "$template_file" ]; then
+    echo "  Missing owner reply template: $template_file"
+    return 1
+  fi
+
+  awk '
+    /^```text$/ {
+      in_block = 1
+      next
+    }
+    /^```$/ && in_block {
+      exit
+    }
+    in_block {
+      print "  " $0
+    }
+  ' "$template_file"
 }
 
 required_start="$(rg -n '^## Required Before Public GitHub Visibility$' "$file" | cut -d: -f1 | head -n1 || true)"
@@ -194,28 +216,10 @@ echo "- Local data: document ~/.fleet/run, ~/.fleet/mux, manual cleanup, and pro
 echo "- Workflows: tagged third-party Actions accepted only with read-only token permissions and no secrets/publishing credentials."
 
 echo
-echo "Minimal owner reply shape:"
-echo "  I accept the recommended source-only alpha defaults in docs/release/OWNER_RELEASE_APPROVAL.md,"
-echo "  including cleaned first public history, local macOS-only scope, user-provided VS Code,"
-echo "  source-only distribution, DCO/no CLA for alpha, best-effort support, no stable"
-echo "  compatibility promise, no public roadmap commitment, provisional Fleet name/no trademark"
-echo "  claim, documented local data, no telemetry by default, and read-only/no-secret workflows."
-echo
-echo "  Namespace values:"
-echo "    GitHub org/user: <owner>"
-echo "    GitHub repo name: <repo>"
-echo "    Product name: Fleet | <new name>"
-echo "    Rust crate prefix: fleet-* | <new prefix>"
-echo "    npm package names: fleet-extension, fleet-bridge | <new names>"
-echo "    VS Code Marketplace publisher: fleet-team | <publisher>"
-echo "    Open VSX publisher: fleet-team | <publisher>"
-echo "    macOS bundle id: dev.fleet.host | <new bundle id>"
-echo "    Note: source-only alpha still defers marketplace/package publication;"
-echo "    these values are manifest namespace decisions, not permission to publish."
-echo
-echo "  Security reporting: GitHub Private Vulnerability Reporting | <private security contact>"
-echo "  Emergency removal owner for publication evidence: <owner/contact>"
-echo "  CI evidence: provide the CI and Release Readiness run URLs after the public branch exists."
+echo "Minimal owner reply shape from docs/release/OWNER_DECISION_REPLY_TEMPLATE.md:"
+if ! print_owner_reply_template; then
+  fail=1
+fi
 
 echo
 echo "Release evidence snapshot:"
