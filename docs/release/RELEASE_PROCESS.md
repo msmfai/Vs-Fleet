@@ -36,8 +36,12 @@ Do not publish a public alpha until these are true:
   passes.
 - `./scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"`
   passes.
+- `./scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"`
+  passes.
 - Dependency review has been run for the exact public commit, or the approved
   owner decision record explicitly accepts publishing without it.
+- `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` records the exact commit,
+  command results, and accepted findings or skipped-review risk.
 - GitHub pre-release notes are drafted from
   [ALPHA_RELEASE_NOTES_TEMPLATE.md](ALPHA_RELEASE_NOTES_TEMPLATE.md), with every
   placeholder replaced.
@@ -92,13 +96,15 @@ Do not publish a public alpha until these are true:
    ./scripts/check-security-reporting-decision.sh docs/release/OWNER_DECISION_RECORD.md SECURITY.md
    ./scripts/check-contribution-decision.sh docs/release/OWNER_DECISION_RECORD.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md
    ./scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"
+   ./scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"
    ./scripts/release-check.sh
    ```
 
 7. Run the dependency review in
    [DEPENDENCY_REVIEW.md](DEPENDENCY_REVIEW.md), and record any accepted
-   findings in the release notes. If this is deliberately skipped for the first
-   public source alpha, record that accepted risk in
+   findings in [DEPENDENCY_REVIEW_EVIDENCE.md](DEPENDENCY_REVIEW_EVIDENCE.md)
+   and the release notes. If this is deliberately skipped for the first public
+   source alpha, record that accepted risk in
    [OWNER_DECISION_RECORD.md](OWNER_DECISION_RECORD.md).
 
 8. Verify the public tree has no tracked generated artifacts:

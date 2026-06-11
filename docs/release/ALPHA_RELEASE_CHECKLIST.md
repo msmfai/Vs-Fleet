@@ -37,6 +37,9 @@ closed or explicitly accepted.
   history or explicitly accept current branch history exposure.
 - [ ] Run dependency review for the exact public branch, or explicitly accept
   skipping it in the owner decision record.
+- [ ] Record dependency review evidence in
+  `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` and run
+  `./scripts/check-dependency-review-decision.sh`.
 - [ ] Draft GitHub pre-release notes from
   `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` and remove all placeholders.
 - [ ] Run `./scripts/check-release-notes.sh` on the drafted GitHub pre-release
@@ -76,8 +79,9 @@ closed or explicitly accepted.
   template are present.
 - `docs/QUICKSTART.md`, `docs/ARCHITECTURE.md`, and
   `docs/release/RELEASE_PROCESS.md` are present.
-- `.github/workflows/release-readiness.yml` and
-  `docs/release/DEPENDENCY_REVIEW.md` are present.
+- `.github/workflows/release-readiness.yml`,
+  `docs/release/DEPENDENCY_REVIEW.md`, and
+  `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` are present.
 - `docs/release/PUBLIC_CI_EVIDENCE.md` is present as the exact commit/run
   evidence record for the first public GitHub alpha.
 - `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` is present so the first GitHub
@@ -103,6 +107,9 @@ closed or explicitly accepted.
 - `scripts/check-ci-evidence-decision.sh` validates that the approved public CI
   evidence choice has exact commit evidence and, for the recommended path, a
   GitHub Actions run URL.
+- `scripts/check-dependency-review-decision.sh` validates that the approved
+  dependency review choice has exact commit evidence and explicit command
+  results or an accepted skipped-review risk.
 - Root `README.md` is now a public alpha front door; the long engineering spec
   was moved to `docs/ENGINEERING_SPEC.md`.
 - `crates/fleet-host/artifacts/**` is now a local ignored artifact area; raw

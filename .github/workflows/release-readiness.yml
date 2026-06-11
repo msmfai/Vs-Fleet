@@ -39,6 +39,9 @@ jobs:
       - name: Public CI evidence gate self-test
         run: ./scripts/test-ci-evidence-decision-check.sh
 
+      - name: Dependency review gate self-test
+        run: ./scripts/test-dependency-review-decision-check.sh
+
       - name: History release gate self-test
         run: ./scripts/test-history-release-check.sh
 
