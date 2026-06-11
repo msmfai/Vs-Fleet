@@ -21,13 +21,6 @@ if [ ! -f LICENSE ]; then
   fail=1
 fi
 
-for license_file in docs/legal/LICENSE-MIT docs/legal/LICENSE-APACHE; do
-  if [ ! -f "$license_file" ]; then
-    echo "FAIL: missing $license_file"
-    fail=1
-  fi
-done
-
 check_tracked_absent 'license[[:space:]]*=[[:space:]]*"UNLICENSED"|"license"[[:space:]]*:[[:space:]]*"UNLICENSED"' \
   "package manifests still declare UNLICENSED" \
   Cargo.toml crates packages
@@ -84,8 +77,6 @@ done
 
 for required in \
   SECURITY.md \
-  docs/legal/LICENSE-MIT \
-  docs/legal/LICENSE-APACHE \
   CONTRIBUTING.md \
   DCO.md \
   SUPPORT.md \

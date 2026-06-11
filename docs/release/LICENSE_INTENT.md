@@ -5,9 +5,9 @@ context, not a substitute for the actual `LICENSE` file and manifest metadata.
 
 ## Current Decision
 
-Fleet should ship the source alpha as `MIT OR Apache-2.0`. This is the alpha
+Fleet should ship the source alpha as `MIT`. This is the alpha
 decision, not a placeholder for an imminent copyleft switch. The reviewed
-license text is tracked in root `LICENSE` with full texts under `docs/legal/`, and
+license text is tracked in root `LICENSE`, and
 the Rust/npm manifests and lockfiles use the same SPDX expression.
 
 The permissive license is the default for Fleet's reusable library and protocol

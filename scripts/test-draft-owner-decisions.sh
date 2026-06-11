@@ -15,7 +15,7 @@ fi
 
 for pattern in \
   '^Decision record status: PENDING$' \
-  '^- \[x\] MIT OR Apache-2.0 dual license\.$' \
+  '^- \[x\] MIT only\.$' \
   '^- \[x\] Publish a cleaned/squashed history for the first public branch\.$' \
   '^\| GitHub org/user \| example \|$' \
   '^\| GitHub repo name \| vs-fleet \|$' \

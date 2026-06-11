@@ -58,7 +58,7 @@ Copy the answers into `OWNER_DECISION_RECORD.md`; do not publish while any value
 is still `TODO`, ambiguous, or only a recommendation.
 
 1. License:
-   Recommended alpha default: `MIT OR Apache-2.0`.
+   Recommended alpha default: `MIT`.
    Keep reusable library/API crates permissive. Reserve AGPL-3.0-only plus a
    commercial exception as a future CLI/hosted-control-plane contingency only
    after a concrete monetization trigger.

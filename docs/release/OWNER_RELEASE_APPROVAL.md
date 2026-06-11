@@ -34,7 +34,7 @@ Use these as the recommended source-alpha choices:
 
 | Decision | Recommended owner answer |
 |---|---|
-| License | `MIT OR Apache-2.0`; keep reusable library/API crates permissive. |
+| License | `MIT`; keep reusable library/API crates permissive. |
 | Public history | Cleaned/squashed first public branch. |
 | Namespace | Fill exact GitHub owner/repo and keep package/binary namespaces provisional. |
 | Alpha scope | Local macOS host plus local `code serve-web` workflow only. |

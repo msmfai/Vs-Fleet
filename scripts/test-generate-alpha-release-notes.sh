@@ -60,7 +60,7 @@ for pattern in \
   '^- Version: v0\.1\.0-alpha\.1$' \
   "^- Commit: $source_commit$" \
   '^- Distribution: source-only$' \
-  '^- Project license: MIT OR Apache-2.0$' \
+  '^- Project license: MIT$' \
   '^- Vulnerability reporting path: GitHub Private Vulnerability Reporting enabled$' \
   '^- History exposure audit: cleaned public history; public root commit ' \
   '^Fleet is too rough for a broad open-source launch, package announcement, binary$' \

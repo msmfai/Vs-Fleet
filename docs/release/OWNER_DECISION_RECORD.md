@@ -13,16 +13,15 @@ new owner decision.
 Choose one and then apply it to `LICENSE`, Rust manifests, npm manifests, and
 lockfiles.
 
-- [x] MIT OR Apache-2.0 dual license.
-- [ ] MIT only.
+- [ ] MIT OR Apache-2.0 dual license.
+- [x] MIT only.
 - [ ] Apache-2.0 only.
 - [ ] AGPL-3.0-only.
 - [ ] Other: `TODO`
 
-Current default recommendation: MIT OR Apache-2.0 for a permissive Rust-friendly
-alpha. Keep reusable library/API crates permissive; reserve AGPL-3.0-only plus
-a commercial exception as a future CLI/hosted-control-plane contingency only
-after a concrete monetization trigger.
+Current approved choice: MIT only. Keep reusable library/API crates permissive;
+reserve AGPL-3.0-only plus a commercial exception as a future
+CLI/hosted-control-plane contingency only after a concrete monetization trigger.
 
 ### 2. Public History
 

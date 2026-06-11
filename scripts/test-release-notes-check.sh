@@ -80,7 +80,7 @@ sessions.
 
 ## Dependency And License Review
 
-- Project license: MIT OR Apache-2.0
+- Project license: MIT
 - Third-party dependency review date: 2026-06-11
 - Accepted advisory/license findings: none
 - Package publication: none for source-only alpha
