@@ -9,6 +9,7 @@ edition = "2021"
 rust-version = "1.78"
 description = "Fleet host face — the Tauri sidebar window (the primary v1 GUI)"
 license = "UNLICENSED"
+publish = false
 
 [[bin]]
 name = "fleet-host"

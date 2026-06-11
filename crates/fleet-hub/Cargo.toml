@@ -6,6 +6,7 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 description = "Fleet Hub — central broker process (WebSocket + unix-socket, single-instance)"
+publish = false
 
 [lib]
 name = "fleet_hub"
