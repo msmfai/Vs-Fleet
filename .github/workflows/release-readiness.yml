@@ -90,6 +90,9 @@ jobs:
       - name: Release custody decision gate self-test
         run: ./scripts/test-release-custody-decision-check.sh
 
+      - name: AI contribution decision gate self-test
+        run: ./scripts/test-ai-contribution-decision-check.sh
+
       - name: GitHub publication evidence gate self-test
         run: ./scripts/test-github-publication-evidence-check.sh
 

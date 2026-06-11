@@ -259,12 +259,27 @@ Current default recommendation: single-maintainer alpha with source tags and
 release notes only, no package publishing credentials, and explicit evidence for
 tag protection or an accepted unavailable/deferred reason.
 
+### 17. AI-Assisted Contribution Provenance
+
+Choose how public alpha handles AI-assisted or model-generated outside
+contributions.
+
+- [x] Allow AI-assisted contributions if the contributor certifies human review,
+  right to submit, and no private prompts, logs, or generated artifacts.
+- [ ] Require maintainer approval before accepting AI-generated code or
+  model-generated patches.
+- [ ] Other: \`TODO\`
+
+Current default recommendation: allow AI-assisted contributions only with human
+review, right-to-submit certification, and explicit exclusion of private prompts,
+private model transcripts, local logs, workspace paths, and generated artifacts.
+
 ## Required Before Binary Distribution
 
 These do not block a source-only alpha, but they must be decided before any
 public app bundle.
 
-### 17. macOS Signing and Notarization
+### 18. macOS Signing and Notarization
 
 - [ ] No public binaries until Developer ID signing and notarization are
   automated.
@@ -274,7 +289,7 @@ public app bundle.
 Current default recommendation: no public binaries until signing and notarization
 are automated.
 
-### 18. Update Channel
+### 19. Update Channel
 
 - [ ] No auto-update in alpha.
 - [ ] GitHub Releases only.
