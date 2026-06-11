@@ -6,6 +6,7 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 description = "Fleet host core — pure-Rust inbox view-model (snapshot+delta → InboxView) for the Tauri host face"
+publish = false
 
 [lib]
 name = "fleet_host_core"

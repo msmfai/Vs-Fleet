@@ -6,6 +6,7 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 description = "Fleet Reporter — agent-side reporter library + binary"
+publish = false
 
 [lib]
 name = "fleet_reporter"

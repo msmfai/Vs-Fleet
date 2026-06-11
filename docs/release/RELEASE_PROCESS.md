@@ -16,6 +16,9 @@ Do not publish a public alpha until these are true:
   "Release Readiness" workflow.
 - Generated artifacts, local logs, screenshots, VSIX files, app bundles, and
   machine-specific paths are not tracked.
+- Rust crate manifests retain `publish = false` and extension package manifests
+  retain `"private": true` unless the owner decision record explicitly changes
+  distribution scope away from source-only alpha.
 - GitHub Private Vulnerability Reporting is enabled, or `SECURITY.md` names a
   private contact channel.
 - Public namespaces are confirmed, even if packages are not published yet.

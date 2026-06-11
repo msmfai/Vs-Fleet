@@ -44,6 +44,31 @@ if git ls-files | rg '(^|/)coverage/|(^|/)node_modules/|(^|/)out/|\.vsix$|Fleet\
 fi
 rm -f /tmp/fleet-release-check.$$
 
+for manifest in \
+  crates/fleet-cli/Cargo.toml \
+  crates/fleet-e2e/Cargo.toml \
+  crates/fleet-host-core/Cargo.toml \
+  crates/fleet-host/Cargo.toml \
+  crates/fleet-hub/Cargo.toml \
+  crates/fleet-protocol/Cargo.toml \
+  crates/fleet-reporter/Cargo.toml
+do
+  if ! rg -q '^publish[[:space:]]*=[[:space:]]*false$' "$manifest"; then
+    echo "FAIL: $manifest must set publish = false for source-only alpha"
+    fail=1
+  fi
+done
+
+for manifest in \
+  packages/fleet-bridge/package.json \
+  packages/extension/package.json
+do
+  if ! rg -q '"private"[[:space:]]*:[[:space:]]*true' "$manifest"; then
+    echo "FAIL: $manifest must set \"private\": true for source-only alpha"
+    fail=1
+  fi
+done
+
 for required in \
   SECURITY.md \
   CONTRIBUTING.md \

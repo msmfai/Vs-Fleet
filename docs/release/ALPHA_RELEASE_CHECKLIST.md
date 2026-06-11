@@ -16,6 +16,8 @@ closed or explicitly accepted.
 - [ ] Add a root `LICENSE` file.
 - [ ] Replace `UNLICENSED` in `Cargo.toml`, `crates/fleet-host/Cargo.toml`, and
   package manifests/lockfiles.
+- [x] Fence package publication for source-only alpha with `publish = false` in
+  Rust crates and `"private": true` in extension package manifests.
 - [ ] Fill `docs/release/OWNER_DECISION_RECORD.md` for required owner choices.
 - [x] Decide whether the public root README is a product README or an
   engineering spec, then make the first screen match that decision.
@@ -46,6 +48,8 @@ closed or explicitly accepted.
 - Root `Cargo.toml`, `crates/fleet-host/Cargo.toml`,
   `packages/*/package.json`, and `packages/*/package-lock.json` currently
   declare `UNLICENSED`.
+- Rust crates set `publish = false`, and extension package manifests set
+  `"private": true`; the release gate enforces those source-only alpha fences.
 - No root `LICENSE` is tracked yet. `SECURITY.md` and `CONTRIBUTING.md` are
   present.
 - `SUPPORT.md`, `CODE_OF_CONDUCT.md`, GitHub issue templates, and a pull request

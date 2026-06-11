@@ -1,8 +1,9 @@
 {
   "name": "fleet-extension",
   "displayName": "Fleet",
-  "description": "Fleet VS Code extension — live agent state across editor windows. Open-VSX-publishable, engine ^1.93.0.",
+  "description": "Fleet VS Code extension — live agent state across editor windows.",
   "version": "0.1.0",
+  "private": true,
   "publisher": "fleet-team",
   "license": "UNLICENSED",
   "engines": {
