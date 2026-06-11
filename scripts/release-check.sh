@@ -33,6 +33,10 @@ check_tracked_absent "$local_path_pattern" \
   "tracked release-facing text artifacts contain local absolute paths" \
   .
 
+check_tracked_absent 'not ready for (a )?(general )?public alpha yet|still blocked for public open-source release|No open-source license has been chosen yet|UNLICENSED' \
+  "public release-facing docs still describe unresolved alpha blockers" \
+  README.md docs/QUICKSTART.md docs/release/ALPHA_RELEASE_CHECKLIST.md docs/release/PUBLIC_ALPHA_DECISIONS.md
+
 if git ls-files | rg '(^|/)coverage/|(^|/)node_modules/|(^|/)out/|\.vsix$|Fleet\.app/' >/tmp/fleet-release-check.$$; then
   echo "FAIL: generated dependency/build outputs are tracked"
   sed -n '1,80p' /tmp/fleet-release-check.$$
