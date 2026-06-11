@@ -1,6 +1,6 @@
 # Fleet — Implementation Plan (v1)
 
-> Companion to `README.md` (the canonical spec). This document resolves every
+> Companion to `docs/ENGINEERING_SPEC.md` (the canonical spec). This document resolves every
 > `[IMPL]`/`[OPEN]` decision needed to start, and decomposes the spec's coarse
 > Phase 0–3 into a long chain of **thin vertical slices**, each ending in a
 > demonstrable *"everything works"* checkpoint. The goal is to maximize the number
@@ -356,7 +356,7 @@ differentiation thesis hold — no finding kills the project.** 15/18 decisions 
 REVISE** (folded in above); all 3 unknowns RESOLVED (§2 for S11; competition intact-but-thinner;
 the high/inferred confidence boundary sound, with the two corrections folded into §1/S15/S16).
 
-**Citation-hygiene backlog (mostly `README.md`, the canonical spec).** Many spec citations are
+**Citation-hygiene backlog (mostly `docs/ENGINEERING_SPEC.md`, the canonical spec).** Many spec citations are
 stale/closed/misattributed; the *substance* survives but the references must be re-anchored before
 they mislead at build time:
 - `microsoft/vscode #28338` → actually **`anthropics/claude-code #28338`** (closed not-planned);
@@ -373,4 +373,4 @@ they mislead at build time:
   (PostToolUse); several others (#11156, #13203) are now closed-as-duplicate but the bug still
   reproduces (ext v2.1.143).
 
-*I can run a separate pass to correct these in `README.md` on request.*
+*I can run a separate pass to correct these in `docs/ENGINEERING_SPEC.md` on request.*

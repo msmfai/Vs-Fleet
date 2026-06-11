@@ -1,4 +1,4 @@
-//! Fleet wire protocol — the product (README §4.3, §7).
+//! Fleet wire protocol — the product (engineering spec §4.3, §7).
 //!
 //! This crate is the single source of truth for everything that crosses the
 //! Hub↔reporter↔face boundary: the [`Session`]/[`AgentRun`] objects, the

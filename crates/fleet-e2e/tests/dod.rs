@@ -1,4 +1,4 @@
-//! Fleet v1 **Definition of Done** acceptance suite (README §21, items 1–11;
+//! Fleet v1 **Definition of Done** acceptance suite (engineering spec §21, items 1–11;
 //! WORK_GRAPH §3 gate `◆G4`).
 //!
 //! Each `#[test]` below is **one** §21 item, named for it. Every test COMPOSES the
