@@ -194,6 +194,28 @@ echo "- Local data: document ~/.fleet/run, ~/.fleet/mux, manual cleanup, and pro
 echo "- Workflows: tagged third-party Actions accepted only with read-only token permissions and no secrets/publishing credentials."
 
 echo
+echo "Minimal owner reply shape:"
+echo "  I accept the recommended source-only alpha defaults in docs/release/OWNER_RELEASE_APPROVAL.md,"
+echo "  including cleaned first public history, local macOS-only scope, user-provided VS Code,"
+echo "  source-only distribution, DCO/no CLA for alpha, best-effort support, no stable"
+echo "  compatibility promise, no public roadmap commitment, provisional Fleet name/no trademark"
+echo "  claim, documented local data, no telemetry by default, and read-only/no-secret workflows."
+echo
+echo "  Namespace values:"
+echo "    GitHub org/user: <owner>"
+echo "    GitHub repo name: <repo>"
+echo "    Product name: Fleet | <new name>"
+echo "    Rust crate prefix: fleet-* | <new prefix>"
+echo "    npm package names: fleet-extension, fleet-bridge | <new names>"
+echo "    VS Code Marketplace publisher: deferred for source alpha | <publisher>"
+echo "    Open VSX publisher: deferred for source alpha | <publisher>"
+echo "    macOS bundle id: dev.fleet.host | <new bundle id>"
+echo
+echo "  Security reporting: GitHub Private Vulnerability Reporting | <private security contact>"
+echo "  Emergency removal owner for publication evidence: <owner/contact>"
+echo "  CI evidence: provide the CI and Release Readiness run URLs after the public branch exists."
+
+echo
 echo "Release evidence snapshot:"
 release_dir="$(cd "$(dirname "$file")" && pwd)"
 evidence_status "$release_dir/PUBLIC_BRANCH_EVIDENCE.md" \
