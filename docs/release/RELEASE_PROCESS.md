@@ -26,10 +26,14 @@ Do not publish a public alpha until these are true:
   "Release Readiness" workflow.
 - `docs/release/PUBLIC_CI_EVIDENCE.md` records the exact commit, branch, CI
   workflow run, and Release Readiness workflow run for the first public GitHub
-  alpha.
+  alpha. This evidence is a release-control artifact; it may differ between the
+  checked commit and the final release-prep commit because committing the
+  evidence changes the commit hash.
 - `docs/release/GITHUB_PUBLICATION_EVIDENCE.md` records the exact GitHub
   repository URL, visibility review, repository settings, security settings,
-  and branch-protection review for the first public GitHub alpha.
+  and branch-protection review for the first public GitHub alpha. This evidence
+  is also a release-control artifact and may differ from the reviewed commit
+  only by its own evidence file.
 - Generated artifacts, local logs, screenshots, VSIX files, app bundles, and
   machine-specific paths are not tracked.
 - `./scripts/secret-release-check.sh` passes for the tracked tree and git
@@ -222,11 +226,15 @@ Do not publish a public alpha until these are true:
    [PUBLIC_CI_EVIDENCE.md](PUBLIC_CI_EVIDENCE.md) with the commit SHA, branch,
    CI workflow run URL, and Release Readiness workflow run URL. Release
    Readiness is expected to fail until the owner decision record is approved and
-   the license metadata is applied.
+   the license metadata is applied. If you commit this evidence after the
+   workflows run, the checker permits only this evidence file to differ from the
+   checked commit.
 
 12. Fill `docs/release/GITHUB_PUBLICATION_EVIDENCE.md` with the exact GitHub
    repository URL, repository settings, security settings, and branch-protection
-   evidence for the public repo.
+   evidence for the public repo. If you commit this evidence after reviewing the
+   settings, the checker permits only this evidence file to differ from the
+   reviewed commit.
 
 13. Create a signed git tag after checks pass:
 

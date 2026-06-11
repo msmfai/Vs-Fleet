@@ -132,4 +132,49 @@ owner_pending="$TMPDIR/owner-pending.md"
 write_owner_record "$owner_pending" PENDING github
 expect_fail "pending owner record is rejected" "$owner_pending" "$evidence_github"
 
+repo="$TMPDIR/repo"
+mkdir -p "$repo/docs/release"
+git -C "$repo" init -q
+git -C "$repo" config user.email "release-test@example.invalid"
+git -C "$repo" config user.name "Fleet Release Test"
+
+printf '# Fleet fixture\n' >"$repo/README.md"
+write_owner_record "$repo/docs/release/OWNER_DECISION_RECORD.md" APPROVED github
+git -C "$repo" add .
+git -C "$repo" commit -q -m "checked source"
+checked_commit="$(git -C "$repo" rev-parse HEAD)"
+
+write_evidence "$repo/docs/release/PUBLIC_CI_EVIDENCE.md" PASS "$checked_commit" \
+  "Release-control evidence file: docs/release/PUBLIC_CI_EVIDENCE.md
+Branch: public-alpha
+CI workflow run: https://github.com/example/fleet/actions/runs/123456788
+Release Readiness workflow run: https://github.com/example/fleet/actions/runs/123456789"
+
+git -C "$repo" add docs/release/PUBLIC_CI_EVIDENCE.md
+git -C "$repo" commit -q -m "record CI evidence"
+evidence_commit="$(git -C "$repo" rev-parse HEAD)"
+
+if ! (cd "$repo" && "$ROOT/scripts/check-ci-evidence-decision.sh" \
+  docs/release/OWNER_DECISION_RECORD.md \
+  docs/release/PUBLIC_CI_EVIDENCE.md \
+  "$evidence_commit") >"$TMPDIR/ci-evidence-commit.out" 2>&1; then
+  echo "FAIL: CI evidence commit should pass when only the CI evidence file differs" >&2
+  cat "$TMPDIR/ci-evidence-commit.out" >&2
+  exit 1
+fi
+
+printf 'unexpected CI-checked payload drift\n' >"$repo/README.md"
+git -C "$repo" add README.md
+git -C "$repo" commit -q -m "drift checked payload"
+drift_commit="$(git -C "$repo" rev-parse HEAD)"
+
+if (cd "$repo" && "$ROOT/scripts/check-ci-evidence-decision.sh" \
+  docs/release/OWNER_DECISION_RECORD.md \
+  docs/release/PUBLIC_CI_EVIDENCE.md \
+  "$drift_commit") >"$TMPDIR/ci-evidence-drift.out" 2>&1; then
+  echo "FAIL: CI evidence check should reject payload drift outside the evidence file" >&2
+  cat "$TMPDIR/ci-evidence-drift.out" >&2
+  exit 1
+fi
+
 echo "Public CI evidence decision check tests passed."
