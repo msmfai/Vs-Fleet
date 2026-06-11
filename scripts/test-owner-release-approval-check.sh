@@ -41,4 +41,17 @@ if "$ROOT/scripts/check-owner-release-approval.sh" "$missing_reply_template" >"$
   exit 1
 fi
 
+stale_clean_history_gate="$TMPDIR/stale-clean-history-gate.md"
+cp "$sheet" "$stale_clean_history_gate"
+cat >>"$stale_clean_history_gate" <<'EOF'
+
+Stale instruction: run `scripts/release-check.sh` with
+`FLEET_RELEASE_HISTORY_REF` set to the public branch for cleaned history.
+EOF
+if "$ROOT/scripts/check-owner-release-approval.sh" "$stale_clean_history_gate" >"$TMPDIR/fail4.out" 2>&1; then
+  echo "FAIL: stale FLEET_RELEASE_HISTORY_REF approval wording should fail" >&2
+  cat "$TMPDIR/fail4.out" >&2
+  exit 1
+fi
+
 echo "Owner release approval sheet tests passed."

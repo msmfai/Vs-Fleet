@@ -60,6 +60,10 @@ require_text 'GITHUB_PUBLICATION_EVIDENCE\.md.*PASS' "GitHub publication evidenc
 require_text 'DEPENDENCY_REVIEW_EVIDENCE\.md' "dependency review evidence requirement"
 require_text './scripts/check-public-release-branch\.sh <public-branch> <source-ref-sha>' \
   "public release branch verifier command"
+if rg -q 'FLEET_RELEASE_HISTORY_REF' "$sheet"; then
+  echo "FAIL: $sheet must use check-public-release-branch.sh for cleaned-history approval evidence, not FLEET_RELEASE_HISTORY_REF"
+  exit 1
+fi
 require_text './scripts/draft-owner-decisions\.sh <github-owner> <github-repo>' \
   "owner decision draft command"
 require_text 'OWNER_DECISION_REPLY_TEMPLATE\.md' "owner decision reply template reference"
