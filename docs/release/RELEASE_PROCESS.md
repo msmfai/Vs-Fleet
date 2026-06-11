@@ -24,6 +24,8 @@ Do not publish a public alpha until these are true:
 - GitHub Private Vulnerability Reporting is enabled, or `SECURITY.md` names a
   private contact channel.
 - Public namespaces are confirmed, even if packages are not published yet.
+- Dependency review has been run for the exact public commit, or the approved
+  owner decision record explicitly accepts publishing without it.
 
 ## Source Alpha Steps
 
@@ -75,7 +77,9 @@ Do not publish a public alpha until these are true:
 
 7. Run the dependency review in
    [DEPENDENCY_REVIEW.md](DEPENDENCY_REVIEW.md), and record any accepted
-   findings in the release notes.
+   findings in the release notes. If this is deliberately skipped for the first
+   public source alpha, record that accepted risk in
+   [OWNER_DECISION_RECORD.md](OWNER_DECISION_RECORD.md).
 
 8. Verify the public tree has no tracked generated artifacts:
 

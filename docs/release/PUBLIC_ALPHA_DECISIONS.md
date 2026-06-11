@@ -21,6 +21,7 @@ Record the actual selected choices in
 | Public name/namespace | Product and package names are `Fleet`, `fleet-*`, publisher `fleet-team`, bundle id `dev.fleet.host`. | Names collide easily and package namespaces can be hard to migrate. | Confirm GitHub org/repo, VS Code/Open-VSX publisher, crates package names, and macOS bundle identifier before publishing packages. |
 | Support boundary | `SUPPORT.md` states best-effort alpha, breaking changes expected, and no production support/SLA. | Alpha users need expectations; otherwise every bug can become implied support. | Keep support best-effort for source-only alpha. Revisit before binaries or package publishing. |
 | Code of conduct | A short project-specific `CODE_OF_CONDUCT.md` is present. | Public issues/PRs need moderation expectations. | Use the short policy for alpha; switch to a standard covenant later if the community grows. |
+| Dependency review evidence | `docs/release/DEPENDENCY_REVIEW.md` defines manual cargo/npm/workflow review commands; no automated allowlist exists yet. | First public users inherit the dependency graph and any advisories/license surprises. | Run and record the dependency review for the exact public commit, or explicitly accept skipping it in the owner record. |
 
 ## Should decide before packaging binaries
 
@@ -28,7 +29,7 @@ Record the actual selected choices in
 |---|---|---|---|
 | macOS signing/notarization | Local app bundle only. | Unsigned binaries are difficult for non-developers to run. | Do not ship binaries until Apple Developer ID signing and notarization are automated. |
 | Update channel | None. | Auto-update is a security boundary and support commitment. | No auto-update in alpha. Use GitHub releases only. |
-| Dependency/license review cadence | No automated cargo/npm license audit. | You will eventually need dependency license and vulnerability evidence. | Add a lightweight manual release checklist now; automate later. |
+| Dependency/license review cadence | Manual dependency review is required for source alpha; no automated cargo/npm license allowlist is enforced yet. | Automation prevents drift after the first public release. | Add an automated allowlist/advisory policy after alpha if the project keeps taking outside users. |
 | Trademarks/branding | Generated icon and placeholder name. | Public assets become recognizable quickly. | Treat branding as alpha/temporary unless you explicitly want to keep it. |
 
 ## Explicit "do not forget" calls
