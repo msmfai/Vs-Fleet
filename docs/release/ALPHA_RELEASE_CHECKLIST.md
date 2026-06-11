@@ -93,9 +93,14 @@ closed or explicitly accepted.
   `./scripts/check-privacy-decision.sh`.
 - [ ] Confirm package namespaces before publishing anything to crates.io,
   Open-VSX, VS Code Marketplace, npm, or GitHub Releases.
+- [ ] After the namespace decision is approved, run
+  `./scripts/apply-namespace-decision.sh docs/release/OWNER_DECISION_RECORD.md .`
+  to update product, bundle, extension publisher, extension package, and
+  lockfile metadata. Rust crate renames remain a manual migration.
 - [ ] Run `./scripts/check-namespace-decision.sh` after filling the namespace
   table to verify product name, crate names, npm package names, extension
-  publisher fields, and macOS bundle id agree with the owner record.
+  publisher fields, package lockfiles, host bridge-extension lookup, and macOS
+  bundle id agree with the owner record.
 
 ## Recommended before public alpha, but not necessarily blocking
 
@@ -179,8 +184,10 @@ closed or explicitly accepted.
 - `scripts/check-license-decision.sh` validates that the approved owner license
   choice matches the root `LICENSE`, Rust package metadata, npm package
   metadata, and package lockfile root metadata.
-- `scripts/check-namespace-decision.sh` validates that the approved namespace
-  table matches locally-verifiable Rust, npm, Tauri, and extension metadata.
+- `scripts/apply-namespace-decision.sh` applies approved namespace choices to
+  stable manifest targets, and `scripts/check-namespace-decision.sh` validates
+  that the approved namespace table matches locally-verifiable Rust, npm,
+  Tauri, bundle, lockfile, host bridge lookup, and extension metadata.
 - `scripts/check-alpha-scope-decision.sh` validates that the approved source
   alpha scope matches the README, quickstart, architecture overview, and release
   notes template.

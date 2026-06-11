@@ -116,6 +116,8 @@ for required in \
   scripts/test-license-decision-check.sh \
   scripts/apply-license-decision.sh \
   scripts/test-apply-license-decision.sh \
+  scripts/apply-namespace-decision.sh \
+  scripts/test-apply-namespace-decision.sh \
   scripts/check-namespace-decision.sh \
   scripts/test-namespace-decision-check.sh \
   scripts/check-alpha-scope-decision.sh \

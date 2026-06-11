@@ -114,6 +114,8 @@ for script in \
   scripts/test-lockfile-policy-check.sh \
   scripts/apply-license-decision.sh \
   scripts/test-apply-license-decision.sh \
+  scripts/apply-namespace-decision.sh \
+  scripts/test-apply-namespace-decision.sh \
   scripts/test-license-decision-check.sh \
   scripts/test-namespace-decision-check.sh \
   scripts/test-alpha-scope-decision-check.sh \
