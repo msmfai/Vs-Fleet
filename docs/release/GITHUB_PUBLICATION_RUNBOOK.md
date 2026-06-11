@@ -104,7 +104,7 @@ Reference: <https://docs.github.com/en/repositories/configuring-branches-and-mer
 
    ```sh
    ./scripts/release-check.sh
-   ./scripts/check-release-notes.sh path/to/release-notes.md
+   ./scripts/check-release-notes.sh path/to/release-notes.md "$(git rev-parse HEAD)"
    ```
 
 7. Create the public branch or change repository visibility.

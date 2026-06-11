@@ -56,8 +56,8 @@ closed or explicitly accepted.
   `./scripts/check-support-decision.sh`.
 - [ ] Draft GitHub pre-release notes from
   `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` and remove all placeholders.
-- [ ] Run `./scripts/check-release-notes.sh` on the drafted GitHub pre-release
-  notes.
+- [ ] Run the release-notes checker with the expected commit:
+  `./scripts/check-release-notes.sh path/to/release-notes.md "$(git rev-parse HEAD)"`.
 - [ ] Walk through `docs/release/GITHUB_PUBLICATION_RUNBOOK.md` before changing
   repository visibility or creating the public pre-release.
 - [x] State the alpha support boundary: best-effort, breaking changes expected,

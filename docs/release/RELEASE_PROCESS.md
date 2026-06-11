@@ -169,7 +169,7 @@ Do not publish a public alpha until these are true:
 13. Validate the drafted release notes:
 
    ```sh
-   ./scripts/check-release-notes.sh path/to/release-notes.md
+   ./scripts/check-release-notes.sh path/to/release-notes.md "$(git rev-parse HEAD)"
    ```
 
 14. Push the tag and create a GitHub release marked pre-release. The release

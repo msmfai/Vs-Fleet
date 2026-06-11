@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
+COMMIT="0123456789abcdef0123456789abcdef01234567"
+OTHER_COMMIT="abcdef0123456789abcdef0123456789abcdef01"
 
 write_valid_notes() {
   local file=$1
@@ -62,7 +64,8 @@ EOF
 expect_pass() {
   local label=$1
   local file=$2
-  if ! "$ROOT/scripts/check-release-notes.sh" "$file" >"$TMPDIR/out" 2>&1; then
+  shift 2
+  if ! "$ROOT/scripts/check-release-notes.sh" "$file" "$@" >"$TMPDIR/out" 2>&1; then
     echo "FAIL: expected pass: $label" >&2
     cat "$TMPDIR/out" >&2
     exit 1
@@ -72,7 +75,8 @@ expect_pass() {
 expect_fail() {
   local label=$1
   local file=$2
-  if "$ROOT/scripts/check-release-notes.sh" "$file" >"$TMPDIR/out" 2>&1; then
+  shift 2
+  if "$ROOT/scripts/check-release-notes.sh" "$file" "$@" >"$TMPDIR/out" 2>&1; then
     echo "FAIL: expected failure: $label" >&2
     cat "$TMPDIR/out" >&2
     exit 1
@@ -81,12 +85,31 @@ expect_fail() {
 
 valid="$TMPDIR/valid.md"
 write_valid_notes "$valid"
-expect_pass "filled release notes" "$valid"
+expect_pass "filled release notes" "$valid" "$COMMIT"
 
 placeholder="$TMPDIR/placeholder.md"
 write_valid_notes "$placeholder"
 printf '\n- Commit: `[full commit SHA]`\n' >>"$placeholder"
 expect_fail "placeholder is rejected" "$placeholder"
+
+wrong_commit="$TMPDIR/wrong-commit.md"
+write_valid_notes "$wrong_commit"
+expect_fail "wrong expected commit is rejected" "$wrong_commit" "$OTHER_COMMIT"
+
+bad_commit="$TMPDIR/bad-commit.md"
+write_valid_notes "$bad_commit"
+perl -0pi -e 's/Commit: 0123456789abcdef0123456789abcdef01234567/Commit: short-sha/' "$bad_commit"
+expect_fail "malformed commit is rejected" "$bad_commit"
+
+bad_date="$TMPDIR/bad-date.md"
+write_valid_notes "$bad_date"
+perl -0pi -e 's/Date: 2026-06-11/Date: June 11 2026/' "$bad_date"
+expect_fail "malformed date is rejected" "$bad_date"
+
+bad_version="$TMPDIR/bad-version.md"
+write_valid_notes "$bad_version"
+perl -0pi -e 's/Version: v0.1.0-alpha.1/Version: alpha one/' "$bad_version"
+expect_fail "malformed version is rejected" "$bad_version"
 
 choice="$TMPDIR/choice.md"
 write_valid_notes "$choice"
