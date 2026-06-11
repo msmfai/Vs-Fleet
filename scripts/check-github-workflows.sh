@@ -58,6 +58,8 @@ require_text "$release" './scripts/test-public-tree-size-check.sh' "public tree 
 require_text "$release" './scripts/test-lockfile-policy-check.sh' "lockfile policy self-test"
 require_text "$release" './scripts/test-branding-decision-check.sh' \
   "branding decision self-test"
+require_text "$release" './scripts/test-versioning-decision-check.sh' \
+  "versioning decision self-test"
 require_text "$release" './scripts/test-github-publication-evidence-check.sh' \
   "GitHub publication evidence self-test"
 require_text "$release" './scripts/test-dependency-review-runner.sh' \

@@ -131,14 +131,19 @@ Decision record status: $status
 - [x] \`Fleet\` name and current icon are alpha placeholders.
 - [ ] Other: \`TODO\`
 
+### 14. Versioning And Compatibility
+
+- [x] Alpha pre-release tags only. No stable API, protocol, state-file, or upgrade compatibility is promised during alpha.
+- [ ] Other: \`TODO\`
+
 ## Required Before Binary Distribution
 
-### 14. macOS Signing and Notarization
+### 15. macOS Signing and Notarization
 
 - [$signing_checked] No public binaries until Developer ID signing and notarization are automated.
 - [ ] Other: \`TODO\`
 
-### 15. Update Channel
+### 16. Update Channel
 
 - [$update_checked] No auto-update in alpha.
 - [ ] Other: \`TODO\`
@@ -198,8 +203,8 @@ expect_output "approved current-history source-only record" './scripts/release-c
 binary_missing="$TMPDIR/binary-missing.md"
 write_record "$binary_missing" APPROVED clean unsigned undecided
 expect_fail "binary distribution without binary decisions" "$binary_missing"
-expect_output "binary distribution without binary decisions" '14\. macOS Signing and Notarization'
-expect_output "binary distribution without binary decisions" '15\. Update Channel'
+expect_output "binary distribution without binary decisions" '15\. macOS Signing and Notarization'
+expect_output "binary distribution without binary decisions" '16\. Update Channel'
 
 todo_namespace="$TMPDIR/todo-namespace.md"
 write_record "$todo_namespace" APPROVED clean source undecided
