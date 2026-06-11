@@ -24,7 +24,7 @@ thiserror = { workspace = true }
 tokio-tungstenite = "0.23"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 clap = { version = "4", features = ["derive", "env"] }
-toml = "0.8"
+toml = "1.1"
 
 [dev-dependencies]
 tokio = { workspace = true }
