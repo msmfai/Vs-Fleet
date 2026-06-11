@@ -7,9 +7,9 @@ alpha. Use it when the owner decision record chooses a cleaned/squashed first
 public branch. Do not mark the owner decision record `APPROVED` until this file
 is concrete and `scripts/check-public-branch-evidence.sh` passes.
 
-Source commit: `9cf30e8a06ae4832e2c4c7785df4b7623db820df`
+Source commit: `e090b2e87292672201d679d88ec6a4da3cb93e21`
 Public branch: `public-alpha`
-Public root commit: `98bc597ac45672ae6284babfd8d86af949245343`
+Public root commit: `b1a16d420c0bbbefd9982106c5153a5613d7d3f9`
 Release-control evidence file: `docs/release/PUBLIC_BRANCH_EVIDENCE.md`
 History check command: `./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md public-alpha`
 History check result: `PASS`
