@@ -71,26 +71,43 @@ evidence_github="$TMPDIR/evidence-github.md"
 write_owner_record "$owner_github" APPROVED github
 write_evidence "$evidence_github" PASS "$COMMIT" \
   "Branch: build/fleet-v1
+CI workflow run: https://github.com/example/fleet/actions/runs/123456788
 Release Readiness workflow run: https://github.com/example/fleet/actions/runs/123456789"
 expect_pass "GitHub Actions evidence is accepted" "$owner_github" "$evidence_github"
 
 evidence_pending="$TMPDIR/evidence-pending.md"
 write_evidence "$evidence_pending" PENDING "$COMMIT" \
   "Branch: TODO
+CI workflow run: TODO
 Release Readiness workflow run: TODO"
 expect_fail "placeholder CI evidence is rejected" "$owner_github" "$evidence_pending"
 
 evidence_wrong_commit="$TMPDIR/evidence-wrong-commit.md"
 write_evidence "$evidence_wrong_commit" PASS "$OTHER_COMMIT" \
   "Branch: build/fleet-v1
+CI workflow run: https://github.com/example/fleet/actions/runs/123456788
 Release Readiness workflow run: https://github.com/example/fleet/actions/runs/123456789"
 expect_fail "wrong commit evidence is rejected" "$owner_github" "$evidence_wrong_commit"
 
 evidence_bad_url="$TMPDIR/evidence-bad-url.md"
 write_evidence "$evidence_bad_url" PASS "$COMMIT" \
   "Branch: build/fleet-v1
+CI workflow run: https://github.com/example/fleet/actions/runs/123456788
 Release Readiness workflow run: https://gitlab.com/example/fleet/-/pipelines/123"
 expect_fail "non-GitHub run URL is rejected for GitHub Actions decision" "$owner_github" "$evidence_bad_url"
+
+evidence_missing_ci="$TMPDIR/evidence-missing-ci.md"
+write_evidence "$evidence_missing_ci" PASS "$COMMIT" \
+  "Branch: build/fleet-v1
+Release Readiness workflow run: https://github.com/example/fleet/actions/runs/123456789"
+expect_fail "GitHub Actions decision requires normal CI evidence" "$owner_github" "$evidence_missing_ci"
+
+evidence_bad_ci_url="$TMPDIR/evidence-bad-ci-url.md"
+write_evidence "$evidence_bad_ci_url" PASS "$COMMIT" \
+  "Branch: build/fleet-v1
+CI workflow run: https://gitlab.com/example/fleet/-/pipelines/123
+Release Readiness workflow run: https://github.com/example/fleet/actions/runs/123456789"
+expect_fail "non-GitHub CI run URL is rejected for GitHub Actions decision" "$owner_github" "$evidence_bad_ci_url"
 
 owner_local="$TMPDIR/owner-local.md"
 evidence_local="$TMPDIR/evidence-local.md"

@@ -98,8 +98,10 @@ Reference: <https://docs.github.com/en/repositories/configuring-branches-and-mer
 1. Update `docs/release/OWNER_DECISION_RECORD.md` to `APPROVED`.
 2. Apply the approved license and namespace metadata.
 3. Run the dependency review and record exact evidence.
-4. Run the manual GitHub "Release Readiness" workflow on the exact commit.
-5. Record exact CI evidence in `docs/release/PUBLIC_CI_EVIDENCE.md`.
+4. Run the normal GitHub "CI" workflow and the manual GitHub "Release
+   Readiness" workflow on the exact commit.
+5. Record exact CI and Release Readiness evidence in
+   `docs/release/PUBLIC_CI_EVIDENCE.md`.
 6. Run:
 
    ```sh

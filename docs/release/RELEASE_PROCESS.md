@@ -16,8 +16,9 @@ Do not publish a public alpha until these are true:
 - `./scripts/release-check.sh` passes.
 - CI is green on the exact public branch or commit, including the manual
   "Release Readiness" workflow.
-- `docs/release/PUBLIC_CI_EVIDENCE.md` records the exact commit and CI evidence
-  for the first public GitHub alpha.
+- `docs/release/PUBLIC_CI_EVIDENCE.md` records the exact commit, branch, CI
+  workflow run, and Release Readiness workflow run for the first public GitHub
+  alpha.
 - Generated artifacts, local logs, screenshots, VSIX files, app bundles, and
   machine-specific paths are not tracked.
 - `./scripts/history-release-check.sh` passes, or the approved owner decision
@@ -146,11 +147,12 @@ Do not publish a public alpha until these are true:
    If it fails, either publish a cleaned/squashed first public branch or approve
    the owner decision record choice that accepts current branch history exposure.
 
-10. Run the manual GitHub "Release Readiness" workflow on the exact commit you
-   intend to publish, then update
+10. Run the normal GitHub "CI" workflow and the manual GitHub "Release
+   Readiness" workflow on the exact commit you intend to publish, then update
    [PUBLIC_CI_EVIDENCE.md](PUBLIC_CI_EVIDENCE.md) with the commit SHA, branch,
-   and workflow run URL. It is expected to fail until the owner decision record
-   is approved and the license metadata is applied.
+   CI workflow run URL, and Release Readiness workflow run URL. Release
+   Readiness is expected to fail until the owner decision record is approved and
+   the license metadata is applied.
 
 11. Create a signed git tag after checks pass:
 

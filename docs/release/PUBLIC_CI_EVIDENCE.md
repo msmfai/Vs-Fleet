@@ -12,6 +12,7 @@ Use this section if the owner decision record chooses GitHub Actions evidence.
 
 Commit: `TODO`
 Branch: `TODO`
+CI workflow run: `TODO`
 Release Readiness workflow run: `TODO`
 
 ## Local-Only Evidence
