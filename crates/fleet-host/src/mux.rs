@@ -759,48 +759,6 @@ fn sync_rail_selection(app: &AppHandle) {
     }
 }
 
-/// Build Fleet's static native shell menu.
-///
-/// Fleet embeds full editor surfaces, so this menu deliberately has no app-wide
-/// accelerators and no editor/server command proxies. It is installed once
-/// through Tauri's builder and never rebuilt during bridge or selection churn;
-/// mutating an AppKit menu closes any open top-level macOS menu.
-pub fn build_menu<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-) -> tauri::Result<tauri::menu::Menu<R>> {
-    use tauri::menu::{MenuBuilder, MenuItem, SubmenuBuilder};
-
-    let quit = MenuItem::with_id(app, "app:quit", "Quit Fleet", true, None::<&str>)?;
-    let minimize = MenuItem::with_id(app, "window:minimize", "Minimize", true, None::<&str>)?;
-    let fullscreen = MenuItem::with_id(
-        app,
-        "window:fullscreen",
-        "Toggle Full Screen",
-        true,
-        None::<&str>,
-    )?;
-    let close = MenuItem::with_id(app, "window:close", "Close Window", true, None::<&str>)?;
-
-    let app_menu = SubmenuBuilder::new(app, "Fleet")
-        .about(None)
-        .separator()
-        .item(&quit)
-        .build()?;
-    let window_menu = SubmenuBuilder::new(app, "Window")
-        .item(&minimize)
-        .item(&fullscreen)
-        .separator()
-        .item(&close)
-        .build()?;
-    let help_menu = SubmenuBuilder::new(app, "Help").build()?;
-
-    MenuBuilder::new(app)
-        .item(&app_menu)
-        .item(&window_menu)
-        .item(&help_menu)
-        .build()
-}
-
 pub fn refresh_menu(app: &AppHandle) {
     let _ = app;
 }
