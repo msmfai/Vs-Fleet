@@ -64,9 +64,9 @@ the server process.
 - Fleet does not kill external sessions when the host exits.
 - Fleet does not persist a server list across restarts. Reporters and bridges
   re-register after the host/Hub comes back.
-- Fleet does not install global keyboard hooks or app-wide native menu
-  accelerators for the embedded editor. Keystrokes belong to the active editor
-  webview.
+- Fleet does not install global keyboard hooks, custom native menus, or
+  app-wide native menu accelerators for the embedded editor. Keystrokes belong
+  to the active editor webview.
 
 ## Logs and Privacy
 
