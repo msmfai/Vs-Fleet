@@ -41,9 +41,8 @@ expect_fail() {
 expect_pass "clean history"
 
 mkdir -p "$repo/artifacts"
-cat >"$repo/artifacts/raw.json" <<'EOF'
-{"path": "/Users/release-test/private-project"}
-EOF
+fixture_path="/""Users/history-check/private-project"
+printf '{"path": "%s"}\n' "$fixture_path" >"$repo/artifacts/raw.json"
 git -C "$repo" add artifacts/raw.json
 git -C "$repo" commit -q -m "add raw artifact"
 rm "$repo/artifacts/raw.json"

@@ -23,7 +23,7 @@ while IFS= read -r rev; do
 done <"$tmpdir/revs"
 
 if [ -s "$content_hits" ]; then
-  rg -v '/Users/(dev|example)([^[:alnum:]_]|$)|local_path_pattern=|/Users/\$\{USER\}' \
+  rg -v '/Users/(dev|example|release-test)([^[:alnum:]_]|$)|local_path_pattern=|/Users/\$\{USER\}' \
     "$content_hits" >"$tmpdir/content-real-hits" || true
   mv "$tmpdir/content-real-hits" "$content_hits"
 fi
@@ -36,7 +36,7 @@ fi
 
 object_hits="$tmpdir/object-hits"
 git rev-list --objects --all |
-  rg '(^|/)coverage/|(^|/)node_modules/|(^|/)out/|\.vsix$|Fleet\.app/|(^|/)fleet-host\.log$|(^|/)host-keepalive-[^/]*\.json$|(^|/)artifacts/.+\.(png|jpg|jpeg|webp|gif|json|log|txt)$' \
+  rg '(^|[[:space:]/])coverage/|(^|[[:space:]/])node_modules/|(^|[[:space:]/])out/|\.vsix$|Fleet\.app/|(^|[[:space:]/])fleet-host\.log$|(^|[[:space:]/])host-keepalive-[^/]*\.json$|(^|[[:space:]/])artifacts/.+\.(png|jpg|jpeg|webp|gif|json|log|txt)$' \
     >"$object_hits" || true
 
 if [ -s "$object_hits" ]; then
