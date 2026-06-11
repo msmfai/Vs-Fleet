@@ -110,7 +110,14 @@ impl ServerSupervisor {
 
     /// The servers Fleet has spawned (and not yet closed).
     pub fn servers(&self) -> Vec<crate::mux::Server> {
-        self.servers.lock().unwrap().clone()
+        self.prune_dead_local_servers();
+        match self.servers.lock() {
+            Ok(servers) => servers.clone(),
+            Err(e) => {
+                tracing::warn!(error = %e, "spawned server list lock poisoned");
+                Vec::new()
+            }
+        }
     }
 
     pub fn rename(&self, id: &str, label: &str) -> bool {
@@ -564,6 +571,75 @@ impl ServerSupervisor {
         self.persist_spawn_manifest();
     }
 
+    fn prune_dead_local_servers(&self) {
+        let mut removed = Vec::new();
+        let mut changed = false;
+
+        if let Ok(mut children) = self.children.lock() {
+            let dead_ids = children
+                .iter_mut()
+                .filter_map(|(id, group)| match primary_child_exited(group) {
+                    ChildHealth::Alive => None,
+                    ChildHealth::Exited { pid, status } => {
+                        tracing::warn!(%id, pid, %status, "local server child exited; pruning session");
+                        Some(id.clone())
+                    }
+                    ChildHealth::Unavailable { reason } => {
+                        tracing::warn!(%id, %reason, "local server child unavailable; pruning session");
+                        Some(id.clone())
+                    }
+                })
+                .collect::<Vec<_>>();
+            for id in dead_ids {
+                if let Some(group) = children.remove(&id) {
+                    for child in group {
+                        terminate_child_tree(child);
+                    }
+                    removed.push(id);
+                    changed = true;
+                }
+            }
+        } else {
+            tracing::warn!("local server child lock poisoned; skipping dead-session prune");
+        }
+
+        if let (Ok(mut groups), Ok(containers)) =
+            (self.restored_groups.lock(), self.containers.lock())
+        {
+            let pruned = prune_dead_restored_groups(
+                &mut groups,
+                &containers,
+                |pid| is_process_alive(pid),
+                |id, pid| {
+                    tracing::warn!(%id, pid, "restored local server pid is gone");
+                },
+            );
+            if !pruned.is_empty() {
+                removed.extend(pruned);
+                changed = true;
+            }
+        } else {
+            tracing::warn!("restored server lock poisoned; skipping dead-session prune");
+        }
+
+        if removed.is_empty() {
+            if changed {
+                self.persist_spawn_manifest();
+            }
+            return;
+        }
+
+        removed.sort();
+        removed.dedup();
+        if let Ok(mut servers) = self.servers.lock() {
+            servers.retain(|server| !removed.iter().any(|id| id == &server.id));
+        } else {
+            tracing::warn!("spawned server list lock poisoned while pruning dead sessions");
+        }
+        tracing::info!(servers = ?removed, "pruned dead local sessions");
+        self.persist_spawn_manifest();
+    }
+
     fn persist_spawn_manifest(&self) {
         let base = fleet_mux_base();
         let servers = self
@@ -616,6 +692,61 @@ fn rename_server_label(servers: &mut [crate::mux::Server], id: &str, label: &str
     } else {
         false
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ChildHealth {
+    Alive,
+    Exited { pid: u32, status: String },
+    Unavailable { reason: String },
+}
+
+fn primary_child_exited(children: &mut [Child]) -> ChildHealth {
+    let Some(child) = children.last_mut() else {
+        return ChildHealth::Unavailable {
+            reason: "no tracked child process".into(),
+        };
+    };
+    let pid = child.id();
+    match child.try_wait() {
+        Ok(None) => ChildHealth::Alive,
+        Ok(Some(status)) => ChildHealth::Exited {
+            pid,
+            status: status.to_string(),
+        },
+        Err(e) => ChildHealth::Unavailable {
+            reason: e.to_string(),
+        },
+    }
+}
+
+fn prune_dead_restored_groups(
+    groups: &mut HashMap<String, Vec<u32>>,
+    containers: &HashMap<String, String>,
+    pid_alive: impl Fn(u32) -> bool,
+    mut log_dead_pid: impl FnMut(&str, u32),
+) -> Vec<String> {
+    let ids = groups.keys().cloned().collect::<Vec<_>>();
+    let mut removed = Vec::new();
+
+    for id in ids {
+        let Some(pids) = groups.get_mut(&id) else {
+            continue;
+        };
+        pids.retain(|pid| {
+            let alive = pid_alive(*pid);
+            if !alive {
+                log_dead_pid(&id, *pid);
+            }
+            alive
+        });
+        if pids.is_empty() && !containers.contains_key(&id) {
+            groups.remove(&id);
+            removed.push(id);
+        }
+    }
+
+    removed
 }
 
 fn spawn_manifest_path(base: &Path) -> PathBuf {
@@ -1694,6 +1825,42 @@ mod tests {
         assert_eq!(servers[0].label, "server-1");
         assert_eq!(servers[1].label, "Docs");
         assert!(!rename_server_label(&mut servers, "missing", "Nope"));
+    }
+
+    #[test]
+    fn primary_child_without_process_is_unavailable() {
+        assert_eq!(
+            primary_child_exited(&mut []),
+            ChildHealth::Unavailable {
+                reason: "no tracked child process".into()
+            }
+        );
+    }
+
+    #[test]
+    fn dead_restored_groups_are_pruned_but_containers_remain() {
+        let mut groups = HashMap::from([
+            ("dead".to_string(), vec![1, 2]),
+            ("partial".to_string(), vec![3, 4]),
+            ("container".to_string(), vec![5]),
+        ]);
+        let containers = HashMap::from([("container".to_string(), "fleet-container".to_string())]);
+        let mut logged = Vec::new();
+
+        let removed = prune_dead_restored_groups(
+            &mut groups,
+            &containers,
+            |pid| pid == 3,
+            |id, pid| logged.push((id.to_string(), pid)),
+        );
+
+        assert_eq!(removed, vec!["dead".to_string()]);
+        assert_eq!(groups.get("partial"), Some(&vec![3]));
+        assert_eq!(groups.get("container"), Some(&Vec::<u32>::new()));
+        assert!(logged.contains(&("dead".to_string(), 1)));
+        assert!(logged.contains(&("dead".to_string(), 2)));
+        assert!(logged.contains(&("partial".to_string(), 4)));
+        assert!(logged.contains(&("container".to_string(), 5)));
     }
 
     #[test]
