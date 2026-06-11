@@ -16,13 +16,16 @@ jobs:
 
       - name: Install release gate tools
         run: |
-          if ! command -v rg >/dev/null 2>&1; then
+          if ! command -v rg >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
             sudo apt-get update
-            sudo apt-get install -y ripgrep
+            sudo apt-get install -y jq ripgrep
           fi
 
       - name: Owner decision gate self-test
         run: ./scripts/test-owner-decision-gate.sh
+
+      - name: License decision gate self-test
+        run: ./scripts/test-license-decision-check.sh
 
       - name: History release gate self-test
         run: ./scripts/test-history-release-check.sh

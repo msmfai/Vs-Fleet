@@ -80,6 +80,8 @@ for required in \
   docs/release/RELEASE_PROCESS.md \
   docs/release/DEPENDENCY_REVIEW.md \
   docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md \
+  scripts/check-license-decision.sh \
+  scripts/test-license-decision-check.sh \
   scripts/check-release-notes.sh \
   scripts/test-release-notes-check.sh \
   .github/workflows/release-readiness.yml \
@@ -97,6 +99,8 @@ if [ ! -f docs/release/OWNER_DECISION_RECORD.md ]; then
   echo "FAIL: missing docs/release/OWNER_DECISION_RECORD.md"
   fail=1
 elif ! scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md; then
+  fail=1
+elif ! scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
   fail=1
 fi
 

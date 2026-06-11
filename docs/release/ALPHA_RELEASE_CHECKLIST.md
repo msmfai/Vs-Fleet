@@ -16,6 +16,9 @@ closed or explicitly accepted.
 - [ ] Add a root `LICENSE` file.
 - [ ] Replace `UNLICENSED` in `Cargo.toml`, `crates/fleet-host/Cargo.toml`, and
   package manifests/lockfiles.
+- [ ] Run `./scripts/check-license-decision.sh` after choosing the license to
+  verify the owner record, root `LICENSE`, Rust manifests, npm manifests, and
+  package lockfiles agree.
 - [x] Fence package publication for source-only alpha with `publish = false` in
   Rust crates and `"private": true` in extension package manifests.
 - [ ] Fill `docs/release/OWNER_DECISION_RECORD.md` for required owner choices.
@@ -74,6 +77,9 @@ closed or explicitly accepted.
 - `docs/release/OWNER_DECISION_RECORD.md` is present but still marked
   `PENDING`; `scripts/release-check.sh` requires `APPROVED` before public
   visibility.
+- `scripts/check-license-decision.sh` validates that the approved owner license
+  choice matches the root `LICENSE`, Rust package metadata, npm package
+  metadata, and package lockfile root metadata.
 - Root `README.md` is now a public alpha front door; the long engineering spec
   was moved to `docs/ENGINEERING_SPEC.md`.
 - `crates/fleet-host/artifacts/**` is now a local ignored artifact area; raw
