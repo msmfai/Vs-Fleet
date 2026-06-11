@@ -7,6 +7,8 @@ change once strangers clone, package, fork, or depend on the project.
 Answer the owner-facing worksheet in
 [PUBLIC_ALPHA_OWNER_PROMPT.md](PUBLIC_ALPHA_OWNER_PROMPT.md), then record the
 actual selected choices in [OWNER_DECISION_RECORD.md](OWNER_DECISION_RECORD.md).
+Use [OWNER_RELEASE_APPROVAL.md](OWNER_RELEASE_APPROVAL.md) as the short-form
+approval sheet and roughness check before marking the owner record approved.
 Run `./scripts/public-alpha-decision-packet.sh` to list the current unresolved
 owner choices and the follow-up commands implied by the selected history and
 distribution answers.

@@ -67,6 +67,7 @@ jobs:
   release-gate:
     steps:
       - run: ./scripts/test-release-check.sh
+      - run: ./scripts/test-owner-release-approval-check.sh
       - run: ./scripts/test-license-intent-check.sh
       - run: ./scripts/test-dco-signoff.sh
       - run: ./scripts/test-dependabot-config-check.sh
@@ -88,6 +89,7 @@ jobs:
       - run: ./scripts/test-public-branch-evidence-check.sh
       - run: ./scripts/test-dependency-review-runner.sh
       - run: ./scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md
+      - run: ./scripts/check-owner-release-approval.sh docs/release/OWNER_RELEASE_APPROVAL.md
       - run: ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md
       - run: ./scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md "$(git rev-parse HEAD)"
       - run: ./scripts/secret-release-check.sh

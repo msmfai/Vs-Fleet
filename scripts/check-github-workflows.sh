@@ -59,6 +59,8 @@ require_text "$release" 'workflow_dispatch:' "manual workflow_dispatch trigger"
 require_text "$release" '^permissions:$' "top-level workflow permissions"
 require_text "$release" '^[[:space:]]+contents:[[:space:]]*read$' "read-only contents permission"
 require_text "$release" './scripts/test-release-check.sh' "release-check self-test"
+require_text "$release" './scripts/test-owner-release-approval-check.sh' \
+  "owner release approval sheet self-test"
 require_text "$release" './scripts/test-license-intent-check.sh' "license intent self-test"
 require_text "$release" './scripts/test-dco-signoff.sh' "DCO sign-off self-test"
 require_text "$release" './scripts/test-dependabot-config-check.sh' "Dependabot config self-test"
@@ -94,6 +96,8 @@ require_text "$release" './scripts/test-dependency-review-runner.sh' \
   "dependency review runner self-test"
 require_text "$release" './scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md' \
   "owner decision gate"
+require_text "$release" './scripts/check-owner-release-approval.sh docs/release/OWNER_RELEASE_APPROVAL.md' \
+  "owner release approval sheet gate"
 require_text "$release" './scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md' \
   "history exposure gate"
 require_text "$release" './scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md' \
