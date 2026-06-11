@@ -29,7 +29,7 @@ tauri-plugin-notification = "2.3.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net", "sync", "signal"] }
-tokio-tungstenite = "0.23"
+tokio-tungstenite = "0.29"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 anyhow = "1"
 tracing = "0.1"
