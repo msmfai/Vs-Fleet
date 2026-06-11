@@ -169,6 +169,12 @@ echo "- Local data: document ~/.fleet/run, ~/.fleet/mux, manual cleanup, and pro
 echo "- Workflows: tagged third-party Actions accepted only with read-only token permissions and no secrets/publishing credentials."
 
 echo
+echo "Owner review helper:"
+echo "  ./scripts/draft-owner-decisions.sh <github-owner> <github-repo>"
+echo "  FLEET_OWNER_DRAFT_FORCE=1 ./scripts/draft-owner-decisions.sh <github-owner> <github-repo> docs/release/OWNER_DECISION_RECORD.md"
+echo "  # Review every checked choice before changing the record status to APPROVED."
+
+echo
 echo "Mechanical next commands after recording choices:"
 if printf '%s\n' "$required_block" | rg -q '^- \[x\] Publish a cleaned/squashed history for the first public branch\.'; then
   echo "  ./scripts/prepare-public-branch.sh public-alpha HEAD"
