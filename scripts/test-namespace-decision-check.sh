@@ -162,4 +162,28 @@ todo_owner="$TMPDIR/todo-owner.md"
 write_owner_record "$todo_owner" APPROVED "fleet-extension, fleet-bridge or TODO"
 expect_fail "non-concrete namespace decision is rejected" "$todo_owner" "$valid_root"
 
+bad_github_owner="$TMPDIR/bad-github-owner.md"
+cp "$owner" "$bad_github_owner"
+perl -0pi -e 's/\| GitHub org\/user \| smfmarin \|/\| GitHub org\/user \| bad owner \|/' "$bad_github_owner"
+expect_fail "invalid GitHub owner syntax is rejected" "$bad_github_owner" "$valid_root"
+
+bad_github_repo="$TMPDIR/bad-github-repo.md"
+cp "$owner" "$bad_github_repo"
+perl -0pi -e 's/\| GitHub repo name \| vs-fleet \|/\| GitHub repo name \| bad\/repo \|/' "$bad_github_repo"
+expect_fail "invalid GitHub repo syntax is rejected" "$bad_github_repo" "$valid_root"
+
+bad_npm_syntax="$TMPDIR/bad-npm-syntax.md"
+write_owner_record "$bad_npm_syntax" APPROVED "Fleet-extension, fleet-bridge"
+expect_fail "invalid npm package name syntax is rejected" "$bad_npm_syntax" "$valid_root"
+
+bad_publisher="$TMPDIR/bad-publisher.md"
+cp "$owner" "$bad_publisher"
+perl -0pi -e 's/\| VS Code Marketplace publisher \| fleet-team \|/\| VS Code Marketplace publisher \| fleet team \|/' "$bad_publisher"
+expect_fail "invalid publisher syntax is rejected" "$bad_publisher" "$valid_root"
+
+bad_bundle_id="$TMPDIR/bad-bundle-id.md"
+cp "$owner" "$bad_bundle_id"
+perl -0pi -e 's/\| macOS bundle id \| dev\.fleet\.host \|/\| macOS bundle id \| dev fleet host \|/' "$bad_bundle_id"
+expect_fail "invalid bundle id syntax is rejected" "$bad_bundle_id" "$valid_root"
+
 echo "Namespace decision check tests passed."

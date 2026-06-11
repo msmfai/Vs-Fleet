@@ -82,6 +82,36 @@ if [ "$fail" -ne 0 ]; then
   exit 1
 fi
 
+check_syntax() {
+  local value=$1
+  local regex=$2
+  local label=$3
+  local hint=$4
+  if [[ ! "$value" =~ $regex ]]; then
+    echo "FAIL: Public Namespace decision for $label has invalid syntax: $value"
+    echo "      Expected: $hint"
+    fail=1
+  fi
+}
+
+check_syntax "$github_org" '^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$' \
+  "GitHub org/user" "GitHub owner name using letters, numbers, or single hyphens; no spaces, slashes, or leading/trailing hyphen"
+check_syntax "$github_repo" '^[A-Za-z0-9._-]+$' \
+  "GitHub repo name" "GitHub repository slug using letters, numbers, dots, underscores, or hyphens; no spaces or slashes"
+check_syntax "$rust_prefix" '^[a-z][a-z0-9-]*-\*$' \
+  "Rust crate prefix" "lowercase crate prefix ending in -*, for example fleet-*"
+check_syntax "$marketplace_publisher" '^[A-Za-z0-9][A-Za-z0-9-]*$' \
+  "VS Code Marketplace publisher" "publisher id using letters, numbers, or hyphens; no spaces or slashes"
+check_syntax "$openvsx_publisher" '^[A-Za-z0-9][A-Za-z0-9-]*$' \
+  "Open VSX publisher" "publisher id using letters, numbers, or hyphens; no spaces or slashes"
+check_syntax "$macos_bundle_id" '^[A-Za-z][A-Za-z0-9-]*(\.[A-Za-z0-9][A-Za-z0-9-]*)+$' \
+  "macOS bundle id" "reverse-DNS bundle identifier such as dev.fleet.host"
+
+if printf '%s' "$product_name" | rg -q '[`|[:cntrl:]]'; then
+  echo "FAIL: Public Namespace decision for Product name must not contain backticks, pipes, or control characters"
+  fail=1
+fi
+
 check_json_value() {
   local file=$1
   local query=$2
@@ -140,6 +170,11 @@ if [ "${#npm_expected[@]}" -ne 2 ]; then
   echo "FAIL: npm package names must contain exactly two comma-separated names"
   fail=1
 else
+  for npm_name in "${npm_expected[@]}"; do
+    npm_name="$(printf '%s' "$npm_name" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/^`//; s/`$//')"
+    check_syntax "$npm_name" '^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$' \
+      "npm package names" "lowercase npm package names, optionally scoped as @scope/name, separated by one comma"
+  done
   bridge_name="$(jq -r '.name // ""' "$root/packages/fleet-bridge/package.json")"
   extension_name="$(jq -r '.name // ""' "$root/packages/extension/package.json")"
   expected_names=" $(printf '%s\n' "${npm_expected[@]}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/^`//; s/`$//' | tr '\n' ' ')"
