@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TMPDIR="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR"' EXIT
+
+write_valid_notes() {
+  local file=$1
+  cat >"$file" <<'EOF'
+# Fleet v0.1.0-alpha.1
+
+## Release
+
+- Version: v0.1.0-alpha.1
+- Commit: 0123456789abcdef0123456789abcdef01234567
+- Date: 2026-06-11
+- Distribution: source-only
+- Owner decision record: docs/release/OWNER_DECISION_RECORD.md at this commit
+
+## Alpha Scope
+
+This alpha is intended for local macOS source builds and local code serve-web
+sessions.
+
+## What Changed
+
+- Added release readiness gates.
+
+## Verification
+
+- GitHub CI on exact commit: https://example.invalid/actions/runs/1
+- Release readiness workflow: https://example.invalid/actions/runs/2
+- Rust workspace checks: passed locally.
+- Fleet host checks: passed locally.
+- JavaScript/package checks: passed locally.
+- Dependency review: completed, no accepted findings.
+- History exposure audit: cleaned public history.
+- Release hygiene gate: passed.
+
+## Dependency And License Review
+
+- Project license: MIT OR Apache-2.0
+- Third-party dependency review date: 2026-06-11
+- Accepted advisory/license findings: none
+- Package publication: none for source-only alpha
+
+## Security And Privacy Notes
+
+- Vulnerability reporting path: GitHub Private Vulnerability Reporting.
+
+## Known Rough Edges
+
+- Remote deployment is not supported as a public alpha path.
+
+## Upgrade And Rollback
+
+- No stable upgrade path is promised during alpha.
+EOF
+}
+
+expect_pass() {
+  local label=$1
+  local file=$2
+  if ! "$ROOT/scripts/check-release-notes.sh" "$file" >"$TMPDIR/out" 2>&1; then
+    echo "FAIL: expected pass: $label" >&2
+    cat "$TMPDIR/out" >&2
+    exit 1
+  fi
+}
+
+expect_fail() {
+  local label=$1
+  local file=$2
+  if "$ROOT/scripts/check-release-notes.sh" "$file" >"$TMPDIR/out" 2>&1; then
+    echo "FAIL: expected failure: $label" >&2
+    cat "$TMPDIR/out" >&2
+    exit 1
+  fi
+}
+
+valid="$TMPDIR/valid.md"
+write_valid_notes "$valid"
+expect_pass "filled release notes" "$valid"
+
+placeholder="$TMPDIR/placeholder.md"
+write_valid_notes "$placeholder"
+printf '\n- Commit: `[full commit SHA]`\n' >>"$placeholder"
+expect_fail "placeholder is rejected" "$placeholder"
+
+choice="$TMPDIR/choice.md"
+write_valid_notes "$choice"
+printf '\n- Distribution: `[source-only | source plus approved binary scope]`\n' >>"$choice"
+expect_fail "unresolved choice list is rejected" "$choice"
+
+missing="$TMPDIR/missing.md"
+write_valid_notes "$missing"
+perl -0pi -e 's/\n## Verification\n/\n/' "$missing"
+expect_fail "missing required section is rejected" "$missing"
+
+exception="$TMPDIR/exception.md"
+write_valid_notes "$exception"
+printf '\n- Dependency review: owner-approved skip\n' >>"$exception"
+expect_fail "exception shorthand is rejected" "$exception"
+
+echo "Release notes check tests passed."
