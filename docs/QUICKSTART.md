@@ -4,7 +4,7 @@ This is the current source-only alpha path. It is intended for local macOS
 dogfooding and technical review, not for packaged binary distribution.
 
 Fleet is licensed as `MIT OR Apache-2.0`; public visibility remains gated by
-the owner decision record and release evidence in
+the owner decision record and release checklist in
 `docs/release/ALPHA_RELEASE_CHECKLIST.md`.
 
 ## Prerequisites
@@ -107,4 +107,4 @@ Run the public-release hygiene check from the repository root:
 ```
 
 It is expected to fail until the remaining owner decisions, history review, and
-publication evidence are resolved.
+publication checklist are resolved.

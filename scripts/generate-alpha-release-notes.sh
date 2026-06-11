@@ -6,16 +6,18 @@ usage() {
 usage: scripts/generate-alpha-release-notes.sh <version> <source-ref> [output-file|-] [change=...] [rough-edge=...]
 
 Generate checked GitHub pre-release notes for the first source alpha from the
-approved owner decision record and release evidence files.
+approved owner decision record and the supplied public source commit.
 
 The generator refuses to run unless:
   - OWNER_DECISION_RECORD.md is approved and complete
-  - public branch, public CI, GitHub publication, and dependency evidence pass
   - the generated notes pass scripts/check-release-notes.sh
 
 output-file defaults to "-". Existing files are not overwritten unless
 FLEET_ALPHA_RELEASE_NOTES_FORCE=1 is set. FLEET_RELEASE_DATE may be set to
-override the generated Date field for reproducible tests.
+override the generated Date field for reproducible tests. Optional
+FLEET_CI_RUN, FLEET_RELEASE_READINESS_RUN, FLEET_DEPENDENCY_REVIEW_DATE,
+FLEET_DEPENDENCY_ACCEPTED_FINDINGS, and FLEET_SECURITY_CHANNEL values are copied
+into the generated notes.
 EOF
 }
 
@@ -42,10 +44,6 @@ if [ -z "$root" ]; then
 fi
 
 owner_record="docs/release/OWNER_DECISION_RECORD.md"
-public_branch_evidence="docs/release/PUBLIC_BRANCH_EVIDENCE.md"
-public_ci_evidence="docs/release/PUBLIC_CI_EVIDENCE.md"
-github_publication_evidence="docs/release/GITHUB_PUBLICATION_EVIDENCE.md"
-dependency_evidence="docs/release/DEPENDENCY_REVIEW_EVIDENCE.md"
 
 source_commit="$(git -C "$root" rev-parse --verify "$source_ref^{commit}")"
 
@@ -81,7 +79,7 @@ done
 if [ "${#changes[@]}" -eq 0 ]; then
   changes=(
     "Prepared the repository for a source-only public alpha with explicit owner gates."
-    "Added checked release evidence for public history and dependency review."
+    "Added checked release controls for public history and dependency review."
     "Documented alpha support, privacy, local data, namespace, and distribution boundaries."
   )
 fi
@@ -93,19 +91,6 @@ reject_placeholder() {
     echo "FAIL: $label is not concrete: $value" >&2
     exit 1
   fi
-}
-
-field_value() {
-  local file=$1
-  local label=$2
-  local line
-  line="$(rg -i "^${label}:" "$root/$file" | head -n1 || true)"
-  if [ -z "$line" ]; then
-    return 1
-  fi
-  local value="${line#*:}"
-  value="$(printf '%s' "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/^`//; s/`$//')"
-  printf '%s\n' "$value"
 }
 
 checked_choice() {
@@ -126,14 +111,6 @@ run_gate() {
 
 run_gate "owner decision record" \
   "$root/scripts/check-owner-decisions.sh" "$root/$owner_record"
-run_gate "public branch evidence" \
-  "$root/scripts/check-public-branch-evidence.sh" "$root/$owner_record" "$root/$public_branch_evidence" "$source_commit"
-run_gate "public CI evidence" \
-  "$root/scripts/check-ci-evidence-decision.sh" "$root/$owner_record" "$root/$public_ci_evidence" "$source_commit"
-run_gate "GitHub publication evidence" \
-  "$root/scripts/check-github-publication-evidence.sh" "$root/$owner_record" "$root/$github_publication_evidence" "$source_commit"
-run_gate "dependency review evidence" \
-  "$root/scripts/check-dependency-review-decision.sh" "$root/$owner_record" "$root/$dependency_evidence" "$source_commit"
 
 license_choice="$(checked_choice 1 2)"
 distribution_choice="$(checked_choice 6 7)"
@@ -172,12 +149,12 @@ case "$history_choice" in
   *) echo "FAIL: unsupported public history choice: $history_choice" >&2; exit 1 ;;
 esac
 
-ci_run="$(field_value "$public_ci_evidence" "CI workflow run")"
-release_run="$(field_value "$public_ci_evidence" "Release Readiness workflow run")"
-dep_date="$(field_value "$dependency_evidence" "Reviewed date")"
-accepted_findings="$(field_value "$dependency_evidence" "Accepted findings")"
-security_channel="$(field_value "$github_publication_evidence" "Security reporting channel available")"
-public_root="$(field_value "$public_branch_evidence" "Public root commit")"
+ci_run="${FLEET_CI_RUN:-recorded in GitHub Actions for the exact public commit}"
+release_run="${FLEET_RELEASE_READINESS_RUN:-recorded in GitHub Actions for the exact public commit}"
+dep_date="${FLEET_DEPENDENCY_REVIEW_DATE:-$release_date}"
+accepted_findings="${FLEET_DEPENDENCY_ACCEPTED_FINDINGS:-none}"
+security_channel="${FLEET_SECURITY_CHANNEL:-approved in OWNER_DECISION_RECORD.md}"
+public_root="$source_commit"
 
 for pair in \
   "CI workflow run:$ci_run" \

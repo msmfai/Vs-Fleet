@@ -29,15 +29,6 @@ set -euo pipefail
 echo "history ok"
 EOF
 
-cat >"$repo/scripts/check-public-branch-evidence.sh" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-[ "\$1" = "docs/release/OWNER_DECISION_RECORD.md" ]
-[ "\$2" = "docs/release/PUBLIC_BRANCH_EVIDENCE.md" ]
-[ "\$3" = "$source_commit" ]
-echo "evidence ok"
-EOF
-
 cat >"$repo/scripts/secret-release-check.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -64,8 +55,8 @@ fi
 for expected in \
   "==> history release check" \
   "history ok" \
-  "==> public branch evidence check" \
-  "evidence ok" \
+  "==> public branch tree check" \
+  "Public branch tree matches source ref." \
   "==> secret release check" \
   "secret ok" \
   "==> aggregate release check" \

@@ -228,11 +228,11 @@ expect_output "pending incomplete record" 'Decision record status: not APPROVED'
 expect_output "pending incomplete record" '2\. Public History'
 expect_output "pending incomplete record" '6\. Distribution Scope'
 expect_output "pending incomplete record" 'Owner review helper:'
-expect_output "pending incomplete record" 'Release evidence snapshot:'
+expect_output "pending incomplete record" 'Release checklist:'
 expect_output "pending incomplete record" 'Minimal owner reply shape from docs/release/OWNER_DECISION_REPLY_TEMPLATE.md:'
 expect_output "pending incomplete record" 'I accept the recommended source-only alpha defaults'
-expect_output "pending incomplete record" 'Emergency removal owner for publication evidence'
-expect_output "pending incomplete record" 'Public branch evidence: MISSING'
+expect_output "pending incomplete record" 'Emergency removal owner:'
+expect_output "pending incomplete record" 'Run CI and Release Readiness on the exact public commit'
 expect_output "pending incomplete record" './scripts/draft-owner-decisions.sh <github-owner> <github-repo>'
 expect_output "pending incomplete record" 'Choose Public History before selecting the release-check command'
 expect_output "pending incomplete record" 'Release readiness: BLOCKED'
@@ -241,33 +241,14 @@ clean_source="$TMPDIR/clean-source.md"
 write_record "$clean_source" APPROVED clean source undecided
 expect_pass "approved clean source-only record" "$clean_source"
 expect_output "approved clean source-only record" 'Release readiness: OWNER DECISIONS COMPLETE'
-expect_output "approved clean source-only record" 'generate-public-branch-evidence\.sh public-alpha HEAD'
 expect_output "approved clean source-only record" 'check-public-release-branch\.sh public-alpha'
-expect_output "approved clean source-only record" 'generate-public-ci-evidence\.sh <branch> <ci-run-url> <release-readiness-run-url> <source-ref>'
-expect_output "approved clean source-only record" 'release-evidence-status\.sh'
 expect_output "approved clean source-only record" 'Contribution intake: require DCO sign-off'
 expect_output "approved clean source-only record" 'VS Code Marketplace publisher: fleet-team'
-expect_output "approved clean source-only record" 'CI evidence: provide the CI and Release Readiness run URLs'
+expect_output "approved clean source-only record" 'CI checks: provide the CI and Release Readiness run URLs'
 
 FLEET_OWNER_REPLY_TEMPLATE="$TMPDIR/missing-template.md" expect_fail \
   "missing owner reply template is visible" "$clean_source"
 expect_output "missing owner reply template is visible" 'Missing owner reply template'
-
-mkdir -p "$TMPDIR/release-docs"
-cp "$clean_source" "$TMPDIR/release-docs/OWNER_DECISION_RECORD.md"
-cat >"$TMPDIR/release-docs/PUBLIC_BRANCH_EVIDENCE.md" <<'EOF'
-# Public Branch Evidence
-Public branch evidence status: PASS
-Source commit: `0123456789abcdef0123456789abcdef01234567`
-EOF
-cat >"$TMPDIR/release-docs/PUBLIC_CI_EVIDENCE.md" <<'EOF'
-# Public CI Evidence
-Public CI evidence status: PENDING
-CI workflow run: `TODO`
-EOF
-expect_pass "approved record with adjacent evidence snapshot" "$TMPDIR/release-docs/OWNER_DECISION_RECORD.md"
-expect_output "approved record with adjacent evidence snapshot" 'Public branch evidence: PASS'
-expect_output "approved record with adjacent evidence snapshot" 'Public CI evidence: PENDING, placeholders remain'
 
 current_source="$TMPDIR/current-source.md"
 write_record "$current_source" APPROVED current source undecided

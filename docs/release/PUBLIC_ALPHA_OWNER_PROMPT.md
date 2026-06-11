@@ -107,13 +107,12 @@ is still `TODO`, ambiguous, or only a recommendation.
    commercial exceptions or proprietary relicensing become a goal.
    Owner answer:
 
-9. Public CI evidence:
+9. Public CI checks:
    Recommended alpha default: require GitHub Actions green on the exact public
    branch/commit before public visibility.
    Owner answer:
-   Follow-up: after GitHub Actions runs on the exact public commit, generate
-   `PUBLIC_CI_EVIDENCE.md` and run
-   `./scripts/check-ci-evidence-decision.sh`.
+   Follow-up: record the CI and Release Readiness run URLs in the release
+   checklist or release notes.
 
 10. Privacy and telemetry posture:
     Recommended alpha default: no telemetry by default. Local logs and artifacts
@@ -121,7 +120,7 @@ is still `TODO`, ambiguous, or only a recommendation.
     lines, and editor state; users must scrub them before sharing.
     Owner answer:
 
-11. Dependency review evidence:
+11. Dependency review:
     Recommended alpha default: run the commands in
     [`DEPENDENCY_REVIEW.md`](DEPENDENCY_REVIEW.md) and record findings before
     public visibility.
@@ -161,9 +160,8 @@ is still `TODO`, ambiguous, or only a recommendation.
     change repository settings, or publish packages. No package publishing
     credentials for source-only alpha.
     Owner answer:
-   Follow-up: generate `GITHUB_PUBLICATION_EVIDENCE.md` with the exact
-   repository settings and emergency removal owner, then run
-   `./scripts/check-release-custody-decision.sh`.
+   Follow-up: review the exact repository settings and emergency removal owner,
+   then run `./scripts/check-release-custody-decision.sh`.
 
 17. AI-assisted contribution provenance:
     Recommended alpha default: allow AI-assisted contributions only when the
@@ -239,6 +237,5 @@ Decision record status: APPROVED
 Then run:
 
 ```sh
-./scripts/release-evidence-status.sh
 ./scripts/check-public-release-branch.sh public-alpha "$(git rev-parse HEAD)"
 ```

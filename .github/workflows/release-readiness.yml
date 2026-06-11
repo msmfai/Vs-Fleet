@@ -87,9 +87,6 @@ jobs:
       - name: Lockfile policy gate self-test
         run: ./scripts/test-lockfile-policy-check.sh
 
-      - name: Public CI evidence gate self-test
-        run: ./scripts/test-ci-evidence-decision-check.sh
-
       - name: GitHub workflow gate self-test
         run: ./scripts/test-github-workflows-check.sh
 
@@ -98,12 +95,6 @@ jobs:
 
       - name: Privacy decision gate self-test
         run: ./scripts/test-privacy-decision-check.sh
-
-      - name: Dependency review gate self-test
-        run: ./scripts/test-dependency-review-decision-check.sh
-
-      - name: Dependency review runner self-test
-        run: ./scripts/test-dependency-review-runner.sh
 
       - name: Support decision gate self-test
         run: ./scripts/test-support-decision-check.sh
@@ -116,9 +107,6 @@ jobs:
 
       - name: Community intake decision gate self-test
         run: ./scripts/test-community-intake-decision-check.sh
-
-      - name: Release custody decision gate self-test
-        run: ./scripts/test-release-custody-decision-check.sh
 
       - name: AI contribution decision gate self-test
         run: ./scripts/test-ai-contribution-decision-check.sh
@@ -138,29 +126,11 @@ jobs:
       - name: Workflow supply-chain decision gate self-test
         run: ./scripts/test-workflow-supply-chain-decision-check.sh
 
-      - name: GitHub publication evidence gate self-test
-        run: ./scripts/test-github-publication-evidence-check.sh
-
-      - name: GitHub publication evidence generator self-test
-        run: ./scripts/test-generate-github-publication-evidence.sh
-
       - name: History release gate self-test
         run: ./scripts/test-history-release-check.sh
 
-      - name: Public branch evidence gate self-test
-        run: ./scripts/test-public-branch-evidence-check.sh
-
-      - name: Public branch evidence generator self-test
-        run: ./scripts/test-generate-public-branch-evidence.sh
-
       - name: Public release branch verifier self-test
         run: ./scripts/test-check-public-release-branch.sh
-
-      - name: Public CI evidence generator self-test
-        run: ./scripts/test-generate-public-ci-evidence.sh
-
-      - name: Release evidence status self-test
-        run: ./scripts/test-release-evidence-status.sh
 
       - name: Secret release gate self-test
         run: ./scripts/test-secret-release-check.sh
@@ -176,9 +146,6 @@ jobs:
 
       - name: History exposure gate
         run: ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md
-
-      - name: Public branch evidence gate
-        run: ./scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md "$(git rev-parse HEAD)"
 
       - name: Secret exposure gate
         run: ./scripts/secret-release-check.sh

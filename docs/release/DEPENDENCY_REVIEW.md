@@ -28,16 +28,13 @@ From the repository root:
 ```
 
 The script runs Rust metadata checks, npm audit checks, lockfile policy, and a
-generated-artifact check. It writes
-[`DEPENDENCY_REVIEW_EVIDENCE.md`](DEPENDENCY_REVIEW_EVIDENCE.md) only after all
-commands pass. It may replace the pending template, but it refuses to overwrite
-concrete reviewed evidence unless `FLEET_DEPENDENCY_REVIEW_FORCE=1` is set. Run
-`./scripts/release-check.sh` afterwards as the final release verifier; do not
-use it as an input to dependency evidence generation.
+generated-artifact check. Use its terminal output and command logs while
+preparing release notes. Run `./scripts/release-check.sh` afterwards as the
+final local release verifier.
 
 ## What to Record
 
-For `DEPENDENCY_REVIEW_EVIDENCE.md` and the alpha release notes, record:
+For the alpha release notes, record:
 
 - date reviewed,
 - commit SHA,
@@ -48,20 +45,20 @@ For `DEPENDENCY_REVIEW_EVIDENCE.md` and the alpha release notes, record:
 - whether the release is source-only or includes any bundled binary artifacts.
 
 Use `./scripts/generate-alpha-release-notes.sh` after the owner decisions and
-release evidence pass so this evidence is captured in the public GitHub
-pre-release body. [ALPHA_RELEASE_NOTES_TEMPLATE.md](ALPHA_RELEASE_NOTES_TEMPLATE.md)
+release checks pass so the dependency review result is captured in the public
+GitHub pre-release body. [ALPHA_RELEASE_NOTES_TEMPLATE.md](ALPHA_RELEASE_NOTES_TEMPLATE.md)
 remains the checked content template that the generator and release-notes
 checker enforce.
 
-Run `./scripts/check-dependency-review-decision.sh` from the repository root
-before approving the owner decision record.
+Run `./scripts/run-dependency-review.sh` from the repository root before
+publishing the source alpha.
 
 ## Current Known Gaps
 
 - No automated cargo/npm license allowlist is enforced yet.
 - Dependabot version-update coverage is configured in `.github/dependabot.yml`
   and validated by `scripts/check-dependabot-config.sh`, but that is not a
-  substitute for the exact-commit dependency review evidence required here.
+  substitute for reviewing the exact commit being published.
 - npm audit requires network access and may report advisory data that changes
   over time.
 - The release gate currently enforces project license readiness, but not

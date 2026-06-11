@@ -71,11 +71,7 @@ for doc in \
   docs/release/RELEASE_PROCESS.md \
   docs/release/PUBLIC_ALPHA_READINESS_ASSESSMENT.md \
   docs/release/DEPENDENCY_REVIEW.md \
-  docs/release/DEPENDENCY_REVIEW_EVIDENCE.md \
   docs/release/GITHUB_PUBLICATION_RUNBOOK.md \
-  docs/release/GITHUB_PUBLICATION_EVIDENCE.md \
-  docs/release/PUBLIC_BRANCH_EVIDENCE.md \
-  docs/release/PUBLIC_CI_EVIDENCE.md \
   docs/release/ASSET_PROVENANCE.md \
   docs/release/NAME_COLLISION_REVIEW.md \
   docs/release/WORKFLOW_SUPPLY_CHAIN.md \
@@ -109,8 +105,6 @@ for script in \
   scripts/draft-owner-decisions.sh \
   scripts/public-alpha-decision-packet.sh \
   scripts/history-release-check.sh \
-  scripts/check-public-branch-evidence.sh \
-  scripts/generate-public-branch-evidence.sh \
   scripts/check-public-release-branch.sh \
   scripts/prepare-public-branch.sh \
   scripts/secret-release-check.sh \
@@ -124,14 +118,8 @@ for script in \
   scripts/check-security-reporting-decision.sh \
   scripts/check-contribution-decision.sh \
   scripts/check-github-intake-templates.sh \
-  scripts/check-ci-evidence-decision.sh \
-  scripts/generate-public-ci-evidence.sh \
-  scripts/release-evidence-status.sh \
-  scripts/check-github-publication-evidence.sh \
   scripts/check-github-workflows.sh \
-  scripts/generate-github-publication-evidence.sh \
   scripts/check-privacy-decision.sh \
-  scripts/check-dependency-review-decision.sh \
   scripts/run-dependency-review.sh \
   scripts/check-dependabot-config.sh \
   scripts/check-support-decision.sh \
@@ -153,8 +141,6 @@ for script in \
   scripts/test-draft-owner-decisions.sh \
   scripts/test-public-alpha-decision-packet.sh \
   scripts/test-history-release-check.sh \
-  scripts/test-public-branch-evidence-check.sh \
-  scripts/test-generate-public-branch-evidence.sh \
   scripts/test-check-public-release-branch.sh \
   scripts/test-prepare-public-branch.sh \
   scripts/test-secret-release-check.sh \
@@ -174,14 +160,8 @@ for script in \
   scripts/test-security-reporting-decision-check.sh \
   scripts/test-contribution-decision-check.sh \
   scripts/test-github-intake-templates-check.sh \
-  scripts/test-ci-evidence-decision-check.sh \
-  scripts/test-generate-public-ci-evidence.sh \
-  scripts/test-release-evidence-status.sh \
-  scripts/test-github-publication-evidence-check.sh \
-  scripts/test-generate-github-publication-evidence.sh \
   scripts/test-github-workflows-check.sh \
   scripts/test-privacy-decision-check.sh \
-  scripts/test-dependency-review-decision-check.sh \
   scripts/test-dependency-review-runner.sh \
   scripts/test-dependabot-config-check.sh \
   scripts/test-support-decision-check.sh \

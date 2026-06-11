@@ -63,11 +63,9 @@ visibility.
   keep failing until owner decisions are approved and the final history path is
   selected.
 - [ ] If current history is not accepted, create the public branch with
-  `./scripts/prepare-public-branch.sh <public-branch> <source-ref>` and run
-  generate `docs/release/PUBLIC_BRANCH_EVIDENCE.md` with
-  `./scripts/generate-public-branch-evidence.sh <public-branch> <source-ref> docs/release/PUBLIC_BRANCH_EVIDENCE.md`,
-  then run `./scripts/check-public-release-branch.sh <public-branch> <source-ref-sha>`.
-  The verifier runs the history, evidence, secret, and aggregate release gates
+  `./scripts/prepare-public-branch.sh <public-branch> <source-ref>`, then run
+  `./scripts/check-public-release-branch.sh <public-branch> <source-ref-sha>`.
+  The verifier runs the history, secret, and aggregate release gates
   against the same public ref.
 - [ ] Treat `./scripts/check-public-release-branch.sh <public-branch>
   <source-ref-sha>` as the final verifier for the recommended cleaned-history
@@ -75,9 +73,6 @@ visibility.
   `./scripts/release-check.sh` as the publication decision.
 - [ ] Run `./scripts/run-dependency-review.sh` for the exact public branch, or
   explicitly accept skipping dependency review in the owner decision record.
-- [ ] Record dependency review evidence in
-  `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` and run
-  `./scripts/check-dependency-review-decision.sh`.
 - [x] Add Dependabot version-update coverage for GitHub Actions, Cargo, and npm
   dependency surfaces.
 - [ ] Run `./scripts/check-dependabot-config.sh .github/dependabot.yml`.
@@ -101,9 +96,8 @@ visibility.
   `docs/release/OWNER_DECISION_RECORD.md` and run
   `./scripts/check-community-intake-decision.sh`.
 - [ ] Choose release custody and maintainer authority in
-  `docs/release/OWNER_DECISION_RECORD.md`, generate
-  `docs/release/GITHUB_PUBLICATION_EVIDENCE.md` with the exact repository
-  settings and emergency removal owner, and run
+  `docs/release/OWNER_DECISION_RECORD.md`, review the exact repository settings
+  and emergency removal owner, and run
   `./scripts/check-release-custody-decision.sh`.
 - [ ] Choose AI-assisted contribution provenance in
   `docs/release/OWNER_DECISION_RECORD.md` and run
@@ -128,16 +122,12 @@ visibility.
   and add any exact `change=...` or `rough-edge=...` entries needed for this
   alpha.
 - [ ] Run the release-notes checker with the expected public commit. For the
-  recommended cleaned-history release this is the `Public root commit` from
-  `docs/release/PUBLIC_BRANCH_EVIDENCE.md`, not the private release-prep
-  branch `HEAD`.
+  recommended cleaned-history release this is the clean public branch root
+  commit, not the private release-prep branch `HEAD`.
 - [ ] Walk through `docs/release/GITHUB_PUBLICATION_RUNBOOK.md` before changing
   repository visibility or creating the public pre-release.
-- [ ] Generate GitHub repository settings evidence in
-  `docs/release/GITHUB_PUBLICATION_EVIDENCE.md` with
-  `./scripts/generate-github-publication-evidence.sh` and run
-  `./scripts/check-github-publication-evidence.sh` before changing repository
-  visibility.
+- [ ] Review GitHub repository settings, security settings, branch protection,
+  and release custody before changing repository visibility.
 - [x] State the alpha support boundary: best-effort, breaking changes expected,
   not production-ready.
 - [ ] Choose the privacy/telemetry posture in
@@ -176,12 +166,8 @@ visibility.
 - [ ] Run `./scripts/check-github-workflows.sh .github/workflows/ci.yml
   .github/workflows/release-readiness.yml`.
 - [ ] Run CI on the exact public branch after artifact cleanup.
-- [ ] Generate exact CI and Release Readiness workflow evidence with
-  `./scripts/generate-public-ci-evidence.sh <branch> <ci-run-url> <release-readiness-run-url> <source-ref>`
-  and run
-  `./scripts/check-ci-evidence-decision.sh`.
-- [ ] Run `./scripts/release-evidence-status.sh`; it must report
-  `Release evidence status: COMPLETE` before approval.
+- [ ] Record exact CI and Release Readiness workflow URLs in the release
+  checklist or release notes.
 
 ## Current evidence from the repository
 
@@ -210,9 +196,6 @@ visibility.
   `docs/release/RELEASE_PROCESS.md` are present.
 - `.github/workflows/release-readiness.yml` and
   `docs/release/DEPENDENCY_REVIEW.md` are present.
-- `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` records a passing cargo/npm
-  dependency review for the current release-prep tree; it remains subject to
-  the owner dependency-review decision and the final public-ref gate.
 - `.github/dependabot.yml` is present for GitHub Actions, root Cargo workspace,
   standalone Fleet host Cargo crate, and both npm packages; the release gate
   validates those entries with `scripts/check-dependabot-config.sh`.
@@ -221,11 +204,8 @@ visibility.
   to be tracked and not ignored.
 - `.github/workflows/ci.yml` and `.github/workflows/release-readiness.yml` are
   present; `scripts/check-github-workflows.sh` validates that the public-alpha
-  evidence workflows still contain the expected Rust, package, coverage, host
-  bundle, release gate, and artifact checks.
-- `docs/release/PUBLIC_CI_EVIDENCE.md` is present as the exact commit, branch,
-  CI workflow run, and Release Readiness workflow run evidence record for the
-  first public GitHub alpha.
+  workflows still contain the expected Rust, package, coverage, host bundle,
+  release gate, and artifact checks.
 - `docs/release/ASSET_PROVENANCE.md` is present as the tracked icon
   redistribution record; it is intentionally still pending owner affirmation
   until the icon is either approved for the chosen project license or replaced.
@@ -235,7 +215,7 @@ visibility.
 - `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` is present as the checked
   disclosure baseline for the first GitHub pre-release.
 - `scripts/generate-alpha-release-notes.sh` writes release notes from approved
-  owner decisions and concrete release evidence.
+  owner decisions and concrete release checks.
 - `scripts/check-release-notes.sh` validates the generated release notes for
   required sections, unresolved placeholders, and the expected public commit
   before a GitHub pre-release is published.
@@ -269,13 +249,6 @@ visibility.
 - `scripts/check-contribution-decision.sh` validates that the approved
   contribution intake choice matches `CONTRIBUTING.md` and the pull request
   template before outside code PRs arrive.
-- `scripts/check-ci-evidence-decision.sh` validates that the approved public CI
-  evidence choice has exact commit evidence and, for the recommended path,
-  GitHub Actions run URLs for both normal CI and Release Readiness.
-- `scripts/check-github-publication-evidence.sh` validates the exact GitHub
-  repository URL against the approved namespace and requires concrete evidence
-  for visibility review, issues/discussions/wiki/releases/packages settings,
-  Actions, security settings, and branch protection.
 - `scripts/check-versioning-decision.sh` validates the approved compatibility
   promise against the release notes, support/security docs, and release process,
   so alpha users do not infer stable APIs, state formats, or upgrade paths by
@@ -310,9 +283,6 @@ visibility.
 - `scripts/check-privacy-decision.sh` validates that the approved
   privacy/telemetry posture matches the README, security policy, architecture
   notes, issue template, and release notes template.
-- `scripts/check-dependency-review-decision.sh` validates that the approved
-  dependency review choice has exact commit evidence and explicit command
-  results or an accepted skipped-review risk.
 - `scripts/check-support-decision.sh` validates that the approved support
   commitment matches `SUPPORT.md`, the README, and the release notes template.
 - `scripts/check-branding-decision.sh` validates the approved branding

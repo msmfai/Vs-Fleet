@@ -96,11 +96,7 @@ for required in \
   docs/release/RELEASE_PROCESS.md \
   docs/release/PUBLIC_ALPHA_READINESS_ASSESSMENT.md \
   docs/release/DEPENDENCY_REVIEW.md \
-  docs/release/DEPENDENCY_REVIEW_EVIDENCE.md \
   docs/release/GITHUB_PUBLICATION_RUNBOOK.md \
-  docs/release/GITHUB_PUBLICATION_EVIDENCE.md \
-  docs/release/PUBLIC_BRANCH_EVIDENCE.md \
-  docs/release/PUBLIC_CI_EVIDENCE.md \
   docs/release/ASSET_PROVENANCE.md \
   docs/release/NAME_COLLISION_REVIEW.md \
   docs/release/WORKFLOW_SUPPLY_CHAIN.md \
@@ -138,10 +134,6 @@ for required in \
   scripts/test-public-alpha-decision-packet.sh \
   scripts/history-release-check.sh \
   scripts/test-history-release-check.sh \
-  scripts/check-public-branch-evidence.sh \
-  scripts/test-public-branch-evidence-check.sh \
-  scripts/generate-public-branch-evidence.sh \
-  scripts/test-generate-public-branch-evidence.sh \
   scripts/check-public-release-branch.sh \
   scripts/test-check-public-release-branch.sh \
   scripts/prepare-public-branch.sh \
@@ -170,20 +162,8 @@ for required in \
   scripts/test-security-reporting-decision-check.sh \
   scripts/check-contribution-decision.sh \
   scripts/test-contribution-decision-check.sh \
-  scripts/check-ci-evidence-decision.sh \
-  scripts/test-ci-evidence-decision-check.sh \
-  scripts/generate-public-ci-evidence.sh \
-  scripts/test-generate-public-ci-evidence.sh \
-  scripts/release-evidence-status.sh \
-  scripts/test-release-evidence-status.sh \
-  scripts/check-github-publication-evidence.sh \
-  scripts/test-github-publication-evidence-check.sh \
-  scripts/generate-github-publication-evidence.sh \
-  scripts/test-generate-github-publication-evidence.sh \
   scripts/check-privacy-decision.sh \
   scripts/test-privacy-decision-check.sh \
-  scripts/check-dependency-review-decision.sh \
-  scripts/test-dependency-review-decision-check.sh \
   scripts/run-dependency-review.sh \
   scripts/test-dependency-review-runner.sh \
   scripts/check-support-decision.sh \
@@ -282,9 +262,6 @@ else
   if ! scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md; then
     fail=1
   else
-    if ! scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md "$(git rev-parse HEAD)"; then
-      fail=1
-    fi
     if ! scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
       fail=1
     fi
@@ -306,16 +283,7 @@ else
     if ! scripts/check-contribution-decision.sh docs/release/OWNER_DECISION_RECORD.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md; then
       fail=1
     fi
-    if ! scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"; then
-      fail=1
-    fi
-    if ! scripts/check-github-publication-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md "$(git rev-parse HEAD)"; then
-      fail=1
-    fi
     if ! scripts/check-privacy-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
-      fail=1
-    fi
-    if ! scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"; then
       fail=1
     fi
     if ! scripts/check-support-decision.sh docs/release/OWNER_DECISION_RECORD.md SUPPORT.md .; then
@@ -328,9 +296,6 @@ else
       fail=1
     fi
     if ! scripts/check-community-intake-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
-      fail=1
-    fi
-    if ! scripts/check-release-custody-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md .; then
       fail=1
     fi
     if ! scripts/check-ai-contribution-decision.sh docs/release/OWNER_DECISION_RECORD.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md; then

@@ -35,7 +35,7 @@ for decision in \
   'Distribution' \
   'Security reporting' \
   'Contributions' \
-  'CI evidence' \
+  'CI checks' \
   'Privacy' \
   'Dependency review' \
   'Support' \
@@ -53,11 +53,12 @@ do
   require_text "^[|][[:space:]]*${decision}[[:space:]]*[|]" "recommended answer for $decision"
 done
 
-require_text 'OWNER_DECISION_RECORD\.md.*APPROVED' "owner decision approval evidence"
-require_text 'PUBLIC_BRANCH_EVIDENCE\.md.*PASS' "public branch evidence requirement"
-require_text 'PUBLIC_CI_EVIDENCE\.md.*PASS' "public CI evidence requirement"
-require_text 'GITHUB_PUBLICATION_EVIDENCE\.md.*PASS' "GitHub publication evidence requirement"
-require_text 'DEPENDENCY_REVIEW_EVIDENCE\.md' "dependency review evidence requirement"
+require_text 'OWNER_DECISION_RECORD\.md.*APPROVED' "owner decision approval requirement"
+require_text 'check-public-release-branch\.sh <public-branch> <source-ref-sha>' \
+  "public branch verifier requirement"
+require_text 'GitHub CI and Release Readiness pass' "public CI requirement"
+require_text 'GitHub repository settings match' "GitHub publication settings requirement"
+require_text 'Dependency review has been run' "dependency review requirement"
 require_text './scripts/check-public-release-branch\.sh <public-branch> <source-ref-sha>' \
   "public release branch verifier command"
 if rg -q 'FLEET_RELEASE_HISTORY_REF' "$sheet"; then
@@ -67,7 +68,7 @@ fi
 require_text './scripts/draft-owner-decisions\.sh <github-owner> <github-repo>' \
   "owner decision draft command"
 require_text 'OWNER_DECISION_REPLY_TEMPLATE\.md' "owner decision reply template reference"
-require_text 'namespace, security, emergency-removal, and CI evidence values' \
+require_text 'namespace, security, emergency-removal, and CI check values' \
   "owner reply template value scope"
 
 echo "Owner release approval sheet check passed."

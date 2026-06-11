@@ -3,7 +3,7 @@
 Use this when the owner accepts the recommended source-only alpha defaults and
 needs to provide only the remaining concrete values. This is not an approval record by itself.
 Copy the final decisions into `OWNER_DECISION_RECORD.md` and leave that record
-`PENDING` until every release evidence file passes.
+`PENDING` until the release checklist is complete.
 
 ```text
 I accept the recommended source-only alpha defaults in docs/release/OWNER_RELEASE_APPROVAL.md.
@@ -24,8 +24,8 @@ Namespace values:
   macOS bundle id: dev.fleet.host | <new bundle id>
 
 Security reporting: GitHub Private Vulnerability Reporting | <private security contact>
-Emergency removal owner for publication evidence: <owner/contact>
-CI evidence: provide the CI and Release Readiness run URLs after the public branch exists.
+Emergency removal owner: <owner/contact>
+CI checks: provide the CI and Release Readiness run URLs after the public branch exists.
 ```
 
 Namespace answers must be concrete because manifest metadata needs exact
@@ -40,4 +40,4 @@ After the owner replies, generate a checked draft:
 ```
 
 Then edit any non-default answers, copy the result into
-`docs/release/OWNER_DECISION_RECORD.md`, and keep the status `PENDING` until the evidence files are concrete.
+`docs/release/OWNER_DECISION_RECORD.md`, and keep the status `PENDING` until the release checklist is concrete.

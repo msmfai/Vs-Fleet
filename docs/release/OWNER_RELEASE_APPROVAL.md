@@ -42,7 +42,7 @@ Use these as the recommended source-alpha choices:
 | Distribution | Source-only alpha. |
 | Security reporting | Enable GitHub Private Vulnerability Reporting, or add a private security contact. |
 | Contributions | Require DCO sign-off; no CLA for source alpha. |
-| CI evidence | GitHub Actions green on the exact public branch/commit. |
+| CI checks | GitHub Actions green on the exact public branch/commit. |
 | Privacy | No telemetry by default; document local log contents and scrub-before-sharing. |
 | Dependency review | Run dependency review for the exact public commit and record findings. |
 | Support | Best-effort alpha support only. |
@@ -57,15 +57,17 @@ Use these as the recommended source-alpha choices:
 | Local data | Document `~/.fleet/run`, `~/.fleet/mux`, manual cleanup, and process ownership. |
 | Workflow supply chain | Tagged Actions accepted only with read-only token, no secrets, and no publishing credentials. |
 
-## Evidence Required Before Approval
+## Checks Required Before Approval
 
 - `OWNER_DECISION_RECORD.md` is `APPROVED` and has exactly one checked answer for
   every required section.
-- `PUBLIC_BRANCH_EVIDENCE.md` is `PASS` if cleaned history is selected.
-- `PUBLIC_CI_EVIDENCE.md` is `PASS` for the exact public commit.
-- `GITHUB_PUBLICATION_EVIDENCE.md` is `PASS` for the exact repository settings.
-- `DEPENDENCY_REVIEW_EVIDENCE.md` records dependency review for the exact public
-  commit, unless the owner explicitly accepts skipping it.
+- `scripts/check-public-release-branch.sh <public-branch> <source-ref-sha>`
+  passes if cleaned history is selected.
+- GitHub CI and Release Readiness pass for the exact public commit.
+- GitHub repository settings match the owner decision record before visibility
+  changes or release tags.
+- Dependency review has been run for the exact public commit, unless the owner
+  explicitly accepts skipping it.
 - `scripts/check-public-release-branch.sh <public-branch> <source-ref-sha>`
   passes if cleaned history is selected. If the owner explicitly accepts current
   branch history exposure instead, `scripts/release-check.sh` passes on the
@@ -81,23 +83,19 @@ Use these as the recommended source-alpha choices:
 
 2. If accepting the recommended source-only alpha posture, fill
    [OWNER_DECISION_REPLY_TEMPLATE.md](OWNER_DECISION_REPLY_TEMPLATE.md) first so
-   the remaining namespace, security, emergency-removal, and CI evidence values
+   the remaining namespace, security, emergency-removal, and CI check values
    are explicit.
 3. Review every checked choice in the draft against this sheet.
 4. Copy approved choices into `docs/release/OWNER_DECISION_RECORD.md`.
-5. Fill namespace, public branch, CI, GitHub publication, and dependency review
-   evidence. Use the evidence generators instead of hand-editing reviewed
-   evidence:
-   `./scripts/generate-public-branch-evidence.sh`,
-   `./scripts/generate-public-ci-evidence.sh`, and
-   `./scripts/generate-github-publication-evidence.sh`.
+5. Review namespace, public branch, CI, GitHub publication settings, and
+   dependency review results.
 6. Change `OWNER_DECISION_RECORD.md` to `Decision record status: APPROVED`.
 7. Run the release gate for the public branch:
 
    ```sh
-   ./scripts/release-evidence-status.sh
    ./scripts/check-public-release-branch.sh <public-branch> <source-ref-sha>
    ./scripts/generate-alpha-release-notes.sh v0.1.0-alpha.1 <source-ref-sha> path/to/release-notes.md
    ```
 
-Do not publish publicly while this sheet or any evidence file remains pending.
+Do not publish publicly while this sheet or any required release check remains
+pending.

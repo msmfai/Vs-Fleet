@@ -7,7 +7,7 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 repo="$TMPDIR/repo"
 fakebin="$TMPDIR/bin"
-evidence="$TMPDIR/DEPENDENCY_REVIEW_EVIDENCE.md"
+report="$TMPDIR/dependency-review.md"
 output="$TMPDIR/dependency-review.out"
 
 mkdir -p \
@@ -68,7 +68,7 @@ printf '{"lockfileVersion":3}\n' >"$repo/packages/extension/package-lock.json"
 git -C "$repo" add .
 git -C "$repo" commit -q -m "fixture"
 
-if ! PATH="$fakebin:$PATH" TMPDIR="$TMPDIR/logs" "$repo/scripts/run-dependency-review.sh" "$evidence" >"$output" 2>&1; then
+if ! PATH="$fakebin:$PATH" TMPDIR="$TMPDIR/logs" "$repo/scripts/run-dependency-review.sh" >"$output" 2>&1; then
   echo "FAIL: expected dependency review runner to pass" >&2
   cat "$output" >&2
   exit 1
@@ -85,18 +85,29 @@ for pattern in \
   '^fleet-bridge npm audit: `pass`$' \
   '^extension npm audit: `pass`$' \
   '^generated artifact check: `pass`$' \
-  '^Release-control evidence file: `../.*DEPENDENCY_REVIEW_EVIDENCE.md`$|^Release-control evidence file: `not tracked in this worktree`$' \
   '^Accepted findings: `none`$'
 do
-  if ! rg -q "$pattern" "$evidence"; then
-    echo "FAIL: generated evidence missing pattern: $pattern" >&2
-    cat "$evidence" >&2
+  if ! rg -q "$pattern" "$output"; then
+    echo "FAIL: dependency review output missing pattern: $pattern" >&2
+    cat "$output" >&2
     exit 1
   fi
 done
 
-if PATH="$fakebin:$PATH" TMPDIR="$TMPDIR/logs" "$repo/scripts/run-dependency-review.sh" "$evidence" >"$TMPDIR/overwrite.out" 2>&1; then
-  echo "FAIL: concrete dependency review evidence should not be overwritten by default" >&2
+if ! PATH="$fakebin:$PATH" TMPDIR="$TMPDIR/logs" "$repo/scripts/run-dependency-review.sh" "$report" >"$TMPDIR/report.out" 2>&1; then
+  echo "FAIL: explicit dependency review report should pass" >&2
+  cat "$TMPDIR/report.out" >&2
+  exit 1
+fi
+
+if ! rg -q '^# Dependency Review$' "$report"; then
+  echo "FAIL: explicit report file missing dependency review content" >&2
+  cat "$report" >&2
+  exit 1
+fi
+
+if PATH="$fakebin:$PATH" TMPDIR="$TMPDIR/logs" "$repo/scripts/run-dependency-review.sh" "$report" >"$TMPDIR/overwrite.out" 2>&1; then
+  echo "FAIL: dependency review report should not be overwritten by default" >&2
   cat "$TMPDIR/overwrite.out" >&2
   exit 1
 fi
@@ -107,8 +118,8 @@ if ! rg -q 'FLEET_DEPENDENCY_REVIEW_FORCE=1' "$TMPDIR/overwrite.out"; then
   exit 1
 fi
 
-if ! PATH="$fakebin:$PATH" TMPDIR="$TMPDIR/logs" FLEET_DEPENDENCY_REVIEW_FORCE=1 "$repo/scripts/run-dependency-review.sh" "$evidence" >"$TMPDIR/force.out" 2>&1; then
-  echo "FAIL: forced dependency review evidence overwrite should pass" >&2
+if ! PATH="$fakebin:$PATH" TMPDIR="$TMPDIR/logs" FLEET_DEPENDENCY_REVIEW_FORCE=1 "$repo/scripts/run-dependency-review.sh" "$report" >"$TMPDIR/force.out" 2>&1; then
+  echo "FAIL: forced dependency review report overwrite should pass" >&2
   cat "$TMPDIR/force.out" >&2
   exit 1
 fi
@@ -118,7 +129,7 @@ printf 'generated\n' >"$repo/packages/extension/out/generated.js"
 git -C "$repo" add packages/extension/out/generated.js
 git -C "$repo" commit -q -m "tracked generated artifact"
 
-if PATH="$fakebin:$PATH" TMPDIR="$TMPDIR/logs" FLEET_DEPENDENCY_REVIEW_FORCE=1 "$repo/scripts/run-dependency-review.sh" "$evidence" >"$output" 2>&1; then
+if PATH="$fakebin:$PATH" TMPDIR="$TMPDIR/logs" FLEET_DEPENDENCY_REVIEW_FORCE=1 "$repo/scripts/run-dependency-review.sh" "$report" >"$output" 2>&1; then
   echo "FAIL: expected dependency review runner to reject tracked generated artifacts" >&2
   cat "$output" >&2
   exit 1

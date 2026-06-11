@@ -20,9 +20,9 @@ choices in `docs/release/OWNER_DECISION_RECORD.md` before using this runbook:
 - Source-only distribution scope, or an explicitly approved alternative.
 - Security reporting channel.
 - Contribution intake policy.
-- Public CI evidence policy.
+- Public CI policy.
 - Privacy/logging posture.
-- Dependency review evidence.
+- Dependency review.
 - Support commitment.
 - Branding stability for the public alpha name and icon.
 - Versioning and compatibility commitment.
@@ -48,12 +48,10 @@ branch.
    history exposure, create a cleaned branch with
    `./scripts/prepare-public-branch.sh <public-branch> <source-ref>` and publish
    that branch instead.
-   Generate `docs/release/PUBLIC_BRANCH_EVIDENCE.md` with
-   `./scripts/generate-public-branch-evidence.sh <public-branch> <source-ref> docs/release/PUBLIC_BRANCH_EVIDENCE.md`,
-   then run
+   Run
    `./scripts/check-public-release-branch.sh <public-branch> <source-ref-sha>`
    in the same private clone. The verifier proves the branch is a one-commit
-   tree snapshot of the approved source and runs the history, evidence, secret,
+   tree snapshot of the approved source and runs the history, secret,
    and aggregate release gates against the public ref rather than every private
    local ref.
 5. If the secret exposure audit fails, publish a cleaned branch instead. Do not
@@ -92,8 +90,8 @@ Set these before public visibility:
   .github/dependabot.yml` passes before public visibility.
 - `./scripts/check-lockfile-policy.sh` passes before public visibility.
 - `./scripts/check-github-workflows.sh .github/workflows/ci.yml
-  .github/workflows/release-readiness.yml` passes before recording public CI
-  evidence.
+  .github/workflows/release-readiness.yml` passes before relying on public CI
+  results.
 - `./scripts/secret-release-check.sh` passes on the exact public branch.
 - `./scripts/check-doc-links.sh` passes on the exact public branch.
 - `./scripts/check-public-tree-size.sh` passes on the exact public branch.
@@ -134,42 +132,31 @@ Reference: <https://docs.github.com/en/repositories/configuring-branches-and-mer
 
 ## Release Custody
 
-Record the release custody evidence before the first public tag or pre-release:
+Review release custody before the first public tag or pre-release:
 
 - Only the approved release authority may push source tags or create GitHub
   releases.
-- Tag protection is enabled if available, or the evidence record names the
-  accepted unavailable/deferred reason.
+- Tag protection is enabled if available, or the accepted unavailable/deferred
+  reason is recorded in the release checklist.
 - GitHub releases contain source tags and release notes only unless the
   distribution decision explicitly approves binaries or packages.
 - Package publishing credentials do not exist, are disabled, or are outside the
   repository for source-only alpha.
-- The emergency removal owner is named in the publication evidence.
+- The emergency removal owner is named in the release checklist.
 
 ## Final Publish Sequence
 
 1. Update `docs/release/OWNER_DECISION_RECORD.md` to `APPROVED`.
 2. Apply the approved license and namespace metadata.
-3. Run the dependency review and record exact evidence.
+3. Run the dependency review and record any accepted findings in the release
+   checklist or release notes.
 4. Run the normal GitHub "CI" workflow and the manual GitHub "Release
    Readiness" workflow on the exact commit.
-5. Record exact CI and Release Readiness evidence in
-   `docs/release/PUBLIC_CI_EVIDENCE.md`.
-6. Generate exact repository settings evidence in
-   `docs/release/GITHUB_PUBLICATION_EVIDENCE.md`, including visibility review,
+5. Record CI and Release Readiness run URLs in the release checklist or release
+   notes.
+6. Review exact repository settings, including visibility review,
    issue/discussion/wiki settings, security settings, branch protection, and
-   release custody:
-
-   ```sh
-   ./scripts/generate-github-publication-evidence.sh <repo-url> <default-branch> <source-ref> <emergency-removal-owner>
-   ```
-
-   Pass `field=value` overrides for any repository setting that differs from
-   the source-only alpha defaults printed by
-   `./scripts/generate-github-publication-evidence.sh --help`.
-   These files are release-control evidence: after committing them, their
-   checkers allow only known release-control evidence files under
-   `docs/release/*_EVIDENCE.md` to differ from the reviewed commit.
+   release custody.
 7. Run:
 
    ```sh
@@ -178,16 +165,15 @@ Record the release custody evidence before the first public tag or pre-release:
    ./scripts/check-public-tree-size.sh
    ./scripts/check-lockfile-policy.sh
    ./scripts/check-workflow-supply-chain-decision.sh docs/release/OWNER_DECISION_RECORD.md .
-   ./scripts/check-github-publication-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md "$(git rev-parse HEAD)"
-   ./scripts/check-release-custody-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md .
+   ./scripts/check-release-custody-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/release-check.sh
    ./scripts/check-release-notes.sh path/to/release-notes.md "$(git rev-parse HEAD)"
    ```
 
-8. Create the public branch with `./scripts/prepare-public-branch.sh` if the
-   owner selected cleaned/squashed history, generate
-   `docs/release/PUBLIC_BRANCH_EVIDENCE.md`, then publish that branch or change
-   repository visibility.
+8. Create and verify the public branch with `./scripts/prepare-public-branch.sh`
+   and `./scripts/check-public-release-branch.sh` if the owner selected
+   cleaned/squashed history, then publish that branch or change repository
+   visibility.
 9. Push the alpha source tag.
 10. Create a GitHub pre-release using checked release notes.
 11. Re-run `./scripts/release-check.sh` on the public checkout.
@@ -202,9 +188,8 @@ Abort publication if any of these are true:
 - `./scripts/check-public-tree-size.sh` fails.
 - `./scripts/check-lockfile-policy.sh` fails.
 - `./scripts/check-workflow-supply-chain-decision.sh` fails.
-- The exact public commit differs from the commit recorded in CI or dependency
-  review evidence, except for known release-control evidence files under
-  `docs/release/*_EVIDENCE.md`.
+- The exact public commit differs from the commit used for CI, Release
+  Readiness, dependency review, or release notes.
 - The selected security reporting channel is not actually available.
 - The release notes imply binary, package, remote/container, or production
   support that the owner decision record did not approve.

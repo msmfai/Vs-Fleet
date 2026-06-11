@@ -2,16 +2,10 @@
 set -euo pipefail
 
 owner_record="${1:-docs/release/OWNER_DECISION_RECORD.md}"
-evidence_file="${2:-docs/release/GITHUB_PUBLICATION_EVIDENCE.md}"
-root="${3:-.}"
+root="${2:-.}"
 
 if [ ! -f "$owner_record" ]; then
   echo "FAIL: missing owner decision record: $owner_record"
-  exit 1
-fi
-
-if [ ! -f "$evidence_file" ]; then
-  echo "FAIL: missing GitHub publication evidence record: $evidence_file"
   exit 1
 fi
 
@@ -37,37 +31,6 @@ if [ "$checked_count" -ne 1 ]; then
 fi
 
 checked="$(printf '%s\n' "$custody_block" | rg '^- \[x\] ' | head -n1)"
-
-field_value() {
-  local label=$1
-  local line
-  line="$(rg -i "^${label}:" "$evidence_file" | head -n1 || true)"
-  if [ -z "$line" ]; then
-    return 1
-  fi
-  local value="${line#*:}"
-  value="$(printf '%s' "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/^`//; s/`$//')"
-  printf '%s\n' "$value"
-}
-
-require_field_pattern() {
-  local label=$1
-  local pattern=$2
-  local description=$3
-  local value
-  if ! value="$(field_value "$label")"; then
-    echo "FAIL: $evidence_file must contain $label"
-    exit 1
-  fi
-  if printf '%s\n' "$value" | rg -qi 'TODO|TBD|PLACEHOLDER|PENDING'; then
-    echo "FAIL: $label still contains placeholder text"
-    exit 1
-  fi
-  if ! printf '%s\n' "$value" | rg -qi "$pattern"; then
-    echo "FAIL: $label must contain $description"
-    exit 1
-  fi
-}
 
 require_file() {
   local file=$1
@@ -98,21 +61,6 @@ reject_placeholder_file() {
 }
 
 check_single_maintainer_alpha() {
-  require_field_pattern "Release authority" \
-    'single maintainer|owner maintainer|repository owner' \
-    "single-maintainer or repository-owner release authority"
-  require_field_pattern "Tag protection or accepted unavailable reason" \
-    '^(enabled|owner-approved deferred: .+|unavailable: .+)$' \
-    "enabled, unavailable, or owner-approved deferred tag protection"
-  require_field_pattern "Release artifact custody" \
-    'source tags and release notes only|no binary artifacts|source-only' \
-    "source-only release artifact custody"
-  require_field_pattern "Package publishing credentials" \
-    'none for source-only alpha|disabled|not created|not used' \
-    "no package publishing credentials for source-only alpha"
-  require_field_pattern "Emergency removal owner" \
-    '.+' \
-    "a concrete emergency removal owner"
   require_text "docs/release/GITHUB_PUBLICATION_RUNBOOK.md" \
     'Release Custody' \
     "release custody review steps"

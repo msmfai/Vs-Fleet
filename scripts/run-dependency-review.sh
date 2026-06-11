@@ -8,19 +8,11 @@ if [ -z "$root" ]; then
   exit 2
 fi
 
-out="${1:-$root/docs/release/DEPENDENCY_REVIEW_EVIDENCE.md}"
+out="${1:--}"
 tmp="${TMPDIR:-/tmp}/fleet-dependency-review-$(git -C "$root" rev-parse --short=12 HEAD)"
 mkdir -p "$tmp"
 
 artifact_pattern='(^|/)coverage/|(^|/)node_modules/|(^|/)out/|\.vsix$|Fleet\.app/'
-
-if [ -f "$out" ] &&
-  ! rg -q 'Dependency review status: PENDING|TODO|TBD|PLACEHOLDER|not yet run' "$out" &&
-  [ "${FLEET_DEPENDENCY_REVIEW_FORCE:-0}" != "1" ]; then
-  echo "FAIL: dependency review evidence already looks concrete: $out" >&2
-  echo "Set FLEET_DEPENDENCY_REVIEW_FORCE=1 to overwrite reviewed evidence." >&2
-  exit 1
-fi
 
 run_logged() {
   local label=$1
@@ -62,41 +54,20 @@ fi
 
 commit="$(git -C "$root" rev-parse HEAD)"
 reviewed_date="$(date -u +%Y-%m-%d)"
-release_control_path=""
-case "$out" in
-  "$root"/*) release_control_path="${out#"$root/"}" ;;
-  /*)
-    if [ -d "$(dirname "$out")" ]; then
-      physical_root="$(cd "$root" && pwd -P)"
-      physical_out="$(cd "$(dirname "$out")" && pwd -P)/$(basename "$out")"
-      case "$physical_out" in
-        "$physical_root"/*) release_control_path="${physical_out#"$physical_root/"}" ;;
-        *) release_control_path="" ;;
-      esac
-    fi
-    ;;
-  *) release_control_path="$out" ;;
-esac
-
-mkdir -p "$(dirname "$out")"
-cat >"$out" <<EOF
-# Dependency Review Evidence
+report="$(
+  cat <<EOF
+# Dependency Review
 
 Dependency review status: PASS
 
-This file records dependency review evidence for the exact commit that will
-become the first public GitHub alpha. Do not mark the owner decision record
-\`APPROVED\` until this file is concrete and
-\`scripts/check-dependency-review-decision.sh\` passes.
+This report records the dependency review checks for the current commit. Keep
+the command output or release notes with the release, but do not commit a
+repo-local evidence file.
 
 Commit: \`$commit\`
 Reviewed date: \`$reviewed_date\`
-Release-control evidence file: \`${release_control_path:-not tracked in this worktree}\`
 
-## Command Evidence
-
-Use this section if the owner decision record chooses to run the dependency
-review commands.
+## Command Results
 
 cargo tree: \`pass\`
 cargo metadata --locked: \`pass\`
@@ -106,21 +77,20 @@ fleet-bridge npm audit: \`pass\`
 extension npm audit: \`pass\`
 generated artifact check: \`pass\`
 Accepted findings: \`none\`
-
-## Skipped Review Evidence
-
-Use this section only if the owner explicitly accepts publishing the first
-source alpha without dependency review.
-
-Accepted risk: \`not used\`
-
-## Other Evidence
-
-Use this section only if the owner records a concrete \`Other\` dependency review
-decision.
-
-Dependency review evidence path: \`not used\`
 EOF
+)"
 
-echo "Dependency review evidence written to $out"
-echo "Command logs: $tmp"
+if [ "$out" = "-" ]; then
+  printf '%s\n' "$report"
+  echo "Command logs: $tmp" >&2
+else
+  if [ -f "$out" ] && [ "${FLEET_DEPENDENCY_REVIEW_FORCE:-0}" != "1" ]; then
+    echo "FAIL: dependency review report already exists: $out" >&2
+    echo "Set FLEET_DEPENDENCY_REVIEW_FORCE=1 to overwrite." >&2
+    exit 1
+  fi
+  mkdir -p "$(dirname "$out")"
+  printf '%s\n' "$report" >"$out"
+  echo "Dependency review report written to $out"
+  echo "Command logs: $tmp"
+fi

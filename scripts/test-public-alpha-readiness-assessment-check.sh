@@ -56,12 +56,6 @@ printf '\nTODO: fill later\n' >>"$placeholder"
 expect_fail "placeholder is rejected" "$placeholder"
 expect_output "unresolved placeholders"
 
-missing_evidence_gate="$TMPDIR/missing-evidence-gate.md"
-cp "$valid" "$missing_evidence_gate"
-perl -0pi -e 's/3\. `\.\/scripts\/release-evidence-status\.sh` reports release evidence complete\.\n//' "$missing_evidence_gate"
-expect_fail "missing release evidence decision rule" "$missing_evidence_gate"
-expect_output "release evidence decision rule"
-
 missing_public_branch_verifier="$TMPDIR/missing-public-branch-verifier.md"
 cp "$valid" "$missing_public_branch_verifier"
 perl -0pi -e 's/4\. For the recommended cleaned-history path,.*?publishable ref\.\n/4. `\.\/scripts\/release-check.sh` passes on the exact public ref.\n/s' "$missing_public_branch_verifier"
