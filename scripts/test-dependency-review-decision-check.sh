@@ -27,6 +27,14 @@ Decision record status: $status
   advisory/license review risk.
 - [$([ "$checked" = "other" ] && echo x || echo ' ')] Other: \`External dependency review report\`
 
+### 12. Support Commitment
+
+- [x] Best-effort alpha support only. Breaking changes are expected; there are
+  no production support guarantees, response SLAs, paid support terms, or stable
+  release lines.
+- [ ] Define a public triage or response target in \`SUPPORT.md\`.
+- [ ] Other: \`TODO\`
+
 ## Required Before Binary Distribution
 EOF
 }
