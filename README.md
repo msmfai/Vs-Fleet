@@ -1,3 +1,5 @@
+> This is a vibe coded app I put together because I had personal use for it, that will be updated when I personally require new features. I'm providing it as is to see if there is interest in vs-code multiplexing. If this project gets any interest I'll take it more seriously. PRs and issues welcome.
+
 <p align="center">
   <img src="crates/fleet-host/icons/icon.png" alt="VS Fleet logo" width="512" height="512">
 </p>
@@ -18,16 +20,16 @@
 
 VS Fleet is a compact macOS app for supervising local `code serve-web` sessions
 used by terminal-based AI coding agents. It collects editor and agent state,
-shows each session in a small Fleet window, and lets you switch between sessions
-without Fleet owning the agent process or capturing the user's keystrokes.
+shows each session in a small Fleet window, and switches between sessions
+without owning agent processes or capturing keystrokes.
 
-The alpha is intentionally local-only: it uses the user's installed VS Code CLI
-and starts local web sessions from the Fleet app.
+The alpha is intentionally local-only: it uses the installed VS Code CLI and
+starts local web sessions from the Fleet app.
 
 ## Features
 
 - Launch local VS Code web sessions from the Fleet window.
-- Open a new session in the user's home directory or in a selected local folder.
+- Open a new session in the home directory or in a selected local folder.
 - View, rename, mute, dismiss, and switch between sessions.
 - Track unread and waiting state from terminal-based coding agents.
 - Keep Fleet as a client: editor sessions and reporters connect back to Fleet.
@@ -73,7 +75,7 @@ review, but not for general users or production workflows.
 Current support boundary:
 
 - Local macOS app.
-- Local `code serve-web` sessions launched from the user's VS Code install.
+- Local `code serve-web` sessions launched from the local VS Code install.
 - Source builds only; no signed or notarized binary distribution yet.
 
 ## Documentation
@@ -164,8 +166,8 @@ documented in [Local data and uninstall](docs/LOCAL_DATA_AND_UNINSTALL.md).
 
 ## Legal
 
-The alpha uses the user's local `code serve-web` install. Fleet does not
-download, bundle, host, or redistribute Microsoft's VS Code Server, Microsoft
+The alpha uses the local `code serve-web` install. Fleet does not download,
+bundle, host, or redistribute Microsoft's VS Code Server, Microsoft
 Marketplace extensions, or Microsoft remote extensions.
 
 See [SECURITY.md](SECURITY.md) for the current alpha security policy.
