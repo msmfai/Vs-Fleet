@@ -24,6 +24,13 @@ run:
 The draft stays `PENDING`; copy or edit it into `OWNER_DECISION_RECORD.md` only
 after reviewing every checked choice.
 
+After approving a license decision and preparing the actual legal license text,
+apply the metadata with:
+
+```sh
+./scripts/apply-license-decision.sh docs/release/OWNER_DECISION_RECORD.md . path/to/LICENSE
+```
+
 ## Required Answers
 
 Copy the answers into `OWNER_DECISION_RECORD.md`; do not publish while any value

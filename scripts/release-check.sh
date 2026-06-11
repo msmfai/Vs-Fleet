@@ -114,6 +114,8 @@ for required in \
   scripts/test-secret-release-check.sh \
   scripts/check-license-decision.sh \
   scripts/test-license-decision-check.sh \
+  scripts/apply-license-decision.sh \
+  scripts/test-apply-license-decision.sh \
   scripts/check-namespace-decision.sh \
   scripts/test-namespace-decision-check.sh \
   scripts/check-alpha-scope-decision.sh \
