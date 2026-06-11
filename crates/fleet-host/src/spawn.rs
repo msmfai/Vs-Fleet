@@ -43,8 +43,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
-
-use serde::{Deserialize, Serialize};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
@@ -59,49 +58,34 @@ const SIGKILL: i32 = 9;
 /// servers Fleet created — it knows these directly, since it made them).
 pub struct ServerSupervisor {
     children: Mutex<HashMap<String, Vec<Child>>>,
-    restored_groups: Mutex<HashMap<String, Vec<u32>>>,
     /// `server id -> docker container name` for container-mode servers (so `close`
     /// knows to `docker rm` rather than kill child processes).
     containers: Mutex<HashMap<String, String>>,
     servers: Mutex<Vec<crate::mux::Server>>,
     counter: AtomicU64,
+    launch_id: String,
     bridge_port: u16,
     hub_url: String,
     bridge_token: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-struct SpawnManifest {
-    servers: Vec<SpawnRecord>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct SpawnRecord {
-    id: String,
-    label: String,
-    url: String,
-    #[serde(default)]
-    pids: Vec<u32>,
-    #[serde(default)]
-    container: Option<String>,
-}
-
-#[derive(Default)]
-struct RestoredSpawnState {
-    servers: Vec<crate::mux::Server>,
-    groups: HashMap<String, Vec<u32>>,
-    containers: HashMap<String, String>,
-}
-
 impl ServerSupervisor {
     pub fn new(bridge_port: u16, hub_url: String, bridge_token: String) -> Self {
-        let restored = restore_spawn_manifest(&fleet_mux_base());
+        Self::new_with_launch_id(bridge_port, hub_url, bridge_token, launch_id())
+    }
+
+    fn new_with_launch_id(
+        bridge_port: u16,
+        hub_url: String,
+        bridge_token: String,
+        launch_id: String,
+    ) -> Self {
         Self {
             children: Mutex::new(HashMap::new()),
-            restored_groups: Mutex::new(restored.groups),
-            containers: Mutex::new(restored.containers),
-            servers: Mutex::new(restored.servers),
-            counter: AtomicU64::new(initial_server_counter()),
+            containers: Mutex::new(HashMap::new()),
+            servers: Mutex::new(Vec::new()),
+            counter: AtomicU64::new(1),
+            launch_id,
             bridge_port,
             hub_url,
             bridge_token,
@@ -127,7 +111,6 @@ impl ServerSupervisor {
         }
         if renamed {
             tracing::info!(%id, %label, "spawned server label renamed");
-            self.persist_spawn_manifest();
         }
         renamed
     }
@@ -147,7 +130,8 @@ impl ServerSupervisor {
     /// Returns its [`Server`]; Fleet adds it to the rail immediately.
     fn spawn_local(&self) -> std::io::Result<crate::mux::Server> {
         let base = fleet_mux_base();
-        let (_, id) = self.allocate_server_id(&base);
+        let (n, id) = self.allocate_server_id();
+        let label = server_label(n);
         let port = free_port()?;
 
         let _ = std::fs::create_dir_all(&base);
@@ -217,6 +201,7 @@ impl ServerSupervisor {
         let env = fleet_env(
             &reporter_socket.to_string_lossy(),
             &id,
+            &label,
             &format!("ws://127.0.0.1:{}", self.bridge_port),
             &url,
             &self.bridge_token,
@@ -236,13 +221,12 @@ impl ServerSupervisor {
         tracing::info!(%id, port, server_bin = %server_bin.display(), "spawned VS Code web server + reporter");
         let server = crate::mux::Server {
             id: id.clone(),
-            label: id.clone(),
+            label,
             url,
             owned: true,
         };
         self.children.lock().unwrap().insert(id.clone(), children);
         self.servers.lock().unwrap().push(server.clone());
-        self.persist_spawn_manifest();
         Ok(server)
     }
 
@@ -282,8 +266,8 @@ impl ServerSupervisor {
     /// NOTE: for the container to reach Fleet's bridge, Fleet must bind it on all
     /// interfaces — launch with `FLEET_BRIDGE_ADDR=0.0.0.0` (see `bridge.rs`).
     fn spawn_container(&self) -> std::io::Result<crate::mux::Server> {
-        let base = fleet_mux_base();
-        let (_, id) = self.allocate_server_id(&base);
+        let (n, id) = self.allocate_server_id();
+        let label = server_label(n);
         let name = format!("fleet-{id}");
         let port = free_port()?;
 
@@ -313,7 +297,7 @@ impl ServerSupervisor {
                 "-e",
                 &format!("FLEET_SERVER_ID={id}"),
                 "-e",
-                &format!("FLEET_SERVER_LABEL={id}"),
+                &format!("FLEET_SERVER_LABEL={label}"),
                 "-e",
                 &format!("FLEET_HOST_ADDR={host_addr}"),
                 "-e",
@@ -343,13 +327,12 @@ impl ServerSupervisor {
         tracing::info!(%id, %name, port, url, "spawned fleet-env container");
         let server = crate::mux::Server {
             id: id.clone(),
-            label: id.clone(),
+            label,
             url,
             owned: true,
         };
         self.containers.lock().unwrap().insert(id.clone(), name);
         self.servers.lock().unwrap().push(server.clone());
-        self.persist_spawn_manifest();
         Ok(server)
     }
 
@@ -368,8 +351,8 @@ impl ServerSupervisor {
     fn spawn_ssh(&self) -> std::io::Result<crate::mux::Server> {
         let target = std::env::var("FLEET_SSH_TARGET")
             .map_err(|_| std::io::Error::other("FLEET_SSH_TARGET not set (e.g. user@host)"))?;
-        let base = fleet_mux_base();
-        let (n, id) = self.allocate_server_id(&base);
+        let (n, id) = self.allocate_server_id();
+        let label = format!("{} @ {target}", server_label(n));
 
         // local_editor is free on THIS host; the remote ports are bound on the remote
         // by ssh's tunnels (ExitOnForwardFailure makes a collision fail loudly).
@@ -399,6 +382,7 @@ impl ServerSupervisor {
         let env = fleet_env(
             &remote_sock,
             &id,
+            &label,
             &format!("ws://127.0.0.1:{r_bridge}"),
             &url,
             &self.bridge_token,
@@ -464,7 +448,7 @@ impl ServerSupervisor {
         tracing::info!(%id, %target, local_editor, r_cs, "deployed code-server over ssh");
         let server = crate::mux::Server {
             id: id.clone(),
-            label: format!("{id} @ {target}"),
+            label,
             url,
             owned: true,
         };
@@ -473,25 +457,12 @@ impl ServerSupervisor {
             .unwrap()
             .insert(id.clone(), vec![child]);
         self.servers.lock().unwrap().push(server.clone());
-        self.persist_spawn_manifest();
         Ok(server)
     }
 
-    fn allocate_server_id(&self, base: &Path) -> (u64, String) {
-        loop {
-            let n = self.counter.fetch_add(1, Ordering::SeqCst);
-            let id = format!("server-{n}");
-            let known = self
-                .servers
-                .lock()
-                .map(|servers| servers.iter().any(|server| server.id == id))
-                .unwrap_or(false);
-            if known || server_artifacts_exist(base, &id) {
-                continue;
-            }
-            persist_next_server_counter(base, n + 1);
-            return (n, id);
-        }
+    fn allocate_server_id(&self) -> (u64, String) {
+        let n = self.counter.fetch_add(1, Ordering::SeqCst);
+        (n, format!("server-{}-{n}", self.launch_id))
     }
 
     /// Close (kill) a Fleet-spawned server — its code-server AND reporter (local
@@ -509,7 +480,6 @@ impl ServerSupervisor {
                 .stderr(Stdio::null())
                 .status();
             tracing::info!(%id, %name, "removed spawned container");
-            self.persist_spawn_manifest();
             return true;
         }
 
@@ -519,61 +489,14 @@ impl ServerSupervisor {
                 terminate_child_tree(child);
             }
             tracing::info!(%id, "closed spawned server");
-            let _ = self
-                .restored_groups
-                .lock()
-                .map(|mut groups| groups.remove(id));
-            self.persist_spawn_manifest();
-            true
-        } else if let Some(groups) = self.restored_groups.lock().unwrap().remove(id) {
-            for pid in groups {
-                terminate_restored_process_group(pid);
-            }
-            tracing::info!(%id, "closed restored spawned server");
-            self.persist_spawn_manifest();
             true
         } else {
-            self.persist_spawn_manifest();
             false
         }
     }
 
-    pub fn shutdown_all(&self) {
-        self.servers.lock().unwrap().clear();
-
-        if let Ok(mut containers) = self.containers.lock() {
-            let docker = docker_bin();
-            for (_id, name) in containers.drain() {
-                let _ = Command::new(&docker)
-                    .args(["rm", "-f", &name])
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status();
-            }
-        }
-
-        if let Ok(mut children) = self.children.lock() {
-            for (_id, group) in children.drain() {
-                for child in group {
-                    terminate_child_tree(child);
-                }
-            }
-        }
-
-        if let Ok(mut groups) = self.restored_groups.lock() {
-            for (_id, pids) in groups.drain() {
-                for pid in pids {
-                    terminate_restored_process_group(pid);
-                }
-            }
-        }
-
-        self.persist_spawn_manifest();
-    }
-
     fn prune_dead_local_servers(&self) {
         let mut removed = Vec::new();
-        let mut changed = false;
 
         if let Ok(mut children) = self.children.lock() {
             let dead_ids = children
@@ -596,36 +519,13 @@ impl ServerSupervisor {
                         terminate_child_tree(child);
                     }
                     removed.push(id);
-                    changed = true;
                 }
             }
         } else {
             tracing::warn!("local server child lock poisoned; skipping dead-session prune");
         }
 
-        if let (Ok(mut groups), Ok(containers)) =
-            (self.restored_groups.lock(), self.containers.lock())
-        {
-            let pruned = prune_dead_restored_groups(
-                &mut groups,
-                &containers,
-                |pid| is_process_alive(pid),
-                |id, pid| {
-                    tracing::warn!(%id, pid, "restored local server pid is gone");
-                },
-            );
-            if !pruned.is_empty() {
-                removed.extend(pruned);
-                changed = true;
-            }
-        } else {
-            tracing::warn!("restored server lock poisoned; skipping dead-session prune");
-        }
-
         if removed.is_empty() {
-            if changed {
-                self.persist_spawn_manifest();
-            }
             return;
         }
 
@@ -637,51 +537,6 @@ impl ServerSupervisor {
             tracing::warn!("spawned server list lock poisoned while pruning dead sessions");
         }
         tracing::info!(servers = ?removed, "pruned dead local sessions");
-        self.persist_spawn_manifest();
-    }
-
-    fn persist_spawn_manifest(&self) {
-        let base = fleet_mux_base();
-        let servers = self
-            .servers
-            .lock()
-            .map(|servers| servers.clone())
-            .unwrap_or_default();
-        let child_groups = self.children.lock().ok();
-        let restored_groups = self.restored_groups.lock().ok();
-        let containers = self.containers.lock().ok();
-        let records = servers
-            .into_iter()
-            .map(|server| {
-                let mut pids = Vec::new();
-                if let Some(children) = child_groups
-                    .as_ref()
-                    .and_then(|groups| groups.get(&server.id))
-                {
-                    pids.extend(children.iter().map(Child::id));
-                }
-                if let Some(restored) = restored_groups
-                    .as_ref()
-                    .and_then(|groups| groups.get(&server.id))
-                {
-                    pids.extend(restored.iter().copied());
-                }
-                pids.sort_unstable();
-                pids.dedup();
-                SpawnRecord {
-                    id: server.id.clone(),
-                    label: server.label,
-                    url: server.url,
-                    pids,
-                    container: containers
-                        .as_ref()
-                        .and_then(|items| items.get(&server.id).cloned()),
-                }
-            })
-            .collect::<Vec<_>>();
-        if let Err(e) = write_spawn_manifest(&base, &SpawnManifest { servers: records }) {
-            tracing::warn!(base = %base.display(), error = %e, "spawn manifest could not be persisted");
-        }
     }
 }
 
@@ -720,96 +575,37 @@ fn primary_child_exited(children: &mut [Child]) -> ChildHealth {
     }
 }
 
-fn prune_dead_restored_groups(
-    groups: &mut HashMap<String, Vec<u32>>,
-    containers: &HashMap<String, String>,
-    pid_alive: impl Fn(u32) -> bool,
-    mut log_dead_pid: impl FnMut(&str, u32),
-) -> Vec<String> {
-    let ids = groups.keys().cloned().collect::<Vec<_>>();
-    let mut removed = Vec::new();
-
-    for id in ids {
-        let Some(pids) = groups.get_mut(&id) else {
-            continue;
-        };
-        pids.retain(|pid| {
-            let alive = pid_alive(*pid);
-            if !alive {
-                log_dead_pid(&id, *pid);
-            }
-            alive
-        });
-        if pids.is_empty() && !containers.contains_key(&id) {
-            groups.remove(&id);
-            removed.push(id);
-        }
-    }
-
-    removed
-}
-
 fn spawn_manifest_path(base: &Path) -> PathBuf {
     base.join("servers.json")
 }
 
-fn restore_spawn_manifest(base: &Path) -> RestoredSpawnState {
-    let path = spawn_manifest_path(base);
-    let Ok(bytes) = std::fs::read(&path) else {
-        return RestoredSpawnState::default();
-    };
-    let Ok(manifest) = serde_json::from_slice::<SpawnManifest>(&bytes) else {
-        tracing::warn!(path = %path.display(), "spawn manifest is invalid; ignoring it");
-        return RestoredSpawnState::default();
-    };
-    restored_spawn_state_from_manifest(manifest, is_process_alive)
+pub fn clear_legacy_spawn_state() {
+    let base = fleet_mux_base();
+    clear_legacy_spawn_state_in(&base);
 }
 
-fn restored_spawn_state_from_manifest(
-    manifest: SpawnManifest,
-    pid_alive: impl Fn(u32) -> bool,
-) -> RestoredSpawnState {
-    let mut state = RestoredSpawnState::default();
-    for record in manifest.servers {
-        let live_pids = record
-            .pids
-            .iter()
-            .copied()
-            .filter(|pid| pid_alive(*pid))
-            .collect::<Vec<_>>();
-        if live_pids.is_empty() && record.container.is_none() {
-            continue;
+fn clear_legacy_spawn_state_in(base: &Path) {
+    for path in [spawn_manifest_path(base), next_server_counter_path(base)] {
+        match std::fs::remove_file(&path) {
+            Ok(()) => tracing::info!(path = %path.display(), "removed legacy Fleet client state"),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                tracing::warn!(path = %path.display(), error = %e, "legacy Fleet client state could not be removed")
+            }
         }
-
-        let server = crate::mux::Server {
-            id: record.id.clone(),
-            label: record.label,
-            url: record.url,
-            owned: true,
-        };
-        if !live_pids.is_empty() {
-            state.groups.insert(record.id.clone(), live_pids);
-        }
-        if let Some(container) = record.container {
-            state.containers.insert(record.id.clone(), container);
-        }
-        state.servers.push(server);
     }
-    state.servers.sort_by(|a, b| a.id.cmp(&b.id));
-    state
 }
 
-fn write_spawn_manifest(base: &Path, manifest: &SpawnManifest) -> std::io::Result<()> {
-    std::fs::create_dir_all(base)?;
-    let bytes = serde_json::to_vec_pretty(manifest)
-        .map_err(|e| std::io::Error::other(format!("encode spawn manifest: {e}")))?;
-    std::fs::write(spawn_manifest_path(base), bytes)
+fn launch_id() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    format!("{:x}-{:x}", std::process::id(), nanos)
 }
 
-impl Drop for ServerSupervisor {
-    fn drop(&mut self) {
-        self.shutdown_all();
-    }
+fn server_label(n: u64) -> String {
+    format!("server-{n}")
 }
 
 fn spawn_fleet_child(cmd: &mut Command) -> std::io::Result<Child> {
@@ -830,17 +626,6 @@ fn terminate_child_tree(mut child: Child) {
     {
         let _ = child.kill();
         let _ = child.wait();
-    }
-}
-
-fn terminate_restored_process_group(pid: u32) {
-    #[cfg(unix)]
-    {
-        if let Some(group_pid) = process_group_signal_pid(pid) {
-            let _ = signal_process_group(group_pid, SIGTERM);
-            std::thread::sleep(std::time::Duration::from_millis(300));
-            let _ = signal_process_group(group_pid, SIGKILL);
-        }
     }
 }
 
@@ -880,22 +665,6 @@ fn signal_process_group(group_pid: i32, signal: i32) -> std::io::Result<()> {
         Ok(())
     } else {
         Err(std::io::Error::last_os_error())
-    }
-}
-
-fn is_process_alive(pid: u32) -> bool {
-    #[cfg(unix)]
-    {
-        let Ok(pid) = i32::try_from(pid) else {
-            return false;
-        };
-        unsafe { libc_kill(pid, 0) == 0 }
-    }
-
-    #[cfg(not(unix))]
-    {
-        let _ = pid;
-        true
     }
 }
 
@@ -1491,6 +1260,7 @@ fn code_server_args(host: &str, port: u16, server_data: &str, default_folder: &s
 fn fleet_env(
     reporter_socket: &str,
     id: &str,
+    label: &str,
     bridge_url: &str,
     server_url: &str,
     bridge_token: &str,
@@ -1503,7 +1273,7 @@ fn fleet_env(
         ("FLEET_BRIDGE_TOKEN".into(), bridge_token.into()),
         ("FLEET_BRIDGE_LOG_DIR".into(), bridge_log_dir.into()),
         ("FLEET_SERVER_ID".into(), id.into()),
-        ("FLEET_SERVER_LABEL".into(), id.into()),
+        ("FLEET_SERVER_LABEL".into(), label.into()),
         ("FLEET_SERVER_URL".into(), server_url.into()),
     ]
 }
@@ -1555,76 +1325,8 @@ fn fleet_mux_base_from(override_dir: Option<PathBuf>, home: Option<PathBuf>) -> 
         .join("mux")
 }
 
-fn initial_server_counter() -> u64 {
-    initial_server_counter_from(&fleet_mux_base())
-}
-
-fn initial_server_counter_from(base: &Path) -> u64 {
-    let saved = read_next_server_counter(base).unwrap_or(1);
-    let artifact_next = next_server_number_from_artifacts(base).unwrap_or(1);
-    saved.max(artifact_next).max(1)
-}
-
 fn next_server_counter_path(base: &Path) -> PathBuf {
     base.join("server-counter")
-}
-
-fn read_next_server_counter(base: &Path) -> Option<u64> {
-    std::fs::read_to_string(next_server_counter_path(base))
-        .ok()
-        .and_then(|raw| raw.trim().parse::<u64>().ok())
-        .filter(|n| *n > 0)
-}
-
-fn persist_next_server_counter(base: &Path, next: u64) {
-    if let Err(e) = std::fs::create_dir_all(base)
-        .and_then(|_| std::fs::write(next_server_counter_path(base), format!("{next}\n")))
-    {
-        tracing::warn!(base = %base.display(), next, error = %e, "server counter could not be persisted");
-    }
-}
-
-fn next_server_number_from_artifacts(base: &Path) -> Option<u64> {
-    let entries = std::fs::read_dir(base).ok()?;
-    entries
-        .filter_map(Result::ok)
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .filter_map(|name| server_number_from_artifact_name(&name))
-        .max()
-        .map(|n| n.saturating_add(1))
-}
-
-fn server_number_from_artifact_name(name: &str) -> Option<u64> {
-    for prefix in [
-        "ws-server-",
-        "cs-userdata-server-",
-        "shim-server-",
-        "reporter-server-",
-        "cs-server-",
-        "fleet-server-",
-    ] {
-        let Some(rest) = name.strip_prefix(prefix) else {
-            continue;
-        };
-        let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-        if !digits.is_empty() {
-            return digits.parse::<u64>().ok();
-        }
-    }
-    None
-}
-
-fn server_artifacts_exist(base: &Path, id: &str) -> bool {
-    [
-        base.join(format!("ws-{id}")),
-        base.join(format!("cs-userdata-{id}")),
-        base.join(format!("shim-{id}")),
-        base.join(format!("reporter-{id}.sock")),
-        base.join(format!("reporter-{id}.log")),
-        base.join(format!("cs-{id}.log")),
-    ]
-    .iter()
-    .any(|path| path.exists())
 }
 
 /// Working directory for local child processes Fleet spawns.
@@ -1730,76 +1432,50 @@ mod tests {
     }
 
     #[test]
-    fn server_number_parser_reads_fleet_artifact_names() {
-        assert_eq!(server_number_from_artifact_name("ws-server-7"), Some(7));
-        assert_eq!(
-            server_number_from_artifact_name("cs-userdata-server-12"),
-            Some(12)
-        );
-        assert_eq!(
-            server_number_from_artifact_name("reporter-server-42.sock"),
-            Some(42)
-        );
-        assert_eq!(
-            server_number_from_artifact_name("cs-server-99.log"),
-            Some(99)
-        );
-        assert_eq!(server_number_from_artifact_name("not-server-1"), None);
-    }
-
-    #[test]
-    fn initial_server_counter_uses_saved_counter_and_existing_artifacts() {
-        let dir = temp_test_dir("fleet-server-counter");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(dir.join("ws-server-3")).unwrap();
-        std::fs::write(dir.join("reporter-server-8.log"), "").unwrap();
-
-        assert_eq!(initial_server_counter_from(&dir), 9);
-        persist_next_server_counter(&dir, 12);
-        assert_eq!(initial_server_counter_from(&dir), 12);
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn server_id_allocator_skips_existing_artifacts_and_persists_next() {
-        let dir = temp_test_dir("fleet-server-allocator");
+    fn server_id_allocator_is_launch_local_and_stateless() {
+        let dir = temp_test_dir("fleet-server-allocator-stateless");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("ws-server-1")).unwrap();
-        std::fs::write(next_server_counter_path(&dir), "1\n").unwrap();
+        std::fs::write(next_server_counter_path(&dir), "99\n").unwrap();
 
-        let supervisor =
-            ServerSupervisor::new(51778, "ws://127.0.0.1:51777".into(), "token".into());
-        supervisor
-            .counter
-            .store(initial_server_counter_from(&dir), Ordering::SeqCst);
-        let (n, id) = supervisor.allocate_server_id(&dir);
+        let supervisor = ServerSupervisor::new_with_launch_id(
+            51778,
+            "ws://127.0.0.1:51777".into(),
+            "token".into(),
+            "testlaunch".into(),
+        );
+        let (first_n, first_id) = supervisor.allocate_server_id();
+        let (second_n, second_id) = supervisor.allocate_server_id();
 
-        assert_eq!(n, 2);
-        assert_eq!(id, "server-2");
-        assert_eq!(read_next_server_counter(&dir), Some(3));
+        assert_eq!(first_n, 1);
+        assert_eq!(first_id, "server-testlaunch-1");
+        assert_eq!(second_n, 2);
+        assert_eq!(second_id, "server-testlaunch-2");
+        assert_eq!(
+            std::fs::read_to_string(next_server_counter_path(&dir)).unwrap(),
+            "99\n"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn spawn_manifest_round_trips_to_mux_base() {
-        let dir = temp_test_dir("fleet-spawn-manifest");
+    fn clear_legacy_spawn_state_removes_manifest_and_counter_only() {
+        let dir = temp_test_dir("fleet-clear-legacy-state");
         let _ = std::fs::remove_dir_all(&dir);
-        let manifest = SpawnManifest {
-            servers: vec![SpawnRecord {
-                id: "server-3".into(),
-                label: "server-3".into(),
-                url: "http://127.0.0.1:3000/".into(),
-                pids: vec![11, 12],
-                container: None,
-            }],
-        };
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(spawn_manifest_path(&dir), "{}").unwrap();
+        std::fs::write(next_server_counter_path(&dir), "42\n").unwrap();
+        std::fs::write(dir.join("keep.log"), "debug").unwrap();
 
-        write_spawn_manifest(&dir, &manifest).unwrap();
-        let restored: SpawnManifest =
-            serde_json::from_slice(&std::fs::read(spawn_manifest_path(&dir)).unwrap()).unwrap();
-        assert_eq!(restored.servers, manifest.servers);
+        clear_legacy_spawn_state_in(&dir);
+
+        assert!(!spawn_manifest_path(&dir).exists());
+        assert!(!next_server_counter_path(&dir).exists());
+        assert_eq!(
+            std::fs::read_to_string(dir.join("keep.log")).unwrap(),
+            "debug"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1835,75 +1511,6 @@ mod tests {
                 reason: "no tracked child process".into()
             }
         );
-    }
-
-    #[test]
-    fn dead_restored_groups_are_pruned_but_containers_remain() {
-        let mut groups = HashMap::from([
-            ("dead".to_string(), vec![1, 2]),
-            ("partial".to_string(), vec![3, 4]),
-            ("container".to_string(), vec![5]),
-        ]);
-        let containers = HashMap::from([("container".to_string(), "fleet-container".to_string())]);
-        let mut logged = Vec::new();
-
-        let removed = prune_dead_restored_groups(
-            &mut groups,
-            &containers,
-            |pid| pid == 3,
-            |id, pid| logged.push((id.to_string(), pid)),
-        );
-
-        assert_eq!(removed, vec!["dead".to_string()]);
-        assert_eq!(groups.get("partial"), Some(&vec![3]));
-        assert_eq!(groups.get("container"), Some(&Vec::<u32>::new()));
-        assert!(logged.contains(&("dead".to_string(), 1)));
-        assert!(logged.contains(&("dead".to_string(), 2)));
-        assert!(logged.contains(&("partial".to_string(), 4)));
-        assert!(logged.contains(&("container".to_string(), 5)));
-    }
-
-    #[test]
-    fn restored_spawn_state_filters_dead_pid_only_records() {
-        let manifest = SpawnManifest {
-            servers: vec![
-                SpawnRecord {
-                    id: "dead".into(),
-                    label: "dead".into(),
-                    url: "http://127.0.0.1:1/".into(),
-                    pids: vec![1],
-                    container: None,
-                },
-                SpawnRecord {
-                    id: "live".into(),
-                    label: "live".into(),
-                    url: "http://127.0.0.1:2/".into(),
-                    pids: vec![2, 3],
-                    container: None,
-                },
-                SpawnRecord {
-                    id: "container".into(),
-                    label: "container".into(),
-                    url: "http://127.0.0.1:3/".into(),
-                    pids: vec![],
-                    container: Some("fleet-server-container".into()),
-                },
-            ],
-        };
-
-        let restored = restored_spawn_state_from_manifest(manifest, |pid| pid == 3);
-        let ids = restored
-            .servers
-            .iter()
-            .map(|server| server.id.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(ids, vec!["container", "live"]);
-        assert_eq!(restored.groups.get("live"), Some(&vec![3]));
-        assert_eq!(
-            restored.containers.get("container").map(String::as_str),
-            Some("fleet-server-container")
-        );
-        assert!(!restored.groups.contains_key("dead"));
     }
 
     #[test]
@@ -2056,6 +1663,7 @@ mod tests {
     fn fleet_env_includes_bridge_token_and_log_dir() {
         let env = fleet_env(
             "/tmp/reporter.sock",
+            "server-testlaunch-1",
             "server-1",
             "ws://127.0.0.1:51778",
             "http://127.0.0.1:9000/",
@@ -2067,6 +1675,8 @@ mod tests {
         assert_eq!(map["FLEET_BRIDGE_TOKEN"], "token-1");
         assert_eq!(map["FLEET_BRIDGE_LOG_DIR"], "/Users/example/.fleet/mux");
         assert_eq!(map["FLEET_BRIDGE_URL"], "ws://127.0.0.1:51778");
+        assert_eq!(map["FLEET_SERVER_ID"], "server-testlaunch-1");
+        assert_eq!(map["FLEET_SERVER_LABEL"], "server-1");
     }
 
     #[test]
@@ -2240,8 +1850,8 @@ wait "$bg"
 
     #[cfg(unix)]
     #[test]
-    fn shutdown_all_clears_servers_and_kills_descendants() {
-        let dir = temp_test_dir("fleet-shutdown-all-kill");
+    fn explicit_close_clears_server_and_kills_descendants() {
+        let dir = temp_test_dir("fleet-explicit-close-kill");
         let pid_file = dir.join("background.pid");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -2255,15 +1865,19 @@ printf '%s\n' "$!" > "$1"
 wait
 "#,
             )
-            .arg("fleet-shutdown-all-kill")
+            .arg("fleet-explicit-close-kill")
             .arg(&pid_file)
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         let child = spawn_fleet_child(&mut cmd).unwrap();
         let background_pid = read_pid_file_for(&pid_file, std::time::Duration::from_secs(2));
 
-        let supervisor =
-            ServerSupervisor::new(51778, "ws://127.0.0.1:51777".into(), "token".into());
+        let supervisor = ServerSupervisor::new_with_launch_id(
+            51778,
+            "ws://127.0.0.1:51777".into(),
+            "token".into(),
+            "testlaunch".into(),
+        );
         supervisor.servers.lock().unwrap().push(crate::mux::Server {
             id: "server-test".into(),
             label: "server-test".into(),
@@ -2276,13 +1890,73 @@ wait
             .unwrap()
             .insert("server-test".into(), vec![child]);
 
-        supervisor.shutdown_all();
+        assert!(supervisor.close("server-test"));
 
         assert!(supervisor.servers().is_empty());
         let gone = eventually(std::time::Duration::from_secs(2), || {
             !process_exists(background_pid)
         });
-        assert!(gone, "shutdown_all should terminate managed descendants");
+        assert!(gone, "explicit close should terminate managed descendants");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dropping_supervisor_does_not_kill_descendants() {
+        let dir = temp_test_dir("fleet-drop-keeps-child");
+        let pid_file = dir.join("background.pid");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c")
+            .arg(
+                r#"
+sleep 30 &
+printf '%s\n' "$!" > "$1"
+wait
+"#,
+            )
+            .arg("fleet-drop-keeps-child")
+            .arg(&pid_file)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let child = spawn_fleet_child(&mut cmd).unwrap();
+        let child_pid = child.id();
+        let background_pid = read_pid_file_for(&pid_file, std::time::Duration::from_secs(2));
+
+        {
+            let supervisor = ServerSupervisor::new_with_launch_id(
+                51778,
+                "ws://127.0.0.1:51777".into(),
+                "token".into(),
+                "testlaunch".into(),
+            );
+            supervisor.servers.lock().unwrap().push(crate::mux::Server {
+                id: "server-test".into(),
+                label: "server-test".into(),
+                url: "http://127.0.0.1:1/".into(),
+                owned: true,
+            });
+            supervisor
+                .children
+                .lock()
+                .unwrap()
+                .insert("server-test".into(), vec![child]);
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(
+            process_exists(background_pid),
+            "dropping Fleet supervisor must not terminate server descendants"
+        );
+
+        kill_process_group_for_test(child_pid);
+        let gone = eventually(std::time::Duration::from_secs(2), || {
+            !process_exists(background_pid)
+        });
+        assert!(gone, "test cleanup should terminate managed descendants");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -2440,6 +2114,15 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
             return false;
         };
         unsafe { libc_kill(pid, 0) == 0 }
+    }
+
+    #[cfg(unix)]
+    fn kill_process_group_for_test(pid: u32) {
+        if let Some(group_pid) = process_group_signal_pid(pid) {
+            let _ = signal_process_group(group_pid, SIGTERM);
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            let _ = signal_process_group(group_pid, SIGKILL);
+        }
     }
 
     #[cfg(unix)]
