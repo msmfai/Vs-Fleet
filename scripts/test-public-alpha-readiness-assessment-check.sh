@@ -62,4 +62,10 @@ perl -0pi -e 's/3\. `\.\/scripts\/release-evidence-status\.sh` reports release e
 expect_fail "missing release evidence decision rule" "$missing_evidence_gate"
 expect_output "release evidence decision rule"
 
+missing_public_branch_verifier="$TMPDIR/missing-public-branch-verifier.md"
+cp "$valid" "$missing_public_branch_verifier"
+perl -0pi -e 's/4\. For the recommended cleaned-history path,.*?publishable ref\.\n/4. `\.\/scripts\/release-check.sh` passes on the exact public ref.\n/s' "$missing_public_branch_verifier"
+expect_fail "missing clean public branch verifier" "$missing_public_branch_verifier"
+expect_output "clean public branch verifier decision rule"
+
 echo "Public alpha readiness assessment tests passed."

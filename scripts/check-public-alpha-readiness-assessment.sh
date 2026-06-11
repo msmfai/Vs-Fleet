@@ -89,8 +89,10 @@ require_text 'public-alpha-decision-packet\.sh' \
   "owner packet decision rule"
 require_text 'release-evidence-status\.sh' \
   "release evidence decision rule"
+require_text 'check-public-release-branch\.sh' \
+  "clean public branch verifier decision rule"
 require_text 'release-check\.sh' \
-  "release gate decision rule"
+  "current-history release gate fallback"
 
 if [ "$fail" -ne 0 ]; then
   exit 1

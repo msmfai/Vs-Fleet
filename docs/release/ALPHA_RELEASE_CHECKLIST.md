@@ -58,10 +58,10 @@ visibility.
   `./scripts/secret-release-check.sh <public-branch>` for a cleaned first
   public branch; any credential-looking hit must be removed from the tracked
   tree and public history rather than accepted.
-- [ ] Run `./scripts/release-check.sh`; it includes
-  `./scripts/history-release-check.sh`, `./scripts/secret-release-check.sh`,
-  and requires either cleaned history or explicit owner acceptance of current
-  branch history exposure.
+- [ ] Run `./scripts/release-check.sh` during release-prep to catch static
+  release hygiene issues. On the dirty private prep branch it is expected to
+  keep failing until owner decisions are approved and the final history path is
+  selected.
 - [ ] If current history is not accepted, create the public branch with
   `./scripts/prepare-public-branch.sh <public-branch> <source-ref>` and run
   generate `docs/release/PUBLIC_BRANCH_EVIDENCE.md` with
@@ -69,6 +69,10 @@ visibility.
   then run `./scripts/check-public-release-branch.sh <public-branch> <source-ref-sha>`.
   The verifier runs the history, evidence, secret, and aggregate release gates
   against the same public ref.
+- [ ] Treat `./scripts/check-public-release-branch.sh <public-branch>
+  <source-ref-sha>` as the final verifier for the recommended cleaned-history
+  source alpha; do not use a passing/failing bare prep-branch
+  `./scripts/release-check.sh` as the publication decision.
 - [ ] Run `./scripts/run-dependency-review.sh` for the exact public branch, or
   explicitly accept skipping dependency review in the owner decision record.
 - [ ] Record dependency review evidence in
