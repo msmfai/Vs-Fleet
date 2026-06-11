@@ -14,6 +14,14 @@ mkdir -p "$tmp"
 
 artifact_pattern='(^|/)coverage/|(^|/)node_modules/|(^|/)out/|\.vsix$|Fleet\.app/'
 
+if [ -f "$out" ] &&
+  ! rg -q 'Dependency review status: PENDING|TODO|TBD|PLACEHOLDER|not yet run' "$out" &&
+  [ "${FLEET_DEPENDENCY_REVIEW_FORCE:-0}" != "1" ]; then
+  echo "FAIL: dependency review evidence already looks concrete: $out" >&2
+  echo "Set FLEET_DEPENDENCY_REVIEW_FORCE=1 to overwrite reviewed evidence." >&2
+  exit 1
+fi
+
 run_logged() {
   local label=$1
   local logfile=$2
