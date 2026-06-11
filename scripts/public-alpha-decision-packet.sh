@@ -238,6 +238,7 @@ else
 fi
 echo "  ./scripts/run-dependency-review.sh"
 echo "  ./scripts/generate-public-ci-evidence.sh <branch> <ci-run-url> <release-readiness-run-url> <source-ref>"
+echo "  ./scripts/generate-github-publication-evidence.sh <repo-url> <default-branch> <source-ref> <emergency-removal-owner>"
 echo "  ./scripts/release-evidence-status.sh"
 echo "  ./scripts/check-versioning-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo "  ./scripts/check-community-intake-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
@@ -248,6 +249,7 @@ echo "  ./scripts/check-roadmap-decision.sh docs/release/OWNER_DECISION_RECORD.m
 echo "  ./scripts/check-name-collision-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo "  ./scripts/check-local-data-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
 echo "  ./scripts/check-workflow-supply-chain-decision.sh docs/release/OWNER_DECISION_RECORD.md ."
+echo '  ./scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"'
 echo '  ./scripts/check-github-publication-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md "$(git rev-parse HEAD)"'
 
 echo
