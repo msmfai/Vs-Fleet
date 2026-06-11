@@ -347,7 +347,7 @@ async fn handle_conn(
     loop {
         tokio::select! {
             outbound = rx.recv() => match outbound {
-                Some(frame) => { if write.send(Message::Text(frame)).await.is_err() { break; } }
+                Some(frame) => { if write.send(Message::Text(frame.into())).await.is_err() { break; } }
                 None => break,
             },
             inbound = read.next() => match inbound {

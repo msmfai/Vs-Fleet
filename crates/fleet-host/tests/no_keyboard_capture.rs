@@ -59,7 +59,7 @@ fn fleet_installs_one_static_native_shell_menu() {
     });
     assert!(
         main.contains(".menu(mux::build_menu)"),
-        "Fleet must install one static AppKit-aware shell menu instead of Tauri's default Edit menu"
+        "Fleet must install one static AppKit-aware shell menu"
     );
     assert!(
         !main.contains(".on_menu_event("),
@@ -103,26 +103,18 @@ fn fleet_installs_one_static_native_shell_menu() {
         !contents.contains("SubmenuBuilder::new("),
         "Fleet must not build generic AppKit submenus that bypass Tauri's default menu integration"
     );
-    for pattern in [
-        ".cut()",
-        ".copy()",
-        ".paste()",
-        ".undo()",
-        ".redo()",
-        ".select_all()",
-        "\"Edit\"",
-        "PredefinedMenuItem::cut",
-        "PredefinedMenuItem::copy",
-        "PredefinedMenuItem::paste",
-        "PredefinedMenuItem::undo",
-        "PredefinedMenuItem::redo",
-        "PredefinedMenuItem::select_all",
-        "\"cmd:",
-        "\"spawn:",
-        "\"server:",
-        "\"rail:",
-        "\"external:",
-    ] {
+    assert!(
+        contents.contains("\"Edit\"")
+            && contents.contains("PredefinedMenuItem::cut")
+            && contents.contains("PredefinedMenuItem::copy")
+            && contents.contains("PredefinedMenuItem::paste")
+            && contents.contains("PredefinedMenuItem::undo")
+            && contents.contains("PredefinedMenuItem::redo")
+            && contents.contains("PredefinedMenuItem::select_all"),
+        "Fleet must keep the native Edit menu so AppKit forwards edit actions to the focused VS Code webview"
+    );
+
+    for pattern in ["\"cmd:", "\"spawn:", "\"server:", "\"rail:", "\"external:"] {
         for (rel, source) in [
             ("src/main.rs", main.as_str()),
             ("src/mux.rs", contents.as_str()),
