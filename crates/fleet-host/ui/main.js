@@ -112,6 +112,10 @@ function canCloseServerRow(srv) {
   return Boolean(srv && !srv.agentOnly);
 }
 
+function canRenameServerRow(srv) {
+  return Boolean(srv && !srv.agentOnly);
+}
+
 function serverById(id) {
   return displayed().find((srv) => srv.id === id);
 }
@@ -489,6 +493,7 @@ function rowKeyboardShortcuts(model) {
   if (sessionActionBusy(model.srv.id)) return shortcuts.join(" ");
   if (model.agent && inbox.connected) shortcuts.push("M", "S");
   if (model.srv.url) shortcuts.push("B");
+  if (canRenameServerRow(model.srv)) shortcuts.push("N");
   if (canRetryServer(model.srv, model.pendingState)) shortcuts.push("R");
   if (canDismissAgent(model.agent, model.state) || canForgetAgentOnly(model.srv, model.agent)) {
     shortcuts.push("D");
@@ -521,6 +526,14 @@ function rowMenuItems(id) {
     shortcut: "I",
     action: () => copyRowValue("session id", id),
   });
+  if (canRenameServerRow(model.srv)) {
+    items.push({
+      id: "rename",
+      label: "Rename",
+      shortcut: "N",
+      action: () => renameRow(id),
+    });
+  }
   if (model.srv.url) {
     items.push({
       id: "copy-url",
@@ -1237,6 +1250,40 @@ async function copyRowValue(label, value) {
   }
 }
 
+function applyLocalServerLabel(id, label) {
+  servers = servers.map((srv) => srv.id === id ? { ...srv, label } : srv);
+  pending = pending.map((srv) => srv.id === id ? { ...srv, label } : srv);
+}
+
+async function renameRow(id) {
+  const srv = serverById(id);
+  if (!canRenameServerRow(srv)) {
+    showRailInfo("nothing to rename");
+    return;
+  }
+  const current = displayLabel(srv);
+  const next = window.prompt("Rename session", current);
+  if (next == null) return;
+  const label = next.trim();
+  if (!label) {
+    showRailInfo("label cannot be empty");
+    return;
+  }
+  if (label === current) return;
+  try {
+    const saved = await invoke("rename_server", { id, label });
+    applyLocalServerLabel(id, saved);
+    showRailInfo("renamed");
+    await refreshServers();
+  } catch (e) {
+    showHostStatus({
+      level: "error",
+      source: "rail",
+      message: `rename failed: ${String(e)}`,
+    });
+  }
+}
+
 async function openRowInBrowser(id) {
   const srv = serverById(id);
   if (!srv || !srv.url) {
@@ -1534,6 +1581,9 @@ function handleRowKeydown(ev, row, id) {
   } else if (plainKey === "b") {
     ev.preventDefault();
     openRowInBrowser(id);
+  } else if (plainKey === "n") {
+    ev.preventDefault();
+    renameRow(id);
   } else if (plainKey === "r") {
     ev.preventDefault();
     retryRow(id);

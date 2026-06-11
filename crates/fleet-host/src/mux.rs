@@ -318,6 +318,28 @@ pub fn close_server(
 }
 
 #[tauri::command]
+pub fn rename_server(
+    app: AppHandle,
+    registry: State<'_, crate::bridge::BridgeRegistry>,
+    sup: State<'_, crate::spawn::ServerSupervisor>,
+    id: String,
+    label: String,
+) -> Result<String, String> {
+    let label = sanitize_server_label(&label)?;
+    let renamed_spawned = sup.rename(&id, &label);
+    let renamed_registered = registry.rename(&id, &label);
+    if !renamed_spawned && !renamed_registered {
+        tracing::warn!(server_id = %id, %label, "rename requested for unknown server");
+        return Err("server not found".into());
+    }
+
+    tracing::info!(server_id = %id, %label, renamed_spawned, renamed_registered, "server renamed");
+    let _ = app.emit(crate::bridge::SERVERS_CHANGED, ());
+    refresh_menu(&app);
+    Ok(label)
+}
+
+#[tauri::command]
 pub fn open_server_external(app: AppHandle, id: String) -> Result<(), String> {
     open_server_external_by_id(&app, &id)
 }
@@ -997,6 +1019,19 @@ fn selected_server_has_url(servers: &[Server], selected: Option<&str>) -> bool {
         .any(|server| server.id == selected && !server.url.is_empty())
 }
 
+fn sanitize_server_label(label: &str) -> Result<String, String> {
+    let label = label.trim();
+    if label.is_empty() {
+        tracing::warn!("empty server label rejected");
+        return Err("label cannot be empty".into());
+    }
+    let sanitized = label.chars().take(80).collect::<String>();
+    if sanitized.len() < label.len() {
+        tracing::warn!(label_len = label.len(), "server label truncated");
+    }
+    Ok(sanitized)
+}
+
 fn server_switch_accelerator(index: usize) -> Option<String> {
     (index < 9).then(|| format!("CmdOrCtrl+{}", index + 1))
 }
@@ -1362,8 +1397,8 @@ fn editor_parking_pane(app: &AppHandle) -> Option<(LogicalPosition<f64>, Logical
 mod tests {
     use super::{
         close_current_menu_item, editor_label_for, external_open_command, keepalive_env_enabled,
-        menu_server_label, merged_servers, rail_menu_state_from, selected_server_has_url,
-        server_switch_accelerator, RailMenuState, Server,
+        menu_server_label, merged_servers, rail_menu_state_from, sanitize_server_label,
+        selected_server_has_url, server_switch_accelerator, RailMenuState, Server,
     };
 
     #[cfg(target_os = "macos")]
@@ -1481,6 +1516,22 @@ mod tests {
             Some("server-2")
         ));
         assert!(!selected_server_has_url(&[server, no_url], None));
+    }
+
+    #[test]
+    fn server_labels_are_trimmed_bounded_and_nonempty() {
+        assert_eq!(
+            sanitize_server_label("  Project API  ").unwrap(),
+            "Project API"
+        );
+        assert_eq!(
+            sanitize_server_label(&"a".repeat(90)).unwrap(),
+            "a".repeat(80)
+        );
+        assert_eq!(
+            sanitize_server_label("   ").unwrap_err(),
+            "label cannot be empty"
+        );
     }
 
     #[test]
