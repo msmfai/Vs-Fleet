@@ -21,6 +21,9 @@ closed or explicitly accepted.
   package lockfiles agree.
 - [x] Fence package publication for source-only alpha with `publish = false` in
   Rust crates and `"private": true` in extension package manifests.
+- [ ] Run `./scripts/check-distribution-decision.sh` after choosing
+  distribution scope to verify source-only fences or binary-release process
+  docs match the owner record.
 - [ ] Fill `docs/release/OWNER_DECISION_RECORD.md` for required owner choices.
 - [x] Decide whether the public root README is a product README or an
   engineering spec, then make the first screen match that decision.
@@ -98,6 +101,9 @@ closed or explicitly accepted.
   metadata, and package lockfile root metadata.
 - `scripts/check-namespace-decision.sh` validates that the approved namespace
   table matches locally-verifiable Rust, npm, Tauri, and extension metadata.
+- `scripts/check-distribution-decision.sh` validates that the approved
+  distribution scope matches source-only package fences, release docs, and any
+  binary release process required for app-bundle distribution.
 - `scripts/check-security-reporting-decision.sh` validates that the approved
   security reporting choice matches `SECURITY.md`, so the public repo does not
   publish ambiguous "once enabled" vulnerability reporting instructions.
