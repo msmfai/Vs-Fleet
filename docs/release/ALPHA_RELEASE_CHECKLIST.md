@@ -55,6 +55,8 @@ closed or explicitly accepted.
   `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` and remove all placeholders.
 - [ ] Run `./scripts/check-release-notes.sh` on the drafted GitHub pre-release
   notes.
+- [ ] Walk through `docs/release/GITHUB_PUBLICATION_RUNBOOK.md` before changing
+  repository visibility or creating the public pre-release.
 - [x] State the alpha support boundary: best-effort, breaking changes expected,
   not production-ready.
 - [ ] Choose the privacy/telemetry posture in
@@ -98,6 +100,9 @@ closed or explicitly accepted.
   `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` are present.
 - `docs/release/PUBLIC_CI_EVIDENCE.md` is present as the exact commit/run
   evidence record for the first public GitHub alpha.
+- `docs/release/GITHUB_PUBLICATION_RUNBOOK.md` is present for the final
+  repository visibility, security settings, branch protection, and pre-release
+  sequence.
 - `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` is present so the first GitHub
   pre-release has a consistent scope, verification, history, dependency,
   security, and known-rough-edges disclosure.

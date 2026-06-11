@@ -62,6 +62,7 @@ for doc in \
   docs/release/RELEASE_PROCESS.md \
   docs/release/DEPENDENCY_REVIEW.md \
   docs/release/DEPENDENCY_REVIEW_EVIDENCE.md \
+  docs/release/GITHUB_PUBLICATION_RUNBOOK.md \
   docs/release/PUBLIC_CI_EVIDENCE.md \
   docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md \
   docs/release/ALPHA_RELEASE_CHECKLIST.md \
