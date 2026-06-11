@@ -97,8 +97,9 @@ visibility.
   `docs/release/OWNER_DECISION_RECORD.md` and run
   `./scripts/check-community-intake-decision.sh`.
 - [ ] Choose release custody and maintainer authority in
-  `docs/release/OWNER_DECISION_RECORD.md`, fill the Release Custody section of
-  `docs/release/GITHUB_PUBLICATION_EVIDENCE.md`, and run
+  `docs/release/OWNER_DECISION_RECORD.md`, generate
+  `docs/release/GITHUB_PUBLICATION_EVIDENCE.md` with the exact repository
+  settings and emergency removal owner, and run
   `./scripts/check-release-custody-decision.sh`.
 - [ ] Choose AI-assisted contribution provenance in
   `docs/release/OWNER_DECISION_RECORD.md` and run
@@ -124,8 +125,9 @@ visibility.
   `./scripts/check-release-notes.sh path/to/release-notes.md "$(git rev-parse HEAD)"`.
 - [ ] Walk through `docs/release/GITHUB_PUBLICATION_RUNBOOK.md` before changing
   repository visibility or creating the public pre-release.
-- [ ] Record GitHub repository settings evidence in
-  `docs/release/GITHUB_PUBLICATION_EVIDENCE.md` and run
+- [ ] Generate GitHub repository settings evidence in
+  `docs/release/GITHUB_PUBLICATION_EVIDENCE.md` with
+  `./scripts/generate-github-publication-evidence.sh` and run
   `./scripts/check-github-publication-evidence.sh` before changing repository
   visibility.
 - [x] State the alpha support boundary: best-effort, breaking changes expected,
