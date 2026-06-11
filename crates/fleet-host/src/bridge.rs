@@ -104,6 +104,17 @@ impl BridgeRegistry {
         false
     }
 
+    pub fn rename(&self, server_id: &str, label: &str) -> bool {
+        if let Ok(mut map) = self.inner.lock() {
+            if let Some(conn) = map.get_mut(server_id) {
+                conn.label = label.to_string();
+                tracing::info!(%server_id, %label, "bridge server label renamed");
+                return true;
+            }
+        }
+        false
+    }
+
     fn register(&self, id: String, tx: Tx, url: String, label: String) -> u64 {
         let generation = self.next_generation.fetch_add(1, Ordering::SeqCst);
         if let Ok(mut map) = self.inner.lock() {
@@ -487,5 +498,21 @@ mod tests {
 
         drop(rx);
         assert!(!registry.send_command("server-1", "workbench.action.files.save"));
+    }
+
+    #[test]
+    fn rename_updates_registered_server_label() {
+        let registry = BridgeRegistry::new();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        registry.register(
+            "server-1".into(),
+            tx,
+            "http://127.0.0.1:9000/".into(),
+            "server-1".into(),
+        );
+
+        assert!(registry.rename("server-1", "Project API"));
+        assert_eq!(registry.servers()[0].label, "Project API");
+        assert!(!registry.rename("missing", "Nope"));
     }
 }

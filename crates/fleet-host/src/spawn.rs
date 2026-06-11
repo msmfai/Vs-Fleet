@@ -113,6 +113,18 @@ impl ServerSupervisor {
         self.servers.lock().unwrap().clone()
     }
 
+    pub fn rename(&self, id: &str, label: &str) -> bool {
+        let mut renamed = false;
+        if let Ok(mut servers) = self.servers.lock() {
+            renamed = rename_server_label(&mut servers, id, label);
+        }
+        if renamed {
+            tracing::info!(%id, %label, "spawned server label renamed");
+            self.persist_spawn_manifest();
+        }
+        renamed
+    }
+
     /// Spawn a new server. Routes to the container path when `FLEET_SPAWN_MODE=container`,
     /// else the default local-process path. Both return a [`Server`] that Fleet adds
     /// to the rail immediately; the spawned env phones home to the bridge on its own.
@@ -594,6 +606,15 @@ impl ServerSupervisor {
         if let Err(e) = write_spawn_manifest(&base, &SpawnManifest { servers: records }) {
             tracing::warn!(base = %base.display(), error = %e, "spawn manifest could not be persisted");
         }
+    }
+}
+
+fn rename_server_label(servers: &mut [crate::mux::Server], id: &str, label: &str) -> bool {
+    if let Some(server) = servers.iter_mut().find(|server| server.id == id) {
+        server.label = label.to_string();
+        true
+    } else {
+        false
     }
 }
 
@@ -1650,6 +1671,29 @@ mod tests {
         assert_eq!(restored.servers, manifest.servers);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rename_server_label_updates_matching_server_only() {
+        let mut servers = vec![
+            crate::mux::Server {
+                id: "server-1".into(),
+                label: "server-1".into(),
+                url: "http://127.0.0.1:1/".into(),
+                owned: true,
+            },
+            crate::mux::Server {
+                id: "server-2".into(),
+                label: "server-2".into(),
+                url: "http://127.0.0.1:2/".into(),
+                owned: true,
+            },
+        ];
+
+        assert!(rename_server_label(&mut servers, "server-2", "Docs"));
+        assert_eq!(servers[0].label, "server-1");
+        assert_eq!(servers[1].label, "Docs");
+        assert!(!rename_server_label(&mut servers, "missing", "Nope"));
     }
 
     #[test]

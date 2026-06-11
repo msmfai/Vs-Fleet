@@ -202,6 +202,7 @@ fn main() {
             mux::select_server,
             mux::spawn_server,
             mux::close_server,
+            mux::rename_server,
             mux::open_server_external,
             mux::get_host_status,
             mux::clear_host_status_if_current,
