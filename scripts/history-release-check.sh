@@ -2,6 +2,7 @@
 set -euo pipefail
 
 owner_record="${1:-docs/release/OWNER_DECISION_RECORD.md}"
+scan_ref="${2:---all}"
 fail=0
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
@@ -15,7 +16,13 @@ fi
 
 local_path_pattern='/Users/[^[:space:]"'"'"'<>]+|/private/tmp/|/private/var/folders/[[:alnum:]]{2}/|/var/folders/[[:alnum:]]{2}/|C:\\Users\\[^[:space:]"/]+'
 
-git rev-list --all >"$tmpdir/revs"
+if [ "$scan_ref" = "--all" ]; then
+  git rev-list --all >"$tmpdir/revs"
+  git rev-list --objects --all >"$tmpdir/objects"
+else
+  git rev-list "$scan_ref" >"$tmpdir/revs"
+  git rev-list --objects "$scan_ref" >"$tmpdir/objects"
+fi
 
 content_hits="$tmpdir/content-hits"
 while IFS= read -r rev; do
@@ -35,7 +42,7 @@ if [ -s "$content_hits" ]; then
 fi
 
 object_hits="$tmpdir/object-hits"
-git rev-list --objects --all |
+cat "$tmpdir/objects" |
   rg '(^|[[:space:]/])coverage/|(^|[[:space:]/])node_modules/|(^|[[:space:]/])out/|\.vsix$|Fleet\.app/|(^|[[:space:]/])fleet-host\.log$|(^|[[:space:]/])host-keepalive-[^/]*\.json$|(^|[[:space:]/])artifacts/.+\.(png|jpg|jpeg|webp|gif|json|log|txt)$' \
     >"$object_hits" || true
 

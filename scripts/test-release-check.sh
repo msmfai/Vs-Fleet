@@ -83,6 +83,7 @@ done
 for script in \
   scripts/check-owner-decisions.sh \
   scripts/history-release-check.sh \
+  scripts/prepare-public-branch.sh \
   scripts/secret-release-check.sh \
   scripts/check-doc-links.sh \
   scripts/check-public-tree-size.sh \
@@ -102,6 +103,7 @@ for script in \
   scripts/check-support-decision.sh \
   scripts/test-owner-decision-gate.sh \
   scripts/test-history-release-check.sh \
+  scripts/test-prepare-public-branch.sh \
   scripts/test-secret-release-check.sh \
   scripts/test-doc-link-check.sh \
   scripts/test-public-tree-size-check.sh \
@@ -163,11 +165,12 @@ fi
 
 write_script "scripts/check-owner-decisions.sh" 'echo OWNER_FAIL
 exit 1'
-write_script "scripts/history-release-check.sh" 'echo HISTORY_FAIL
+write_script "scripts/history-release-check.sh" 'echo "HISTORY_ARGS:$*"
+echo HISTORY_FAIL
 exit 1'
 
 output_owner_pending="$TMPDIR/release-check-owner-pending.out"
-if (cd "$repo" && ./scripts/release-check.sh) >"$output_owner_pending" 2>&1; then
+if (cd "$repo" && FLEET_RELEASE_HISTORY_REF=public-alpha ./scripts/release-check.sh) >"$output_owner_pending" 2>&1; then
   echo "FAIL: release check should fail when owner and history gates fail" >&2
   cat "$output_owner_pending" >&2
   exit 1
@@ -181,6 +184,12 @@ fi
 
 if ! rg -q 'HISTORY_FAIL' "$output_owner_pending"; then
   echo "FAIL: release check did not run history gate while owner record was unapproved" >&2
+  cat "$output_owner_pending" >&2
+  exit 1
+fi
+
+if ! rg -q 'HISTORY_ARGS:docs/release/OWNER_DECISION_RECORD.md public-alpha' "$output_owner_pending"; then
+  echo "FAIL: release check did not pass the requested history ref to the history gate" >&2
   cat "$output_owner_pending" >&2
   exit 1
 fi

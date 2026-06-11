@@ -37,7 +37,12 @@ branch.
    on the exact branch to publish.
 3. Run `./scripts/secret-release-check.sh` on the exact branch to publish.
 4. If the history audit fails and the owner did not explicitly accept current
-   history exposure, publish a cleaned branch instead.
+   history exposure, create a cleaned branch with
+   `./scripts/prepare-public-branch.sh <public-branch> <source-ref>` and publish
+   that branch instead.
+   In the same private clone, run the aggregate gate with
+   `FLEET_RELEASE_HISTORY_REF=<public-branch> ./scripts/release-check.sh` so the
+   history audit scans the public ref rather than every private local ref.
 5. If the secret exposure audit fails, publish a cleaned branch instead. Do not
    publish credential-looking material as an accepted alpha exception.
 6. Review GitHub's repository visibility consequences before changing a private
@@ -126,7 +131,9 @@ Reference: <https://docs.github.com/en/repositories/configuring-branches-and-mer
    ./scripts/check-release-notes.sh path/to/release-notes.md "$(git rev-parse HEAD)"
    ```
 
-7. Create the public branch or change repository visibility.
+7. Create the public branch with `./scripts/prepare-public-branch.sh` if the
+   owner selected cleaned/squashed history, then publish that branch or change
+   repository visibility.
 8. Push the alpha source tag.
 9. Create a GitHub pre-release using checked release notes.
 10. Re-run `./scripts/release-check.sh` on the public checkout.
