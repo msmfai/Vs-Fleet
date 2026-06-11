@@ -106,6 +106,8 @@ for required in \
   scripts/test-privacy-decision-check.sh \
   scripts/check-dependency-review-decision.sh \
   scripts/test-dependency-review-decision-check.sh \
+  scripts/check-support-decision.sh \
+  scripts/test-support-decision-check.sh \
   scripts/check-release-notes.sh \
   scripts/test-release-notes-check.sh \
   .github/workflows/release-readiness.yml \
@@ -145,6 +147,8 @@ elif ! scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.
 elif ! scripts/check-privacy-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
   fail=1
 elif ! scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"; then
+  fail=1
+elif ! scripts/check-support-decision.sh docs/release/OWNER_DECISION_RECORD.md SUPPORT.md .; then
   fail=1
 fi
 

@@ -109,19 +109,26 @@ Decision record status: $status
 - [x] Run the dependency review commands in \`docs/release/DEPENDENCY_REVIEW.md\` and record findings in the release notes.
 - [ ] Other: \`TODO\`
 
+### 12. Support Commitment
+
+- [x] Best-effort alpha support only. Breaking changes are expected; there are
+  no production support guarantees, response SLAs, paid support terms, or stable
+  release lines.
+- [ ] Other: \`TODO\`
+
 ## Required Before Binary Distribution
 
-### 12. macOS Signing and Notarization
+### 13. macOS Signing and Notarization
 
 - [$signing_checked] No public binaries until Developer ID signing and notarization are automated.
 - [ ] Other: \`TODO\`
 
-### 13. Update Channel
+### 14. Update Channel
 
 - [$update_checked] No auto-update in alpha.
 - [ ] Other: \`TODO\`
 
-### 14. Branding Stability
+### 15. Branding Stability
 
 - [$branding_checked] \`Fleet\` name and current icon are alpha placeholders.
 - [ ] Other: \`TODO\`

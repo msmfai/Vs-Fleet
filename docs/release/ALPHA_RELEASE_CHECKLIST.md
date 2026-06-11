@@ -48,6 +48,9 @@ closed or explicitly accepted.
 - [ ] Record dependency review evidence in
   `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` and run
   `./scripts/check-dependency-review-decision.sh`.
+- [ ] Choose the support commitment in
+  `docs/release/OWNER_DECISION_RECORD.md` and run
+  `./scripts/check-support-decision.sh`.
 - [ ] Draft GitHub pre-release notes from
   `docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md` and remove all placeholders.
 - [ ] Run `./scripts/check-release-notes.sh` on the drafted GitHub pre-release
@@ -134,6 +137,8 @@ closed or explicitly accepted.
 - `scripts/check-dependency-review-decision.sh` validates that the approved
   dependency review choice has exact commit evidence and explicit command
   results or an accepted skipped-review risk.
+- `scripts/check-support-decision.sh` validates that the approved support
+  commitment matches `SUPPORT.md`, the README, and the release notes template.
 - Root `README.md` is now a public alpha front door; the long engineering spec
   was moved to `docs/ENGINEERING_SPEC.md`.
 - `crates/fleet-host/artifacts/**` is now a local ignored artifact area; raw
