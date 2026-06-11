@@ -173,6 +173,9 @@ fn main() {
         bridge::launch_token_from_path(&embedded_hub_runtime_dir().join("bridge.token"));
 
     tauri::Builder::default()
+        // Fleet embeds full editor surfaces. Tauri's macOS default menu installs
+        // native Edit/Window/App accelerators that can preempt VS Code terminals.
+        .enable_macos_default_menu(false)
         .manage(shared.clone())
         .manage(hub_commands)
         .manage(mux::MuxState::new())

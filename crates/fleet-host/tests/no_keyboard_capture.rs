@@ -51,6 +51,15 @@ fn fleet_shell_has_no_app_wide_keyboard_capture() {
 #[test]
 fn native_menu_is_not_installed_or_rebuilt_by_fleet() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let main_path = manifest.join("src/main.rs");
+    let main = fs::read_to_string(&main_path).unwrap_or_else(|err| {
+        panic!("failed to read {}: {err}", main_path.display());
+    });
+    assert!(
+        main.contains(".enable_macos_default_menu(false)"),
+        "Fleet must explicitly disable Tauri's macOS default menu; its predefined accelerators steal keys from embedded VS Code"
+    );
+
     let path = manifest.join("src/mux.rs");
     let contents = fs::read_to_string(&path).unwrap_or_else(|err| {
         panic!("failed to read {}: {err}", path.display());
