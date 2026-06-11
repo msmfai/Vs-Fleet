@@ -11,7 +11,6 @@ const statusEl = document.getElementById("status");
 const statusDetailEl = document.getElementById("status-detail");
 const spawnBtn = document.getElementById("spawn");
 const jumpBtn = document.getElementById("jump");
-const cycleBtn = document.getElementById("cycle-unread");
 const paletteBtn = document.getElementById("palette-open");
 const paletteEl = document.getElementById("palette");
 const paletteInput = document.getElementById("palette-input");
@@ -19,7 +18,6 @@ const paletteList = document.getElementById("palette-list");
 const rowMenuEl = document.getElementById("row-menu");
 if (spawnBtn) spawnBtn.onclick = spawnServer;
 if (jumpBtn) jumpBtn.onclick = jumpNextUnread;
-if (cycleBtn) cycleBtn.onclick = cycleUnread;
 if (paletteBtn) paletteBtn.onclick = () => openPalette();
 
 const STATE_GLYPH = { working: "▶", waiting: "⏸", idle: "·", done: "✓", error: "✕", dead: "☠" };
@@ -228,7 +226,7 @@ function serverPreview(agent, state) {
 }
 
 function bridgeState(srv) {
-  return srv && srv.agentOnly ? "editor bridge not connected" : "";
+  return srv && srv.agentOnly ? "editor still connecting" : "";
 }
 
 function canDismissAgent(agent, state) {
@@ -390,12 +388,14 @@ function rowFlags(srv, agent) {
 }
 
 function stateFlagLabel(flag) {
-  if (flag === "bridge") return "bridge";
+  if (flag === "bridge") return "editor";
+  if (flag === "solo") return "focus";
   return flag === "silenced" ? "silent" : flag;
 }
 
 function stateFlagTitle(flag) {
-  if (flag === "bridge") return "editor bridge not connected";
+  if (flag === "bridge") return "Editor still connecting";
+  if (flag === "solo") return "Only this session can raise alerts";
   return stateFlagLabel(flag);
 }
 
@@ -507,7 +507,7 @@ function rowMenuItems(id) {
     });
     items.push({
       id: "solo",
-      label: model.agent.soloed ? "Clear Solo" : "Solo",
+      label: model.agent.soloed ? "Clear Alert Focus" : "Alert Focus",
       disabled: busy || !inbox.connected,
       action: () => toggleSoloRow(id),
     });
@@ -610,7 +610,7 @@ function railStatus(list) {
     return {
       message: silenced === 1 ? "1 muted" : `${silenced} muted`,
       level: "info",
-      title: "Waiting sessions silenced by mute/solo",
+      title: "Waiting sessions silenced by alert settings",
     };
   }
   return { message: "connected", level: "connected", title: "" };
@@ -655,16 +655,8 @@ function updateToolbarButtons() {
     attention: Boolean(openableUnread.length),
     count: openableUnread.length,
     title: openableUnread.length
-      ? `Jump to next unread (${countPhrase(openableUnread.length, "session")})`
-      : waitingOnBridge ? "Unread sessions are waiting for editor bridges" : "No unread sessions",
-  });
-  setToolButtonState(cycleBtn, {
-    disabled: !unread.length,
-    attention: Boolean(unread.length),
-    count: unread.length,
-    title: unread.length
-      ? `Cycle unread without marking read (${countPhrase(unread.length, "session")})`
-      : "No unread sessions",
+      ? `Open next unread session (${countPhrase(openableUnread.length, "session")})`
+      : waitingOnBridge ? "Unread sessions are still connecting to editors" : "No unread sessions",
   });
   setToolButtonState(paletteBtn, {
     disabled: !rowCount,
@@ -832,7 +824,7 @@ function render() {
       const solo = sessionActionButton(
         "solo",
         a.soloed ? "◉" : "◎",
-        a.soloed ? `Clear solo ${title}` : `Solo ${title}`,
+        a.soloed ? `Clear alert focus for ${title}` : `Only alert for ${title}`,
         Boolean(a.soloed),
         actionDisabled || soloPending
       );
@@ -909,7 +901,7 @@ async function activateServer(id, options = {}) {
     showHostStatus({
       level: "info",
       source: "rail",
-      message: "session visible; editor bridge not connected yet",
+      message: "session is visible; editor is still connecting",
     });
     return;
   }
@@ -922,7 +914,7 @@ function jumpNextUnread() {
   const target = nextUnreadCandidate({ openableOnly: true });
   if (!target) {
     const message = unreadCandidates().length
-      ? "unread sessions are waiting for editor bridges"
+      ? "unread sessions are still connecting to editors"
       : "no unread sessions";
     showHostStatus({ level: "info", source: "rail", message });
     return;
@@ -1215,9 +1207,9 @@ function isRecoverableStatus(status) {
   if (!status || !status.message) return false;
   const message = status.message.toLowerCase();
   return (
-    message === "session visible; editor bridge not connected yet"
+    message === "session is visible; editor is still connecting"
     || message === "server is not ready to open"
-    || message.includes("editor bridge not connected")
+    || message.includes("editor still connecting")
     || message.startsWith("open failed:")
   );
 }
@@ -1265,7 +1257,7 @@ async function setSessionSoloed(id, soloed) {
     showHostStatus({
       level: "error",
       source: "rail",
-      message: `${soloed ? "solo" : "clear solo"} failed: ${String(e)}`,
+      message: `${soloed ? "alert focus" : "clear alert focus"} failed: ${String(e)}`,
     });
   } finally {
     sessionActions.delete(key);
@@ -1446,7 +1438,7 @@ function toggleSoloRow(id) {
   }
   const agent = agentFor(id);
   if (!agent) {
-    showRailInfo("no agent state to solo");
+    showRailInfo("no alert state for this session");
     return;
   }
   if (!inbox.connected) {
