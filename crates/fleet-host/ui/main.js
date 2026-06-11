@@ -30,6 +30,12 @@ const PENDING_SLOW_MS = 15_000;
 const PENDING_TIMEOUT_MS = 45_000;
 const STATUS_CLEAR_MS = 8_000;
 const STATUS_CLEAR_BY_LEVEL_MS = { error: 30_000, warning: 20_000, info: 10_000 };
+const SHORTCUTS = {
+  jump: "Cmd/Ctrl+J",
+  cycle: "Cmd/Ctrl+Shift+J",
+  palette: "Cmd/Ctrl+K",
+  spawn: "Cmd/Ctrl+Shift+N",
+};
 
 let servers = [];          // registered (phoned home) — from the backend
 let pending = [];          // [{id, label, startedAt}] spawned but not yet registered
@@ -657,8 +663,8 @@ function updateSpawnButton() {
   if (!spawnBtn) return;
   spawnBtn.disabled = spawning;
   spawnBtn.classList.toggle("busy", spawning);
-  spawnBtn.title = spawning ? "Starting server" : "New Server";
-  spawnBtn.setAttribute("aria-label", spawnBtn.title);
+  spawnBtn.title = spawning ? "Starting server" : `New server (${SHORTCUTS.spawn})`;
+  spawnBtn.setAttribute("aria-label", spawning ? "Starting server" : "New server");
   spawnBtn.setAttribute("aria-busy", spawning ? "true" : "false");
 }
 
@@ -671,10 +677,14 @@ function countPhrase(count, noun) {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
+function withShortcut(label, shortcut) {
+  return shortcut ? `${label} (${shortcut})` : label;
+}
+
 function setToolButtonState(btn, options) {
   if (!btn) return;
   btn.disabled = Boolean(options.disabled);
-  btn.title = options.title;
+  btn.title = withShortcut(options.title, options.shortcut);
   btn.setAttribute("aria-label", options.title);
   btn.classList.toggle("attention", Boolean(options.attention));
   const count = countBadge(options.count || 0);
@@ -694,6 +704,7 @@ function updateToolbarButtons() {
     title: openableUnread.length
       ? `Jump to next unread (${countPhrase(openableUnread.length, "session")})`
       : waitingOnBridge ? "Unread sessions are waiting for editor bridges" : "No unread sessions",
+    shortcut: SHORTCUTS.jump,
   });
   setToolButtonState(cycleBtn, {
     disabled: !unread.length,
@@ -702,12 +713,14 @@ function updateToolbarButtons() {
     title: unread.length
       ? `Cycle unread without marking read (${countPhrase(unread.length, "session")})`
       : "No unread sessions",
+    shortcut: SHORTCUTS.cycle,
   });
   setToolButtonState(paletteBtn, {
     disabled: !rowCount,
     attention: false,
     count: 0,
     title: rowCount ? `Session palette (${countPhrase(rowCount, "session")})` : "No sessions",
+    shortcut: SHORTCUTS.palette,
   });
 }
 
