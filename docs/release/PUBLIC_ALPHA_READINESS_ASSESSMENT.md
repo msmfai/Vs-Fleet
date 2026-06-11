@@ -90,7 +90,11 @@ Approve public visibility only when:
 1. `docs/release/OWNER_DECISION_RECORD.md` is `APPROVED`.
 2. `./scripts/public-alpha-decision-packet.sh` reports owner decisions complete.
 3. `./scripts/release-evidence-status.sh` reports release evidence complete.
-4. `./scripts/release-check.sh` passes on the exact public ref.
+4. For the recommended cleaned-history path,
+   `./scripts/check-public-release-branch.sh <public-branch> <source-ref-sha>`
+   passes on the exact public ref. If the owner explicitly accepts current
+   history exposure instead, `./scripts/release-check.sh` passes on that
+   publishable ref.
 5. The first public release notes state the rough edges above plainly.
 
 Until then, the correct public-release answer is "not yet"; the correct

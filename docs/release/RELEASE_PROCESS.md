@@ -27,7 +27,10 @@ Do not publish a public alpha until these are true:
   `Release readiness: OWNER DECISIONS COMPLETE`.
 - `./scripts/release-evidence-status.sh` reports `Release evidence status:
   COMPLETE`.
-- `./scripts/release-check.sh` passes.
+- For the recommended cleaned-history release, `./scripts/check-public-release-branch.sh
+  <public-branch> <source-ref-sha>` passes. If the owner explicitly accepts
+  current branch history exposure instead, `./scripts/release-check.sh` passes
+  on the current branch.
 - CI is green on the exact public branch or commit, including the manual
   "Release Readiness" workflow.
 - `./scripts/generate-public-ci-evidence.sh` records the exact commit, branch,
@@ -167,7 +170,7 @@ Do not publish a public alpha until these are true:
    If using the CI path instead, require the `pnpm -r build` and `pnpm -r test`
    jobs to pass on GitHub.
 
-6. Run the public release hygiene gate:
+6. Run the public release hygiene gate during release-prep:
 
    ```sh
    ./scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .
@@ -196,6 +199,11 @@ Do not publish a public alpha until these are true:
    ./scripts/release-check.sh
    ```
 
+   On the current private release-prep branch, `./scripts/release-check.sh` is
+   expected to keep failing until owner decisions are approved and either
+   current history exposure is accepted or the final check is run through
+   `./scripts/check-public-release-branch.sh` against the cleaned branch.
+
 7. Review the generated
    [DEPENDENCY_REVIEW_EVIDENCE.md](DEPENDENCY_REVIEW_EVIDENCE.md), and record
    any accepted findings in the release notes. If dependency review is
@@ -215,7 +223,7 @@ Do not publish a public alpha until these are true:
 
    The command should print nothing.
 
-9. Run the history exposure audit:
+9. Run the history exposure audit on the history you intend to publish:
 
    ```sh
    ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md
@@ -225,7 +233,7 @@ Do not publish a public alpha until these are true:
    `./scripts/prepare-public-branch.sh <public-branch> <source-ref>` or approve
    the owner decision record choice that accepts current branch history exposure.
 
-10. Run the secret exposure audit:
+10. Run the secret exposure audit on the history you intend to publish:
 
    ```sh
    ./scripts/secret-release-check.sh
@@ -234,6 +242,11 @@ Do not publish a public alpha until these are true:
    If it fails, remove the secret from the tracked tree and publish rewritten or
    squashed history. Do not treat credential-looking history as an accepted
    public-alpha exception.
+
+   For the recommended cleaned-history path, use
+   `./scripts/check-public-release-branch.sh <public-branch> <source-ref-sha>`
+   after generating `PUBLIC_BRANCH_EVIDENCE.md`; it reruns both audits against
+   the public branch.
 
 11. Run the normal GitHub "CI" workflow and the manual GitHub "Release
    Readiness" workflow on the exact commit you intend to publish, then generate
@@ -273,7 +286,7 @@ Do not publish a public alpha until these are true:
    It reports which release evidence records are still pending or still contain
    placeholders before the owner decision record is approved.
 
-13. Create a signed git tag after checks pass:
+13. Create a signed git tag after the final public-branch verifier passes:
 
    ```sh
    git tag -s v0.1.0-alpha.1 -m "Fleet v0.1.0-alpha.1"
@@ -293,10 +306,10 @@ Do not publish a public alpha until these are true:
    not fully describe the first alpha. The generator refuses to run until the
    owner decisions and release evidence pass.
 
-15. Validate the drafted release notes:
+15. Validate the drafted release notes against the public commit:
 
    ```sh
-   ./scripts/check-release-notes.sh path/to/release-notes.md "$(git rev-parse HEAD)"
+   ./scripts/check-release-notes.sh path/to/release-notes.md <public-root-commit>
    ```
 
 16. Push the tag and create a GitHub release marked pre-release. The release
