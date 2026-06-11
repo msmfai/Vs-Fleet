@@ -761,44 +761,76 @@ fn sync_rail_selection(app: &AppHandle) {
 
 /// Build Fleet's static native shell menu.
 ///
-/// Fleet embeds full editor surfaces, so this menu deliberately has no app-wide
-/// accelerators and no editor/server command proxies. It is installed once
-/// through Tauri's builder and never rebuilt during bridge or selection churn;
-/// mutating an AppKit menu closes any open top-level macOS menu.
+/// Fleet embeds full editor surfaces, so this mirrors Tauri's AppKit-aware
+/// default menu but omits the Edit submenu that owns copy/paste/select-all
+/// accelerators. It is installed once through Tauri's builder and never rebuilt
+/// during bridge or selection churn; mutating an AppKit menu closes any open
+/// top-level macOS menu.
 pub fn build_menu<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
 ) -> tauri::Result<tauri::menu::Menu<R>> {
-    use tauri::menu::{MenuBuilder, MenuItem, SubmenuBuilder};
+    use tauri::menu::{
+        AboutMetadata, Menu, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID, WINDOW_SUBMENU_ID,
+    };
 
-    let quit = MenuItem::with_id(app, "app:quit", "Quit Fleet", true, None::<&str>)?;
-    let minimize = MenuItem::with_id(app, "window:minimize", "Minimize", true, None::<&str>)?;
-    let fullscreen = MenuItem::with_id(
+    let pkg_info = app.package_info();
+    let config = app.config();
+    let about_metadata = AboutMetadata {
+        name: Some(pkg_info.name.clone()),
+        version: Some(pkg_info.version.to_string()),
+        copyright: config.bundle.copyright.clone(),
+        authors: config.bundle.publisher.clone().map(|p| vec![p]),
+        ..Default::default()
+    };
+
+    let app_menu = Submenu::with_items(
         app,
-        "window:fullscreen",
-        "Toggle Full Screen",
+        pkg_info.name.clone(),
         true,
-        None::<&str>,
+        &[
+            &PredefinedMenuItem::about(app, None, Some(about_metadata))?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::services(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::hide(app, None)?,
+            &PredefinedMenuItem::hide_others(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::quit(app, None)?,
+        ],
     )?;
-    let close = MenuItem::with_id(app, "window:close", "Close Window", true, None::<&str>)?;
 
-    let app_menu = SubmenuBuilder::new(app, "Fleet")
-        .about(None)
-        .separator()
-        .item(&quit)
-        .build()?;
-    let window_menu = SubmenuBuilder::new(app, "Window")
-        .item(&minimize)
-        .item(&fullscreen)
-        .separator()
-        .item(&close)
-        .build()?;
-    let help_menu = SubmenuBuilder::new(app, "Help").build()?;
+    let file_menu = Submenu::with_items(
+        app,
+        "File",
+        true,
+        &[&PredefinedMenuItem::close_window(app, None)?],
+    )?;
 
-    MenuBuilder::new(app)
-        .item(&app_menu)
-        .item(&window_menu)
-        .item(&help_menu)
-        .build()
+    let view_menu = Submenu::with_items(
+        app,
+        "View",
+        true,
+        &[&PredefinedMenuItem::fullscreen(app, None)?],
+    )?;
+
+    let window_menu = Submenu::with_id_and_items(
+        app,
+        WINDOW_SUBMENU_ID,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::maximize(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::close_window(app, None)?,
+        ],
+    )?;
+    let help_menu = Submenu::with_id_and_items(app, HELP_SUBMENU_ID, "Help", true, &[])?;
+
+    Menu::with_items(
+        app,
+        &[&app_menu, &file_menu, &view_menu, &window_menu, &help_menu],
+    )
 }
 
 pub fn refresh_menu(app: &AppHandle) {

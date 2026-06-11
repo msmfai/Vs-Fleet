@@ -29,6 +29,9 @@ fn fleet_shell_has_no_app_wide_keyboard_capture() {
         "Cmd/Ctrl",
         "set_focus(",
         "MenuItemBuilder::with_id",
+        "MenuItem::with_id",
+        "MenuBuilder::new",
+        "SubmenuBuilder::new",
     ];
 
     for rel in files {
@@ -56,11 +59,11 @@ fn fleet_installs_one_static_native_shell_menu() {
     });
     assert!(
         main.contains(".menu(mux::build_menu)"),
-        "Fleet must install one static no-accelerator native shell menu instead of relying on the framework default"
+        "Fleet must install one static AppKit-aware shell menu instead of Tauri's default Edit menu"
     );
     assert!(
-        main.contains(".on_menu_event("),
-        "Fleet may handle only static shell menu events, never editor or rail commands"
+        !main.contains(".on_menu_event("),
+        "Fleet must use native predefined shell menu items without an app command handler"
     );
     assert!(
         !main.contains("enable_macos_default_menu(false)"),
@@ -85,16 +88,20 @@ fn fleet_installs_one_static_native_shell_menu() {
         "Fleet must define a static native shell menu"
     );
     assert!(
+        contents.contains("WINDOW_SUBMENU_ID") && contents.contains("HELP_SUBMENU_ID"),
+        "Fleet's custom menu must use Tauri's AppKit submenu ids so Window and Help menus stay native"
+    );
+    assert!(
         !contents.contains("MenuItemBuilder::with_id("),
         "Fleet must not install command menu items that could grow accelerators later"
     );
     assert!(
-        contents.matches("MenuItem::with_id(").count() == 4,
-        "Fleet native menu should stay limited to shell commands"
+        !contents.contains("MenuItem::with_id("),
+        "Fleet must use native predefined shell menu items, not app-defined menu commands"
     );
     assert!(
-        contents.matches("None::<&str>").count() >= 4,
-        "Fleet shell menu items must not define native accelerators"
+        !contents.contains("SubmenuBuilder::new("),
+        "Fleet must not build generic AppKit submenus that bypass Tauri's default menu integration"
     );
     for pattern in [
         ".cut()",
@@ -103,6 +110,13 @@ fn fleet_installs_one_static_native_shell_menu() {
         ".undo()",
         ".redo()",
         ".select_all()",
+        "\"Edit\"",
+        "PredefinedMenuItem::cut",
+        "PredefinedMenuItem::copy",
+        "PredefinedMenuItem::paste",
+        "PredefinedMenuItem::undo",
+        "PredefinedMenuItem::redo",
+        "PredefinedMenuItem::select_all",
         "\"cmd:",
         "\"spawn:",
         "\"server:",
