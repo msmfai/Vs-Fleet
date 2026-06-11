@@ -44,8 +44,10 @@ jobs:
     steps:
       - run: ./scripts/test-release-check.sh
       - run: ./scripts/test-dependabot-config-check.sh
+      - run: ./scripts/test-secret-release-check.sh
       - run: ./scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md
       - run: ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md
+      - run: ./scripts/secret-release-check.sh
       - run: ./scripts/release-check.sh
   source-checks:
     steps:
@@ -104,5 +106,10 @@ no_bundle="$TMPDIR/no-bundle.yml"
 write_release "$no_bundle"
 perl -0pi -e 's/\n          \.\/bundle\.sh release\n/\n/' "$no_bundle"
 expect_fail "Release Readiness must keep host bundle verification" "$ci" "$no_bundle"
+
+no_secret_gate="$TMPDIR/no-secret-gate.yml"
+write_release "$no_secret_gate"
+perl -0pi -e 's/\n      - run: \.\/scripts\/test-secret-release-check\.sh\n//; s/\n      - run: \.\/scripts\/secret-release-check\.sh\n//' "$no_secret_gate"
+expect_fail "Release Readiness must keep secret exposure checks" "$ci" "$no_secret_gate"
 
 echo "GitHub workflow check tests passed."

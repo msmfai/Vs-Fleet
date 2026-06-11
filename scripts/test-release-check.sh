@@ -82,6 +82,7 @@ done
 for script in \
   scripts/check-owner-decisions.sh \
   scripts/history-release-check.sh \
+  scripts/secret-release-check.sh \
   scripts/check-alpha-scope-decision.sh \
   scripts/check-editor-server-boundary-decision.sh \
   scripts/check-distribution-decision.sh \
@@ -96,6 +97,7 @@ for script in \
   scripts/check-support-decision.sh \
   scripts/test-owner-decision-gate.sh \
   scripts/test-history-release-check.sh \
+  scripts/test-secret-release-check.sh \
   scripts/test-license-decision-check.sh \
   scripts/test-namespace-decision-check.sh \
   scripts/test-alpha-scope-decision-check.sh \

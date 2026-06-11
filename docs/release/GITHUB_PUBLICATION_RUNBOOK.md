@@ -34,9 +34,12 @@ branch.
    squashed history.
 2. Run `./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md`
    on the exact branch to publish.
-3. If the history audit fails and the owner did not explicitly accept current
+3. Run `./scripts/secret-release-check.sh` on the exact branch to publish.
+4. If the history audit fails and the owner did not explicitly accept current
    history exposure, publish a cleaned branch instead.
-4. Review GitHub's repository visibility consequences before changing a private
+5. If the secret exposure audit fails, publish a cleaned branch instead. Do not
+   publish credential-looking material as an accepted alpha exception.
+6. Review GitHub's repository visibility consequences before changing a private
    repository to public. GitHub documents that public visibility makes code
    visible to anyone, allows anyone to fork, publishes activity, and makes
    Actions history and logs visible.
@@ -63,6 +66,7 @@ Set these before public visibility:
 - `./scripts/check-github-workflows.sh .github/workflows/ci.yml
   .github/workflows/release-readiness.yml` passes before recording public CI
   evidence.
+- `./scripts/secret-release-check.sh` passes on the exact public branch.
 
 ## Security Settings
 
@@ -110,6 +114,7 @@ Reference: <https://docs.github.com/en/repositories/configuring-branches-and-mer
 6. Run:
 
    ```sh
+   ./scripts/secret-release-check.sh
    ./scripts/release-check.sh
    ./scripts/check-release-notes.sh path/to/release-notes.md "$(git rev-parse HEAD)"
    ```
@@ -124,6 +129,7 @@ Reference: <https://docs.github.com/en/repositories/configuring-branches-and-mer
 Abort publication if any of these are true:
 
 - `./scripts/release-check.sh` fails.
+- `./scripts/secret-release-check.sh` fails.
 - The exact public commit differs from the commit recorded in CI or dependency
   review evidence.
 - The selected security reporting channel is not actually available.

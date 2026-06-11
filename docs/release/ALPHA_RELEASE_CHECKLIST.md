@@ -40,9 +40,14 @@ closed or explicitly accepted.
   match the owner record.
 - [x] Remove or redact tracked artifacts that include local paths, process
   command lines, raw logs, or failed eval output.
+- [x] Add a redacted secret exposure gate for the tracked tree and git history.
+- [ ] Run `./scripts/secret-release-check.sh` before public visibility; any
+  credential-looking hit must be removed from the tracked tree and public
+  history rather than accepted.
 - [ ] Run `./scripts/release-check.sh`; it includes
-  `./scripts/history-release-check.sh` and requires either cleaned history or
-  explicit owner acceptance of current branch history exposure.
+  `./scripts/history-release-check.sh`, `./scripts/secret-release-check.sh`,
+  and requires either cleaned history or explicit owner acceptance of current
+  branch history exposure.
 - [ ] Run dependency review for the exact public branch, or explicitly accept
   skipping it in the owner decision record.
 - [ ] Record dependency review evidence in
@@ -131,6 +136,9 @@ closed or explicitly accepted.
 - `scripts/check-release-notes.sh` validates the filled release notes draft for
   required sections and unresolved placeholders before a GitHub pre-release is
   published.
+- `scripts/secret-release-check.sh` scans the tracked tree and all reachable
+  git history for private-key blocks and common token shapes, reports only
+  redacted commit/path/line findings, and passes on the current scanned refs.
 - `docs/release/OWNER_DECISION_RECORD.md` is present but still marked
   `PENDING`; `scripts/release-check.sh` requires `APPROVED` before public
   visibility.
@@ -177,6 +185,8 @@ closed or explicitly accepted.
   artifacts. On the current branch it still fails because prior commits contain
   reviewed host/eval artifacts; publish a cleaned history or explicitly accept
   that exposure in the owner record.
+- `scripts/release-check.sh` also runs `scripts/secret-release-check.sh`; secret
+  exposure is not an owner-accepted exception path.
 - The GitHub CI workflow exists, but should be re-run after the public tree is
   cleaned.
 

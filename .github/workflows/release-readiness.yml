@@ -69,11 +69,17 @@ jobs:
       - name: History release gate self-test
         run: ./scripts/test-history-release-check.sh
 
+      - name: Secret release gate self-test
+        run: ./scripts/test-secret-release-check.sh
+
       - name: Release hygiene gate self-test
         run: ./scripts/test-release-check.sh
 
       - name: History exposure gate
         run: ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md
+
+      - name: Secret exposure gate
+        run: ./scripts/secret-release-check.sh
 
       - name: Release hygiene gate
         run: ./scripts/release-check.sh

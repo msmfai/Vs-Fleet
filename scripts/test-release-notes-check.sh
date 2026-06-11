@@ -38,6 +38,7 @@ sessions.
 - JavaScript/package checks: passed locally.
 - Dependency review: completed, no accepted findings.
 - History exposure audit: cleaned public history.
+- Secret exposure audit: passed.
 - Release hygiene gate: passed.
 
 ## Dependency And License Review
@@ -120,6 +121,11 @@ missing="$TMPDIR/missing.md"
 write_valid_notes "$missing"
 perl -0pi -e 's/\n## Verification\n/\n/' "$missing"
 expect_fail "missing required section is rejected" "$missing"
+
+missing_secret="$TMPDIR/missing-secret.md"
+write_valid_notes "$missing_secret"
+perl -0pi -e 's/\n- Secret exposure audit: passed\.\n/\n/' "$missing_secret"
+expect_fail "missing secret exposure audit is rejected" "$missing_secret"
 
 exception="$TMPDIR/exception.md"
 write_valid_notes "$exception"

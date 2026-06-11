@@ -52,6 +52,11 @@ if rg -n 'accepted exception|owner-approved skip|owner-approved current history 
   fail=1
 fi
 
+if ! rg -q '^- Secret exposure audit:' "$file"; then
+  echo "FAIL: release notes must record the secret exposure audit result"
+  fail=1
+fi
+
 field_value() {
   local label=$1
   local line
