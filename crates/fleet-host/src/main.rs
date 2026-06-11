@@ -200,7 +200,6 @@ fn main() {
             hub_client::dismiss_session,
             hub_client::focus_session
         ])
-        .on_menu_event(|app, event| handle_shell_menu_event(app, event.id().as_ref()))
         .setup(move |app| {
             #[cfg(target_os = "macos")]
             {
@@ -287,49 +286,6 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Fleet host");
-}
-
-fn handle_shell_menu_event(app: &tauri::AppHandle, id: &str) {
-    match id {
-        "app:quit" => app.exit(0),
-        "window:minimize" => {
-            if let Some(window) = app.get_window(mux::WINDOW) {
-                if let Err(e) = window.minimize() {
-                    mux::emit_host_status(app, "error", "menu", format!("minimize failed: {e}"));
-                }
-            }
-        }
-        "window:fullscreen" => {
-            if let Some(window) = app.get_window(mux::WINDOW) {
-                match window.is_fullscreen() {
-                    Ok(fullscreen) => {
-                        if let Err(e) = window.set_fullscreen(!fullscreen) {
-                            mux::emit_host_status(
-                                app,
-                                "error",
-                                "menu",
-                                format!("fullscreen failed: {e}"),
-                            );
-                        }
-                    }
-                    Err(e) => mux::emit_host_status(
-                        app,
-                        "error",
-                        "menu",
-                        format!("fullscreen state unavailable: {e}"),
-                    ),
-                }
-            }
-        }
-        "window:close" => {
-            if let Some(window) = app.get_window(mux::WINDOW) {
-                if let Err(e) = window.close() {
-                    mux::emit_host_status(app, "error", "menu", format!("close failed: {e}"));
-                }
-            }
-        }
-        _ => {}
-    }
 }
 
 fn probe_control_port() -> Option<u16> {
