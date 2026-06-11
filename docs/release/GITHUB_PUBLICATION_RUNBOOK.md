@@ -51,11 +51,10 @@ branch.
    Generate `docs/release/PUBLIC_BRANCH_EVIDENCE.md` with
    `./scripts/generate-public-branch-evidence.sh <public-branch> <source-ref> docs/release/PUBLIC_BRANCH_EVIDENCE.md`,
    then run
-   `./scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md <source-ref-sha>`
-   to prove the branch is a one-commit tree snapshot of the approved source.
-   In the same private clone, run the aggregate gate with
-   `FLEET_RELEASE_HISTORY_REF=<public-branch> ./scripts/release-check.sh` so the
-   history and secret audits scan the public ref rather than every private
+   `./scripts/check-public-release-branch.sh <public-branch> <source-ref-sha>`
+   in the same private clone. The verifier proves the branch is a one-commit
+   tree snapshot of the approved source and runs the history, evidence, secret,
+   and aggregate release gates against the public ref rather than every private
    local ref.
 5. If the secret exposure audit fails, publish a cleaned branch instead. Do not
    publish credential-looking material as an accepted alpha exception.

@@ -101,6 +101,7 @@ for script in \
   scripts/history-release-check.sh \
   scripts/check-public-branch-evidence.sh \
   scripts/generate-public-branch-evidence.sh \
+  scripts/check-public-release-branch.sh \
   scripts/prepare-public-branch.sh \
   scripts/secret-release-check.sh \
   scripts/check-doc-links.sh \
@@ -139,6 +140,7 @@ for script in \
   scripts/test-history-release-check.sh \
   scripts/test-public-branch-evidence-check.sh \
   scripts/test-generate-public-branch-evidence.sh \
+  scripts/test-check-public-release-branch.sh \
   scripts/test-prepare-public-branch.sh \
   scripts/test-secret-release-check.sh \
   scripts/test-doc-link-check.sh \

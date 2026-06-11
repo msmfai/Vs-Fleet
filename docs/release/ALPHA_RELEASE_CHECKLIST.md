@@ -60,15 +60,11 @@ visibility.
   branch history exposure.
 - [ ] If current history is not accepted, create the public branch with
   `./scripts/prepare-public-branch.sh <public-branch> <source-ref>` and run
-  `./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md <public-branch>`.
-  Generate `docs/release/PUBLIC_BRANCH_EVIDENCE.md` with
+  generate `docs/release/PUBLIC_BRANCH_EVIDENCE.md` with
   `./scripts/generate-public-branch-evidence.sh <public-branch> <source-ref> docs/release/PUBLIC_BRANCH_EVIDENCE.md`,
-  then run `./scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md <source-ref-sha>`.
-  Run `./scripts/secret-release-check.sh <public-branch>` for the same public
-  ref.
-  In the same private clone, run
-  `FLEET_RELEASE_HISTORY_REF=<public-branch> ./scripts/release-check.sh` for the
-  aggregate gate.
+  then run `./scripts/check-public-release-branch.sh <public-branch> <source-ref-sha>`.
+  The verifier runs the history, evidence, secret, and aggregate release gates
+  against the same public ref.
 - [ ] Run `./scripts/run-dependency-review.sh` for the exact public branch, or
   explicitly accept skipping dependency review in the owner decision record.
 - [ ] Record dependency review evidence in

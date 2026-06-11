@@ -279,17 +279,13 @@ path must match.
 
 ```sh
 ./scripts/prepare-public-branch.sh public-alpha HEAD
-./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md public-alpha
 ./scripts/generate-public-branch-evidence.sh public-alpha HEAD docs/release/PUBLIC_BRANCH_EVIDENCE.md
-./scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md "$(git rev-parse HEAD)"
-./scripts/secret-release-check.sh public-alpha
-FLEET_RELEASE_HISTORY_REF=public-alpha ./scripts/release-check.sh
+./scripts/check-public-release-branch.sh public-alpha "$(git rev-parse HEAD)"
 ```
 
-Use `./scripts/history-release-check.sh` and `./scripts/secret-release-check.sh`
-as the mechanical audits before first public visibility. For a cleaned first
-public branch, pass the public branch name so the audits match the history that
-will be pushed to GitHub.
+`./scripts/check-public-release-branch.sh` runs the history, evidence, secret,
+and aggregate release gates against the cleaned public branch so the audits
+match the history that will be pushed to GitHub.
 
 ## Binary Release Gate
 

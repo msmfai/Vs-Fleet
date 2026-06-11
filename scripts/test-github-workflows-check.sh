@@ -92,6 +92,7 @@ jobs:
       - run: ./scripts/test-github-publication-evidence-check.sh
       - run: ./scripts/test-public-branch-evidence-check.sh
       - run: ./scripts/test-generate-public-branch-evidence.sh
+      - run: ./scripts/test-check-public-release-branch.sh
       - run: ./scripts/test-dependency-review-runner.sh
       - run: ./scripts/test-release-notes-check.sh
       - run: ./scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md
@@ -201,6 +202,11 @@ no_dependency_runner="$TMPDIR/no-dependency-runner.yml"
 write_release "$no_dependency_runner"
 perl -0pi -e 's/\n      - run: \.\/scripts\/test-dependency-review-runner\.sh\n//' "$no_dependency_runner"
 expect_fail "Release Readiness must keep dependency review runner self-test" "$ci" "$no_dependency_runner"
+
+no_public_release_branch="$TMPDIR/no-public-release-branch.yml"
+write_release "$no_public_release_branch"
+perl -0pi -e 's/\n      - run: \.\/scripts\/test-check-public-release-branch\.sh\n//' "$no_public_release_branch"
+expect_fail "Release Readiness must keep public release branch verifier self-test" "$ci" "$no_public_release_branch"
 
 no_release_notes="$TMPDIR/no-release-notes.yml"
 write_release "$no_release_notes"

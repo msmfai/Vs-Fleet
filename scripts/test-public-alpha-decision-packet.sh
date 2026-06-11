@@ -237,8 +237,7 @@ write_record "$clean_source" APPROVED clean source undecided
 expect_pass "approved clean source-only record" "$clean_source"
 expect_output "approved clean source-only record" 'Release readiness: OWNER DECISIONS COMPLETE'
 expect_output "approved clean source-only record" 'generate-public-branch-evidence\.sh public-alpha HEAD'
-expect_output "approved clean source-only record" 'secret-release-check\.sh public-alpha'
-expect_output "approved clean source-only record" 'FLEET_RELEASE_HISTORY_REF=public-alpha ./scripts/release-check.sh'
+expect_output "approved clean source-only record" 'check-public-release-branch\.sh public-alpha'
 expect_output "approved clean source-only record" 'Contribution intake: require DCO sign-off'
 
 current_source="$TMPDIR/current-source.md"
