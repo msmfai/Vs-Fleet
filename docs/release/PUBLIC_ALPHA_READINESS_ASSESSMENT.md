@@ -45,8 +45,10 @@ remote deployment story.
 - Current private branch history contains local paths and generated/eval
   artifacts; publish a cleaned public branch unless the owner explicitly accepts
   that exposure.
-- Public branch evidence, public CI evidence, GitHub publication evidence, and
-  dependency review evidence remain release-control requirements.
+- Public branch evidence, public CI evidence, and GitHub publication evidence
+  remain pending release-control requirements.
+- Dependency review evidence is recorded for the current release-prep tree, but
+  still needs the owner dependency-review decision and final public-ref gate.
 - GitHub repository settings, vulnerability reporting, branch protection,
   issue/discussion settings, and release/package settings must be recorded
   before the visibility change.

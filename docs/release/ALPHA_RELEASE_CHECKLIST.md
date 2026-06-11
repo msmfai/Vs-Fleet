@@ -198,9 +198,11 @@ visibility.
   replaceable source icon.
 - `docs/QUICKSTART.md`, `docs/ARCHITECTURE.md`, and
   `docs/release/RELEASE_PROCESS.md` are present.
-- `.github/workflows/release-readiness.yml`,
-  `docs/release/DEPENDENCY_REVIEW.md`, and
-  `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` are present.
+- `.github/workflows/release-readiness.yml` and
+  `docs/release/DEPENDENCY_REVIEW.md` are present.
+- `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` records a passing cargo/npm
+  dependency review for the current release-prep tree; it remains subject to
+  the owner dependency-review decision and the final public-ref gate.
 - `.github/dependabot.yml` is present for GitHub Actions, root Cargo workspace,
   standalone Fleet host Cargo crate, and both npm packages; the release gate
   validates those entries with `scripts/check-dependabot-config.sh`.
