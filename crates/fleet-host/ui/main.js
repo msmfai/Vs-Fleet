@@ -44,6 +44,7 @@ let desiredSelection = null;
 let desiredAcknowledge = true;
 let inbox = { tabs: [], waiting_count: 0, waiting_total: 0, connected: false };
 let inboxRevision = 0;
+let refreshGeneration = 0;
 let statusOverride = null;
 let statusTimer = null;
 let spawning = false;
@@ -1680,13 +1681,18 @@ function serverRows() {
 }
 
 async function refreshServers() {
+  const generation = ++refreshGeneration;
+  let nextServers = [];
   let backendSelected = null;
   try {
-    servers = await invoke("get_servers");
+    nextServers = await invoke("get_servers");
     backendSelected = await invoke("selected_server");
   } catch (e) {
-    servers = [];
+    nextServers = [];
   }
+  if (generation !== refreshGeneration) return;
+  servers = nextServers;
+
   // Drop pending entries that have now phoned home.
   pending = pending.filter((p) => !servers.some((s) => s.id === p.id));
 
