@@ -82,6 +82,8 @@ for required in \
   docs/release/DEPENDENCY_REVIEW_EVIDENCE.md \
   docs/release/PUBLIC_CI_EVIDENCE.md \
   docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md \
+  scripts/check-owner-decisions.sh \
+  scripts/test-owner-decision-gate.sh \
   scripts/history-release-check.sh \
   scripts/test-history-release-check.sh \
   scripts/check-license-decision.sh \
