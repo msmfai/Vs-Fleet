@@ -19,6 +19,9 @@ Do not publish a public alpha until these are true:
   and copy only reviewed choices into `docs/release/OWNER_DECISION_RECORD.md`.
 - `./scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .`
   passes.
+- `./scripts/apply-namespace-decision.sh docs/release/OWNER_DECISION_RECORD.md .`
+  has been run after the approved namespace decision, unless the metadata was
+  updated manually. Rust crate renames are intentionally not automatic.
 - `./scripts/public-alpha-decision-packet.sh` reports
   `Release readiness: OWNER DECISIONS COMPLETE`.
 - `./scripts/release-check.sh` passes.

@@ -31,6 +31,16 @@ apply the metadata with:
 ./scripts/apply-license-decision.sh docs/release/OWNER_DECISION_RECORD.md . path/to/LICENSE
 ```
 
+After approving a namespace decision, apply the manifest metadata with:
+
+```sh
+./scripts/apply-namespace-decision.sh docs/release/OWNER_DECISION_RECORD.md .
+```
+
+This updates product, bundle, extension publisher, extension package, and
+lockfile metadata. It verifies the Rust crate prefix but does not rename crates
+automatically.
+
 ## Required Answers
 
 Copy the answers into `OWNER_DECISION_RECORD.md`; do not publish while any value

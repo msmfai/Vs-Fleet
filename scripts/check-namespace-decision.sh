@@ -117,6 +117,24 @@ check_cargo_package_name() {
 check_json_value "crates/fleet-host/tauri.conf.json" '.productName' "$product_name" "productName"
 check_json_value "crates/fleet-host/tauri.conf.json" '.identifier' "$macos_bundle_id" "identifier"
 
+if [ ! -f "$root/crates/fleet-host/bundle.sh" ]; then
+  echo "FAIL: missing crates/fleet-host/bundle.sh"
+  fail=1
+else
+  if ! rg -F -q "<key>CFBundleName</key><string>$product_name</string>" "$root/crates/fleet-host/bundle.sh"; then
+    echo "FAIL: crates/fleet-host/bundle.sh CFBundleName does not match \"$product_name\""
+    fail=1
+  fi
+  if ! rg -F -q "<key>CFBundleDisplayName</key><string>$product_name</string>" "$root/crates/fleet-host/bundle.sh"; then
+    echo "FAIL: crates/fleet-host/bundle.sh CFBundleDisplayName does not match \"$product_name\""
+    fail=1
+  fi
+  if ! rg -F -q "<key>CFBundleIdentifier</key><string>$macos_bundle_id</string>" "$root/crates/fleet-host/bundle.sh"; then
+    echo "FAIL: crates/fleet-host/bundle.sh CFBundleIdentifier does not match \"$macos_bundle_id\""
+    fail=1
+  fi
+fi
+
 IFS=',' read -r -a npm_expected <<<"$npm_names"
 if [ "${#npm_expected[@]}" -ne 2 ]; then
   echo "FAIL: npm package names must contain exactly two comma-separated names"
@@ -124,13 +142,15 @@ if [ "${#npm_expected[@]}" -ne 2 ]; then
 else
   bridge_name="$(jq -r '.name // ""' "$root/packages/fleet-bridge/package.json")"
   extension_name="$(jq -r '.name // ""' "$root/packages/extension/package.json")"
-  expected_names=" $(printf '%s\n' "${npm_expected[@]}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr '\n' ' ')"
+  expected_names=" $(printf '%s\n' "${npm_expected[@]}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/^`//; s/`$//' | tr '\n' ' ')"
   for actual in "$bridge_name" "$extension_name"; do
     if [[ "$expected_names " != *" $actual "* ]]; then
       echo "FAIL: npm package name \"$actual\" is not listed in owner decision \"$npm_names\""
       fail=1
     fi
   done
+  check_json_value "packages/fleet-bridge/package-lock.json" '.packages[""].name' "$bridge_name" "root package name"
+  check_json_value "packages/extension/package-lock.json" '.packages[""].name' "$extension_name" "root package name"
 fi
 
 for manifest in "$root"/crates/*/Cargo.toml; do
@@ -144,6 +164,14 @@ for manifest in \
 do
   check_json_value "$manifest" '.publisher' "$marketplace_publisher" "publisher"
 done
+
+if [ -f "$root/crates/fleet-host/src/spawn.rs" ] && [ -n "${bridge_name:-}" ]; then
+  bridge_extension_prefix="$marketplace_publisher.$bridge_name-"
+  if ! rg -F -q "starts_with(\"$bridge_extension_prefix\")" "$root/crates/fleet-host/src/spawn.rs"; then
+    echo "FAIL: crates/fleet-host/src/spawn.rs bridge extension detection prefix does not match \"$bridge_extension_prefix\""
+    fail=1
+  fi
+fi
 
 if [ "$marketplace_publisher" != "$openvsx_publisher" ]; then
   echo "WARN: Open VSX publisher \"$openvsx_publisher\" differs from VS Code Marketplace publisher \"$marketplace_publisher\"; no separate Open VSX manifest exists to verify"
