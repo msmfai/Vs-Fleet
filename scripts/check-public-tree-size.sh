@@ -12,6 +12,8 @@ fi
 default_limit=$((1024 * 1024))
 icon_limit=$((5 * 1024 * 1024))
 fail=0
+generated_artifact_pattern='(^|/)coverage/|(^|/)node_modules/|(^|/)out/|\.vsix$|Fleet\.app/'
+raw_artifact_pattern='(^|/)artifacts/.+\.(png|jpg|jpeg|webp|gif|json|log|txt)$'
 
 file_size() {
   if stat -f %z "$1" >/dev/null 2>&1; then
@@ -41,6 +43,16 @@ while IFS= read -r file; do
     fail=1
   fi
 done < <(git -C "$root" ls-files)
+
+tracked_generated="$(
+  git -C "$root" ls-files |
+    rg "$generated_artifact_pattern|$raw_artifact_pattern" || true
+)"
+if [ -n "$tracked_generated" ]; then
+  echo "FAIL: generated outputs or raw review artifacts are tracked in the public tree"
+  printf '%s\n' "$tracked_generated" | sed -n '1,80p'
+  fail=1
+fi
 
 if [ "$fail" -ne 0 ]; then
   echo
