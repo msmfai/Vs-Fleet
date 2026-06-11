@@ -27,6 +27,32 @@ if [ -z "$required_start" ] || [ -z "$required_end" ] || [ "$required_end" -le "
 fi
 
 required_block="$(sed -n "$((required_start + 1)),$((required_end - 1))p" "$file")"
+binary_block="$(sed -n "$((required_end + 1)),\$p" "$file")"
+
+section_block() {
+  local source_block=$1
+  local section=$2
+  local section_line
+  section_line="$(printf '%s\n' "$source_block" | rg -n "^${section}$" | cut -d: -f1 | head -n1 || true)"
+  if [ -z "$section_line" ]; then
+    return 1
+  fi
+
+  local next_section_line
+  next_section_line="$(
+    printf '%s\n' "$source_block" |
+      tail -n +"$((section_line + 1))" |
+      rg -n '^### ' |
+      cut -d: -f1 |
+      head -n1 || true
+  )"
+
+  if [ -n "$next_section_line" ]; then
+    printf '%s\n' "$source_block" | sed -n "${section_line},$((section_line + next_section_line - 1))p"
+  else
+    printf '%s\n' "$source_block" | sed -n "${section_line},\$p"
+  fi
+}
 
 missing_required=0
 for section in \
@@ -37,28 +63,14 @@ for section in \
   "### 6. Contribution Intake" \
   "### 7. Public CI Evidence"
 do
-  section_line="$(printf '%s\n' "$required_block" | rg -n "^${section}$" | cut -d: -f1 | head -n1 || true)"
-  if [ -z "$section_line" ]; then
+  if ! block="$(section_block "$required_block" "$section")"; then
     echo "FAIL: owner decision record missing required section: $section"
     missing_required=1
     continue
   fi
 
-  next_section_line="$(
-    printf '%s\n' "$required_block" |
-      tail -n +"$((section_line + 1))" |
-      rg -n '^### ' |
-      cut -d: -f1 |
-      head -n1 || true
-  )"
-
-  if [ -n "$next_section_line" ]; then
-    block="$(printf '%s\n' "$required_block" | sed -n "${section_line},$((section_line + next_section_line - 1))p")"
-  else
-    block="$(printf '%s\n' "$required_block" | sed -n "${section_line},\$p")"
-  fi
-
   checked_count="$(printf '%s\n' "$block" | rg -c '^- \[x\] ' || true)"
+  checked_count="${checked_count:-0}"
   if [ "$checked_count" -ne 1 ]; then
     echo "FAIL: $section must have exactly one checked choice; found $checked_count"
     missing_required=1
@@ -69,6 +81,29 @@ namespace_block="$(printf '%s\n' "$required_block" | sed -n '/^### 3\. Public Na
 if printf '%s\n' "$namespace_block" | rg -n '`TODO`'; then
   echo "FAIL: Public Namespace table still contains TODO placeholders"
   missing_required=1
+fi
+
+if distribution_block="$(section_block "$required_block" "### 4. Distribution Scope")"; then
+  if printf '%s\n' "$distribution_block" | rg -q '^- \[x\] Source plus|^- \[x\] Other:'; then
+    for section in \
+      "### 8. macOS Signing and Notarization" \
+      "### 9. Update Channel" \
+      "### 10. Branding Stability"
+    do
+      if ! block="$(section_block "$binary_block" "$section")"; then
+        echo "FAIL: owner decision record missing binary distribution section: $section"
+        missing_required=1
+        continue
+      fi
+
+      checked_count="$(printf '%s\n' "$block" | rg -c '^- \[x\] ' || true)"
+      checked_count="${checked_count:-0}"
+      if [ "$checked_count" -ne 1 ]; then
+        echo "FAIL: $section must have exactly one checked choice when public binary distribution is selected; found $checked_count"
+        missing_required=1
+      fi
+    done
+  fi
 fi
 
 if [ "$missing_required" -ne 0 ]; then
