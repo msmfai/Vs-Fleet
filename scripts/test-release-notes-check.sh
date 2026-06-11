@@ -18,6 +18,7 @@ write_valid_notes() {
 - Commit: 0123456789abcdef0123456789abcdef01234567
 - Date: 2026-06-11
 - Distribution: source-only
+- Branding: Fleet name and icon are alpha placeholders
 - Owner decision record: docs/release/OWNER_DECISION_RECORD.md at this commit
 
 ## Alpha Scope
@@ -116,6 +117,11 @@ choice="$TMPDIR/choice.md"
 write_valid_notes "$choice"
 printf '\n- Distribution: `[source-only | source plus approved binary scope]`\n' >>"$choice"
 expect_fail "unresolved choice list is rejected" "$choice"
+
+branding_choice="$TMPDIR/branding-choice.md"
+write_valid_notes "$branding_choice"
+perl -0pi -e 's/Branding: Fleet name and icon are alpha placeholders/Branding: `[alpha placeholders | name stable]`/' "$branding_choice"
+expect_fail "unresolved branding choice is rejected" "$branding_choice"
 
 missing="$TMPDIR/missing.md"
 write_valid_notes "$missing"

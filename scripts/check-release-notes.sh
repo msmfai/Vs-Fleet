@@ -114,6 +114,12 @@ if [ -n "${distribution:-}" ] && printf '%s\n' "$distribution" | rg -q '\[|\]|\|
   fail=1
 fi
 
+branding="$(require_value "Branding" || true)"
+if [ -n "${branding:-}" ] && printf '%s\n' "$branding" | rg -q '\[|\]|\|'; then
+  echo "FAIL: release notes Branding must be a concrete value"
+  fail=1
+fi
+
 if [ "$fail" -ne 0 ]; then
   exit 1
 fi

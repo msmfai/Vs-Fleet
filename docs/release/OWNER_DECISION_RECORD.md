@@ -173,12 +173,24 @@ Choose what support public alpha users can expect.
 
 Current default recommendation: best-effort alpha support only.
 
+### 13. Branding Stability
+
+Choose how stable the public alpha name and visual identity are.
+
+- [ ] `Fleet` name and current icon are alpha placeholders.
+- [ ] `Fleet` name is stable, icon may change.
+- [ ] Name and icon are stable.
+- [ ] Other: `TODO`
+
+Current default recommendation: treat the icon as alpha and confirm the name
+only after the namespace check passes.
+
 ## Required Before Binary Distribution
 
 These do not block a source-only alpha, but they must be decided before any
 public app bundle.
 
-### 13. macOS Signing and Notarization
+### 14. macOS Signing and Notarization
 
 - [ ] No public binaries until Developer ID signing and notarization are
   automated.
@@ -188,7 +200,7 @@ public app bundle.
 Current default recommendation: no public binaries until signing and notarization
 are automated.
 
-### 14. Update Channel
+### 15. Update Channel
 
 - [ ] No auto-update in alpha.
 - [ ] GitHub Releases only.
@@ -197,13 +209,3 @@ are automated.
 
 Current default recommendation: no auto-update in alpha; GitHub Releases only
 for source tags.
-
-### 15. Branding Stability
-
-- [ ] `Fleet` name and current icon are alpha placeholders.
-- [ ] `Fleet` name is stable, icon may change.
-- [ ] Name and icon are stable.
-- [ ] Other: `TODO`
-
-Current default recommendation: name may be stable if the namespace check passes;
-icon remains alpha.
