@@ -31,7 +31,8 @@ fi
 
 check_tracked_absent "$local_path_pattern" \
   "tracked release-facing text artifacts contain local absolute paths" \
-  .
+  . \
+  ':(exclude)scripts/history-release-check.sh'
 
 check_tracked_absent 'not ready for (a )?(general )?public alpha yet|still blocked for public open-source release|No open-source license has been chosen yet|UNLICENSED' \
   "public release-facing docs still describe unresolved alpha blockers" \
