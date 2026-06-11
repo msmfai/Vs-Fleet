@@ -28,4 +28,4 @@ schemars = { version = "0.8", optional = true }
 serde_json = { workspace = true }
 proptest = "1"
 schemars = "0.8"
-jsonschema = "0.18"
+jsonschema = "0.46"
