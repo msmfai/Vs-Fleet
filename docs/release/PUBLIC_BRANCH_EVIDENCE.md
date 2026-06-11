@@ -1,31 +1,21 @@
 # Public Branch Evidence
 
-Public branch evidence status: PENDING
+Public branch evidence status: PASS
 
 This file records the clean-history branch evidence for the first public GitHub
 alpha. Use it when the owner decision record chooses a cleaned/squashed first
 public branch. Do not mark the owner decision record `APPROVED` until this file
 is concrete and `scripts/check-public-branch-evidence.sh` passes.
 
-This is release-control evidence. It may be updated after the clean public
-branch is created; the verifier compares the public branch to the source tree
-while allowing this evidence file itself to differ.
-
-Generate this file with:
-
-```sh
-./scripts/generate-public-branch-evidence.sh <public-branch> <source-ref> docs/release/PUBLIC_BRANCH_EVIDENCE.md
-```
-
-Source commit: `TODO`
-Public branch: `TODO`
-Public root commit: `TODO`
+Source commit: `afb9b8ec340e89ad7639eacc121eba41bea598e0`
+Public branch: `public-alpha`
+Public root commit: `3bd3173252c0b2553aceecb9b1b5232da720d444`
 Release-control evidence file: `docs/release/PUBLIC_BRANCH_EVIDENCE.md`
-History check command: `TODO`
-History check result: `TODO`
+History check command: `./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md public-alpha`
+History check result: `PASS`
 
 ## Required Facts
 
-Single root commit: `TODO`
-Public tree matches source commit tree: `TODO`
-Public branch contains no prior private history: `TODO`
+Single root commit: `yes`
+Public tree matches source commit tree: `yes`
+Public branch contains no prior private history: `yes`
