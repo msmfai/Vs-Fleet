@@ -28,15 +28,15 @@ Decision record status: $status
 
 ## Required Before Binary Distribution
 
-### 12. macOS Signing and Notarization
+### 13. macOS Signing and Notarization
 
 - [$([ "$checked" = "source" ] && echo ' ' || echo x)] Publish unsigned binaries and document Gatekeeper warnings.
 
-### 13. Update Channel
+### 14. Update Channel
 
 - [$([ "$checked" = "source" ] && echo ' ' || echo x)] No auto-update in alpha.
 
-### 14. Branding Stability
+### 15. Branding Stability
 
 - [$([ "$checked" = "source" ] && echo ' ' || echo x)] \`Fleet\` name and current icon are alpha placeholders.
 EOF

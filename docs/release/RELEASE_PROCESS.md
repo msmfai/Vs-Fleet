@@ -46,6 +46,8 @@ Do not publish a public alpha until these are true:
   passes.
 - `./scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"`
   passes.
+- `./scripts/check-support-decision.sh docs/release/OWNER_DECISION_RECORD.md SUPPORT.md .`
+  passes.
 - Dependency review has been run for the exact public commit, or the approved
   owner decision record explicitly accepts publishing without it.
 - `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` records the exact commit,
@@ -109,6 +111,7 @@ Do not publish a public alpha until these are true:
    ./scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"
    ./scripts/check-privacy-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"
+   ./scripts/check-support-decision.sh docs/release/OWNER_DECISION_RECORD.md SUPPORT.md .
    ./scripts/release-check.sh
    ```
 

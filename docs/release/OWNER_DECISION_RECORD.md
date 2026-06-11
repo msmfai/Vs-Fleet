@@ -161,12 +161,24 @@ Current default recommendation: run and record the dependency review before
 public visibility; do not defer it unless the release is deliberately
 invite-only.
 
+### 12. Support Commitment
+
+Choose what support public alpha users can expect.
+
+- [ ] Best-effort alpha support only. Breaking changes are expected; there are
+  no production support guarantees, response SLAs, paid support terms, or stable
+  release lines.
+- [ ] Define a public triage or response target in `SUPPORT.md`.
+- [ ] Other: `TODO`
+
+Current default recommendation: best-effort alpha support only.
+
 ## Required Before Binary Distribution
 
 These do not block a source-only alpha, but they must be decided before any
 public app bundle.
 
-### 12. macOS Signing and Notarization
+### 13. macOS Signing and Notarization
 
 - [ ] No public binaries until Developer ID signing and notarization are
   automated.
@@ -176,7 +188,7 @@ public app bundle.
 Current default recommendation: no public binaries until signing and notarization
 are automated.
 
-### 13. Update Channel
+### 14. Update Channel
 
 - [ ] No auto-update in alpha.
 - [ ] GitHub Releases only.
@@ -186,7 +198,7 @@ are automated.
 Current default recommendation: no auto-update in alpha; GitHub Releases only
 for source tags.
 
-### 14. Branding Stability
+### 15. Branding Stability
 
 - [ ] `Fleet` name and current icon are alpha placeholders.
 - [ ] `Fleet` name is stable, icon may change.
