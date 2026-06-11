@@ -29,11 +29,11 @@ closed or explicitly accepted.
 
 ## Recommended before public alpha, but not necessarily blocking
 
-- [ ] Add a short public quickstart for the currently working local path.
-- [ ] Add an architecture overview that distinguishes production code from
+- [x] Add a short public quickstart for the currently working local path.
+- [x] Add an architecture overview that distinguishes production code from
   research/eval scaffolding.
 - [x] Add a privacy note describing local-only operation and log contents.
-- [ ] Add a release process for source tags and app bundles.
+- [x] Add a release process for source tags and app bundles.
 - [x] Add issue templates for bug reports and alpha feedback.
 - [x] Add a code of conduct if you want public contributions.
 - [ ] Run CI on the exact public branch after artifact cleanup.
@@ -47,6 +47,8 @@ closed or explicitly accepted.
   present.
 - `SUPPORT.md`, `CODE_OF_CONDUCT.md`, GitHub issue templates, and a pull request
   template are present.
+- `docs/QUICKSTART.md`, `docs/ARCHITECTURE.md`, and
+  `docs/release/RELEASE_PROCESS.md` are present.
 - Root `README.md` is now a public alpha front door; the long engineering spec
   was moved to `docs/ENGINEERING_SPEC.md`.
 - `crates/fleet-host/artifacts/**` is now a local ignored artifact area; raw
