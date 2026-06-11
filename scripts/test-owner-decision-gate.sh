@@ -18,6 +18,7 @@ write_record() {
   local update_checked=' '
   local branding_checked=' '
   local versioning_checked='x'
+  local community_checked='x'
 
   case "$distribution" in
     source) source_checked='x' ;;
@@ -134,14 +135,19 @@ Decision record status: $status
 - [$versioning_checked] Alpha pre-release tags only. No stable API, protocol, state-file, or upgrade compatibility is promised during alpha.
 - [ ] Other: \`TODO\`
 
+### 15. Community Intake And Moderation
+
+- [$community_checked] Open public issues only for scoped bug reports and alpha feedback; keep blank issues disabled and keep discussions off unless explicitly enabled later.
+- [ ] Other: \`TODO\`
+
 ## Required Before Binary Distribution
 
-### 15. macOS Signing and Notarization
+### 16. macOS Signing and Notarization
 
 - [$signing_checked] No public binaries until Developer ID signing and notarization are automated.
 - [ ] Other: \`TODO\`
 
-### 16. Update Channel
+### 17. Update Channel
 
 - [$update_checked] No auto-update in alpha.
 - [ ] Other: \`TODO\`
@@ -194,6 +200,12 @@ write_record "$versioning_missing" APPROVED source decided undecided
 perl -0pi -e 's/- \[x\] Alpha pre-release tags only\./- [ ] Alpha pre-release tags only./' "$versioning_missing"
 expect_fail_contains "source-only alpha requires a versioning decision" "$versioning_missing" \
   "### 14\\. Versioning And Compatibility must have exactly one checked choice; found 0"
+
+community_missing="$TMPDIR/community-missing.md"
+write_record "$community_missing" APPROVED source decided undecided
+perl -0pi -e 's/- \[x\] Open public issues only/- [ ] Open public issues only/' "$community_missing"
+expect_fail_contains "source-only alpha requires a community intake decision" "$community_missing" \
+  "### 15\\. Community Intake And Moderation must have exactly one checked choice; found 0"
 
 binary_missing="$TMPDIR/binary-missing.md"
 write_record "$binary_missing" APPROVED unsigned decided undecided

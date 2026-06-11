@@ -20,7 +20,7 @@ if ! rg -q '^Decision record status: APPROVED$' "$owner_record"; then
 fi
 
 versioning_block="$(
-  sed -n '/^### 14\. Versioning And Compatibility$/,/^## Required Before Binary Distribution$/p' "$owner_record"
+  sed -n '/^### 14\. Versioning And Compatibility$/,/^### 15\. Community Intake And Moderation$/p' "$owner_record"
 )"
 
 checked_count="$(printf '%s\n' "$versioning_block" | rg -c '^- \[x\] ' || true)"

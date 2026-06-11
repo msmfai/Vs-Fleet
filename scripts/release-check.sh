@@ -147,6 +147,8 @@ for required in \
   scripts/test-branding-decision-check.sh \
   scripts/check-versioning-decision.sh \
   scripts/test-versioning-decision-check.sh \
+  scripts/check-community-intake-decision.sh \
+  scripts/test-community-intake-decision-check.sh \
   scripts/test-release-check.sh \
   scripts/check-release-notes.sh \
   scripts/test-release-notes-check.sh \
@@ -243,6 +245,9 @@ else
       fail=1
     fi
     if ! scripts/check-versioning-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
+      fail=1
+    fi
+    if ! scripts/check-community-intake-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
       fail=1
     fi
   fi

@@ -60,6 +60,7 @@ jobs:
       - run: ./scripts/test-lockfile-policy-check.sh
       - run: ./scripts/test-branding-decision-check.sh
       - run: ./scripts/test-versioning-decision-check.sh
+      - run: ./scripts/test-community-intake-decision-check.sh
       - run: ./scripts/test-github-publication-evidence-check.sh
       - run: ./scripts/test-dependency-review-runner.sh
       - run: ./scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md

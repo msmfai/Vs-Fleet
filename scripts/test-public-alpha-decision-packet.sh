@@ -136,14 +136,19 @@ Decision record status: $status
 - [x] Alpha pre-release tags only. No stable API, protocol, state-file, or upgrade compatibility is promised during alpha.
 - [ ] Other: \`TODO\`
 
+### 15. Community Intake And Moderation
+
+- [x] Open public issues only for scoped bug reports and alpha feedback; keep blank issues disabled and keep discussions off unless explicitly enabled later.
+- [ ] Other: \`TODO\`
+
 ## Required Before Binary Distribution
 
-### 15. macOS Signing and Notarization
+### 16. macOS Signing and Notarization
 
 - [$signing_checked] No public binaries until Developer ID signing and notarization are automated.
 - [ ] Other: \`TODO\`
 
-### 16. Update Channel
+### 17. Update Channel
 
 - [$update_checked] No auto-update in alpha.
 - [ ] Other: \`TODO\`
@@ -203,8 +208,8 @@ expect_output "approved current-history source-only record" './scripts/release-c
 binary_missing="$TMPDIR/binary-missing.md"
 write_record "$binary_missing" APPROVED clean unsigned undecided
 expect_fail "binary distribution without binary decisions" "$binary_missing"
-expect_output "binary distribution without binary decisions" '15\. macOS Signing and Notarization'
-expect_output "binary distribution without binary decisions" '16\. Update Channel'
+expect_output "binary distribution without binary decisions" '16\. macOS Signing and Notarization'
+expect_output "binary distribution without binary decisions" '17\. Update Channel'
 
 todo_namespace="$TMPDIR/todo-namespace.md"
 write_record "$todo_namespace" APPROVED clean source undecided
