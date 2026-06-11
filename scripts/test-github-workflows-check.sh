@@ -14,6 +14,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   rust:
     steps:
@@ -49,6 +52,9 @@ name: Release Readiness
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   release-gate:
     steps:
@@ -67,6 +73,7 @@ jobs:
       - run: ./scripts/test-roadmap-decision-check.sh
       - run: ./scripts/test-name-collision-decision-check.sh
       - run: ./scripts/test-local-data-decision-check.sh
+      - run: ./scripts/test-workflow-supply-chain-decision-check.sh
       - run: ./scripts/test-github-publication-evidence-check.sh
       - run: ./scripts/test-dependency-review-runner.sh
       - run: ./scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md

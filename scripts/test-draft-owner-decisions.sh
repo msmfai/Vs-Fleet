@@ -28,7 +28,8 @@ for pattern in \
   '^- \[x\] macOS source alpha only\.' \
   '^- \[x\] No public roadmap commitments during alpha\.' \
   '^- \[x\] Use `Fleet` only as a provisional source-alpha working name\.' \
-  '^- \[x\] Document local data locations and manual cleanup for source alpha\.'
+  '^- \[x\] Document local data locations and manual cleanup for source alpha\.' \
+  '^- \[x\] Tagged third-party GitHub Actions are accepted for source alpha,'
 do
   if ! rg -q "$pattern" "$stdout"; then
     echo "FAIL: stdout draft missing expected pattern: $pattern" >&2

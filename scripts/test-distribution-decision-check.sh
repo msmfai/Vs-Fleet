@@ -32,11 +32,11 @@ Decision record status: $status
 
 ## Required Before Binary Distribution
 
-### 22. macOS Signing and Notarization
+### 23. macOS Signing and Notarization
 
 - [$([ "$checked" = "source" ] && echo ' ' || echo x)] Publish unsigned binaries and document Gatekeeper warnings.
 
-### 23. Update Channel
+### 24. Update Channel
 
 - [$([ "$checked" = "source" ] && echo ' ' || echo x)] No auto-update in alpha.
 EOF

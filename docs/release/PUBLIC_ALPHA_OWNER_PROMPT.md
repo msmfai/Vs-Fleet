@@ -191,17 +191,25 @@ is still `TODO`, ambiguous, or only a recommendation.
     Follow-up: run `./scripts/check-local-data-decision.sh` after copying this
     choice into `OWNER_DECISION_RECORD.md`.
 
+22. GitHub Actions supply-chain posture:
+    Recommended alpha default: accept tagged third-party GitHub Actions for the
+    source alpha only with read-only workflow token permissions, no repository
+    secrets, and no publishing credentials.
+    Owner answer:
+    Follow-up: run `./scripts/check-workflow-supply-chain-decision.sh` after
+    copying this choice into `OWNER_DECISION_RECORD.md`.
+
 ## Binary-Only Decisions
 
 These are not required for a source-only alpha. They become required before any
 public app bundle.
 
-22. macOS signing and notarization:
+23. macOS signing and notarization:
     Recommended default: no public binaries until Developer ID signing and
     notarization are automated.
     Owner answer:
 
-23. Update channel:
+24. Update channel:
     Recommended default: no auto-update in alpha.
     Owner answer:
 

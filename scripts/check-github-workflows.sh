@@ -28,6 +28,8 @@ require_file "$release"
 require_text "$ci" '^name:[[:space:]]*CI$' "workflow name CI"
 require_text "$ci" 'pull_request:' "pull_request trigger"
 require_text "$ci" 'push:' "push trigger"
+require_text "$ci" '^permissions:$' "top-level workflow permissions"
+require_text "$ci" '^[[:space:]]+contents:[[:space:]]*read$' "read-only contents permission"
 require_text "$ci" 'cargo fmt --all -- --check' "Rust formatting check"
 require_text "$ci" 'cargo clippy --workspace --all-targets --all-features -- -D warnings' \
   "workspace clippy with warnings denied"
@@ -50,6 +52,8 @@ require_text "$ci" 'pnpm-lock\.yaml' "pnpm cache key includes lockfile"
 
 require_text "$release" '^name:[[:space:]]*Release Readiness$' "workflow name Release Readiness"
 require_text "$release" 'workflow_dispatch:' "manual workflow_dispatch trigger"
+require_text "$release" '^permissions:$' "top-level workflow permissions"
+require_text "$release" '^[[:space:]]+contents:[[:space:]]*read$' "read-only contents permission"
 require_text "$release" './scripts/test-release-check.sh' "release-check self-test"
 require_text "$release" './scripts/test-dependabot-config-check.sh' "Dependabot config self-test"
 require_text "$release" './scripts/test-secret-release-check.sh' "secret exposure self-test"
@@ -74,6 +78,8 @@ require_text "$release" './scripts/test-name-collision-decision-check.sh' \
   "name collision decision self-test"
 require_text "$release" './scripts/test-local-data-decision-check.sh' \
   "local data decision self-test"
+require_text "$release" './scripts/test-workflow-supply-chain-decision-check.sh' \
+  "workflow supply-chain decision self-test"
 require_text "$release" './scripts/test-github-publication-evidence-check.sh' \
   "GitHub publication evidence self-test"
 require_text "$release" './scripts/test-dependency-review-runner.sh' \

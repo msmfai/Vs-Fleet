@@ -25,6 +25,7 @@ write_record() {
   local roadmap_checked='x'
   local name_collision_checked='x'
   local local_data_checked='x'
+  local workflow_supply_checked='x'
 
   case "$distribution" in
     source) source_checked='x' ;;
@@ -176,14 +177,19 @@ Decision record status: $status
 - [$local_data_checked] Document local data locations and manual cleanup for source alpha. Fleet does not promise an automated uninstaller, but public docs identify \`~/.fleet/run\`, \`~/.fleet/mux\`, cleanup commands, and the process ownership boundary.
 - [ ] Other: \`TODO\`
 
+### 22. GitHub Actions Supply-Chain Posture
+
+- [$workflow_supply_checked] Tagged third-party GitHub Actions are accepted for source alpha, but workflows must use read-only \`GITHUB_TOKEN\` permissions, no repository secrets, and no package/release publishing credentials.
+- [ ] Other: \`TODO\`
+
 ## Required Before Binary Distribution
 
-### 22. macOS Signing and Notarization
+### 23. macOS Signing and Notarization
 
 - [$signing_checked] No public binaries until Developer ID signing and notarization are automated.
 - [ ] Other: \`TODO\`
 
-### 23. Update Channel
+### 24. Update Channel
 
 - [$update_checked] No auto-update in alpha.
 - [ ] Other: \`TODO\`
@@ -278,6 +284,12 @@ write_record "$local_data_missing" APPROVED source decided undecided
 perl -0pi -e 's/- \[x\] Document local data locations and manual cleanup for source alpha\./- [ ] Document local data locations and manual cleanup for source alpha./' "$local_data_missing"
 expect_fail_contains "source-only alpha requires a local data decision" "$local_data_missing" \
   "### 21\\. Local Data And Uninstall Policy must have exactly one checked choice; found 0"
+
+workflow_supply_missing="$TMPDIR/workflow-supply-missing.md"
+write_record "$workflow_supply_missing" APPROVED source decided undecided
+perl -0pi -e 's/- \[x\] Tagged third-party GitHub Actions are accepted for source alpha,/- [ ] Tagged third-party GitHub Actions are accepted for source alpha,/' "$workflow_supply_missing"
+expect_fail_contains "source-only alpha requires a workflow supply-chain decision" "$workflow_supply_missing" \
+  "### 22\\. GitHub Actions Supply-Chain Posture must have exactly one checked choice; found 0"
 
 binary_missing="$TMPDIR/binary-missing.md"
 write_record "$binary_missing" APPROVED unsigned decided undecided

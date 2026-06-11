@@ -31,6 +31,7 @@ choices in `docs/release/OWNER_DECISION_RECORD.md` before using this runbook:
 - Public roadmap/non-goals posture.
 - Public name collision and trademark posture.
 - Local data and uninstall policy.
+- GitHub Actions supply-chain posture.
 
 ## Public Visibility
 
@@ -78,6 +79,9 @@ Set these before public visibility:
   VSIX, npm package, crate, Open VSX package, or container image is attached
   unless distribution scope explicitly changes.
 - GitHub Actions is enabled for the release-readiness and source-check workflows.
+- GitHub Actions workflows use the approved supply-chain posture: read-only
+  `GITHUB_TOKEN` permissions, no repository secrets, and no publishing
+  credentials for source alpha.
 - `.github/dependabot.yml` is present and `./scripts/check-dependabot-config.sh
   .github/dependabot.yml` passes before public visibility.
 - `./scripts/check-lockfile-policy.sh` passes before public visibility.
@@ -156,6 +160,7 @@ Record the release custody evidence before the first public tag or pre-release:
    ./scripts/check-doc-links.sh
    ./scripts/check-public-tree-size.sh
    ./scripts/check-lockfile-policy.sh
+   ./scripts/check-workflow-supply-chain-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/check-github-publication-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md "$(git rev-parse HEAD)"
    ./scripts/check-release-custody-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md .
    ./scripts/release-check.sh
@@ -178,6 +183,7 @@ Abort publication if any of these are true:
 - `./scripts/check-doc-links.sh` fails.
 - `./scripts/check-public-tree-size.sh` fails.
 - `./scripts/check-lockfile-policy.sh` fails.
+- `./scripts/check-workflow-supply-chain-decision.sh` fails.
 - The exact public commit differs from the commit recorded in CI or dependency
   review evidence.
 - The selected security reporting channel is not actually available.

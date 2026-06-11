@@ -334,12 +334,29 @@ Current default recommendation: document the manual cleanup contract for source
 alpha. Do not imply that quitting Fleet removes spawned editor data, logs, or
 external sessions.
 
+### 22. GitHub Actions Supply-Chain Posture
+
+Choose how strict the first public alpha is about third-party GitHub Actions,
+workflow token permissions, secrets, and publishing credentials.
+
+- [x] Tagged third-party GitHub Actions are accepted for source alpha, but
+  workflows must use read-only \`GITHUB_TOKEN\` permissions, no repository
+  secrets, and no package/release publishing credentials.
+- [ ] Require every third-party GitHub Action to be pinned by full commit SHA
+  before public visibility.
+- [ ] Other: \`TODO\`
+
+Current default recommendation: accept tagged third-party Actions for source
+alpha only with read-only workflow permissions, no secrets, and no publishing
+credentials. Revisit full SHA pinning before binaries, package publishing, or
+outside-maintainer workflow edits.
+
 ## Required Before Binary Distribution
 
 These do not block a source-only alpha, but they must be decided before any
 public app bundle.
 
-### 22. macOS Signing and Notarization
+### 23. macOS Signing and Notarization
 
 - [ ] No public binaries until Developer ID signing and notarization are
   automated.
@@ -349,7 +366,7 @@ public app bundle.
 Current default recommendation: no public binaries until signing and notarization
 are automated.
 
-### 23. Update Channel
+### 24. Update Channel
 
 - [ ] No auto-update in alpha.
 - [ ] GitHub Releases only.
