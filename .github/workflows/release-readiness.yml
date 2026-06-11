@@ -147,6 +147,9 @@ jobs:
       - name: Public release branch verifier self-test
         run: ./scripts/test-check-public-release-branch.sh
 
+      - name: Public CI evidence generator self-test
+        run: ./scripts/test-generate-public-ci-evidence.sh
+
       - name: Secret release gate self-test
         run: ./scripts/test-secret-release-check.sh
 

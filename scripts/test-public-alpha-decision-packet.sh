@@ -238,6 +238,7 @@ expect_pass "approved clean source-only record" "$clean_source"
 expect_output "approved clean source-only record" 'Release readiness: OWNER DECISIONS COMPLETE'
 expect_output "approved clean source-only record" 'generate-public-branch-evidence\.sh public-alpha HEAD'
 expect_output "approved clean source-only record" 'check-public-release-branch\.sh public-alpha'
+expect_output "approved clean source-only record" 'generate-public-ci-evidence\.sh <branch> <ci-run-url> <release-readiness-run-url> <source-ref>'
 expect_output "approved clean source-only record" 'Contribution intake: require DCO sign-off'
 
 current_source="$TMPDIR/current-source.md"

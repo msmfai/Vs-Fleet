@@ -24,11 +24,12 @@ Do not publish a public alpha until these are true:
 - `./scripts/release-check.sh` passes.
 - CI is green on the exact public branch or commit, including the manual
   "Release Readiness" workflow.
-- `docs/release/PUBLIC_CI_EVIDENCE.md` records the exact commit, branch, CI
-  workflow run, and Release Readiness workflow run for the first public GitHub
-  alpha. This evidence is a release-control artifact; it may differ between the
-  checked commit and the final release-prep commit because committing the
-  evidence changes the commit hash.
+- `./scripts/generate-public-ci-evidence.sh` records the exact commit, branch,
+  CI workflow run, and Release Readiness workflow run in
+  `docs/release/PUBLIC_CI_EVIDENCE.md` for the first public GitHub alpha. This
+  evidence is a release-control artifact; it may differ between the checked
+  commit and the final release-prep commit because committing the evidence
+  changes the commit hash.
 - `docs/release/GITHUB_PUBLICATION_EVIDENCE.md` records the exact GitHub
   repository URL, visibility review, repository settings, security settings,
   and branch-protection review for the first public GitHub alpha. This evidence
@@ -222,13 +223,17 @@ Do not publish a public alpha until these are true:
    public-alpha exception.
 
 11. Run the normal GitHub "CI" workflow and the manual GitHub "Release
-   Readiness" workflow on the exact commit you intend to publish, then update
-   [PUBLIC_CI_EVIDENCE.md](PUBLIC_CI_EVIDENCE.md) with the commit SHA, branch,
-   CI workflow run URL, and Release Readiness workflow run URL. Release
-   Readiness is expected to fail until the owner decision record is approved and
-   the license metadata is applied. If you commit this evidence after the
-   workflows run, the checker permits only this evidence file to differ from the
-   checked commit.
+   Readiness" workflow on the exact commit you intend to publish, then generate
+   [PUBLIC_CI_EVIDENCE.md](PUBLIC_CI_EVIDENCE.md):
+
+   ```sh
+   ./scripts/generate-public-ci-evidence.sh <branch> <ci-run-url> <release-readiness-run-url> <source-ref>
+   ```
+
+   Release Readiness is expected to fail until the owner decision record is
+   approved and the license metadata is applied. If you commit this evidence
+   after the workflows run, the checker permits only this evidence file to
+   differ from the checked commit.
 
 12. Fill `docs/release/GITHUB_PUBLICATION_EVIDENCE.md` with the exact GitHub
    repository URL, repository settings, security settings, and branch-protection
