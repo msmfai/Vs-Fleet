@@ -1,0 +1,76 @@
+name: Release Readiness
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  release-gate:
+    name: Public alpha gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install release gate tools
+        run: |
+          if ! command -v rg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ripgrep
+          fi
+
+      - name: Release hygiene gate
+        run: ./scripts/release-check.sh
+
+      - name: Owner decision gate
+        run: ./scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md
+
+      - name: Verify no generated artifacts are tracked
+        run: |
+          if git ls-files | rg '(^|/)coverage/|(^|/)node_modules/|(^|/)out/|\.vsix$|Fleet\.app/'; then
+            echo "Generated dependency/build output is tracked."
+            exit 1
+          fi
+
+  source-checks:
+    name: Source alpha checks
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Core Rust checks
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
+          cargo test --workspace --all-targets --all-features
+
+      - name: Fleet bridge checks
+        run: |
+          cd packages/fleet-bridge
+          npm ci
+          npm run build
+
+      - name: Fleet host checks
+        run: |
+          cd crates/fleet-host
+          cargo fmt -- --check
+          cargo test
+          ./bundle.sh release
+
+      - name: Fleet extension checks
+        run: |
+          cd packages/extension
+          npm ci
+          npm test

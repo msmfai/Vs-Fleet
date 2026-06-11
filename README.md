@@ -15,6 +15,7 @@ license, artifact, security, and support decisions tracked in:
 - [Alpha release checklist](docs/release/ALPHA_RELEASE_CHECKLIST.md)
 - [Quickstart](docs/QUICKSTART.md)
 - [Architecture overview](docs/ARCHITECTURE.md)
+- [Release process](docs/release/RELEASE_PROCESS.md)
 
 The long-form product and architecture spec lives in
 [docs/ENGINEERING_SPEC.md](docs/ENGINEERING_SPEC.md).

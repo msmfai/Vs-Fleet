@@ -12,7 +12,8 @@ Do not publish a public alpha until these are true:
 - A root `LICENSE` file exists.
 - Rust and npm package metadata no longer declare `UNLICENSED`.
 - `./scripts/release-check.sh` passes.
-- CI is green on the exact public branch or commit.
+- CI is green on the exact public branch or commit, including the manual
+  "Release Readiness" workflow.
 - Generated artifacts, local logs, screenshots, VSIX files, app bundles, and
   machine-specific paths are not tracked.
 - GitHub Private Vulnerability Reporting is enabled, or `SECURITY.md` names a
@@ -30,7 +31,14 @@ Do not publish a public alpha until these are true:
    cargo test --workspace --all-targets --all-features
    ```
 
-3. Run the standalone host checks on macOS:
+3. Build the Fleet bridge package. The host bundle step packages this VSIX, so
+   this must happen before `./bundle.sh release` on a fresh checkout:
+
+   ```sh
+   ( cd packages/fleet-bridge && npm ci && npm run build )
+   ```
+
+4. Run the standalone host checks on macOS:
 
    ```sh
    (
@@ -45,23 +53,26 @@ Do not publish a public alpha until these are true:
    unsigned `Fleet.app` bundle to a public release unless the binary distribution
    decision has explicitly changed.
 
-4. Run the JavaScript checks:
+5. Run the remaining JavaScript checks:
 
    ```sh
-   ( cd packages/fleet-bridge && npm ci && npm run build )
    ( cd packages/extension && npm ci && npm test )
    ```
 
    If using the CI path instead, require the `pnpm -r build` and `pnpm -r test`
    jobs to pass on GitHub.
 
-5. Run the public release hygiene gate:
+6. Run the public release hygiene gate:
 
    ```sh
    ./scripts/release-check.sh
    ```
 
-6. Verify the public tree has no tracked generated artifacts:
+7. Run the dependency review in
+   [DEPENDENCY_REVIEW.md](DEPENDENCY_REVIEW.md), and record any accepted
+   findings in the release notes.
+
+8. Verify the public tree has no tracked generated artifacts:
 
    ```sh
    git ls-files | rg '(^|/)coverage/|(^|/)node_modules/|(^|/)out/|\.vsix$|Fleet\.app/'
@@ -69,7 +80,11 @@ Do not publish a public alpha until these are true:
 
    The command should print nothing.
 
-7. Create a signed git tag after checks pass:
+9. Run the manual GitHub "Release Readiness" workflow on the exact commit you
+   intend to publish. It is expected to fail until the owner decision record is
+   approved and the license metadata is applied.
+
+10. Create a signed git tag after checks pass:
 
    ```sh
    git tag -s v0.1.0-alpha.1 -m "Fleet v0.1.0-alpha.1"
@@ -78,7 +93,7 @@ Do not publish a public alpha until these are true:
    Use an annotated tag if signing is not configured, but record that choice in
    the release notes.
 
-8. Push the tag and create a GitHub release marked pre-release. The release
+11. Push the tag and create a GitHub release marked pre-release. The release
    should be source-only unless binary distribution has been explicitly approved.
 
 ## First Public GitHub Publish

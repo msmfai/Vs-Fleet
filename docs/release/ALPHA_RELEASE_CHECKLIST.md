@@ -37,7 +37,9 @@ closed or explicitly accepted.
 - [x] Add a release process for source tags and app bundles.
 - [x] Add issue templates for bug reports and alpha feedback.
 - [x] Add a code of conduct if you want public contributions.
+- [x] Add a manual release-readiness CI workflow for the exact public ref.
 - [ ] Run CI on the exact public branch after artifact cleanup.
+- [ ] Run dependency review for the exact public branch.
 
 ## Current evidence from the repository
 
@@ -50,6 +52,8 @@ closed or explicitly accepted.
   template are present.
 - `docs/QUICKSTART.md`, `docs/ARCHITECTURE.md`, and
   `docs/release/RELEASE_PROCESS.md` are present.
+- `.github/workflows/release-readiness.yml` and
+  `docs/release/DEPENDENCY_REVIEW.md` are present.
 - `docs/release/OWNER_DECISION_RECORD.md` is present but still marked
   `PENDING`; `scripts/release-check.sh` requires `APPROVED` before public
   visibility.
