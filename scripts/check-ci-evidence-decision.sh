@@ -25,7 +25,7 @@ if ! rg -q '^Decision record status: APPROVED$' "$owner_record"; then
 fi
 
 ci_block="$(
-  sed -n '/^### 7\. Public CI Evidence$/,/^### 8\. Privacy And Telemetry Posture$/p' "$owner_record"
+  sed -n '/^### 8\. Public CI Evidence$/,/^### 9\. Privacy And Telemetry Posture$/p' "$owner_record"
 )"
 
 checked_count="$(printf '%s\n' "$ci_block" | rg -c '^- \[x\] ' || true)"

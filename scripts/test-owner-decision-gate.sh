@@ -62,50 +62,58 @@ Decision record status: $status
 | Open VSX publisher | fleet-team |
 | macOS bundle id | dev.fleet.host |
 
-### 4. Distribution Scope
+### 4. Alpha Scope
+
+- [x] Local macOS Fleet host plus local \`code serve-web\` sessions, Fleet bridge,
+  Fleet reporter, CLI, and embedded local Hub. Remote, SSH, Docker/container,
+  visual probe, and eval harness paths remain development infrastructure, not
+  public support commitments.
+- [ ] Other: \`TODO\`
+
+### 5. Distribution Scope
 
 - [$source_checked] Source-only alpha. No public app bundle, crates.io, npm, Open VSX, VS Code Marketplace, or container image publishing.
 - [$unsigned_checked] Source plus unsigned macOS app bundle.
 - [ ] Other: \`TODO\`
 
-### 5. Security Reporting Channel
+### 6. Security Reporting Channel
 
 - [x] Enable GitHub Private Vulnerability Reporting.
 - [ ] Other: \`TODO\`
 
-### 6. Contribution Intake
+### 7. Contribution Intake
 
 - [x] Accept small focused PRs under the chosen project license using the PR template certification.
 - [ ] Other: \`TODO\`
 
-### 7. Public CI Evidence
+### 8. Public CI Evidence
 
 - [x] Require GitHub Actions green on the exact branch/commit before public visibility.
 - [ ] Other: \`TODO\`
 
-### 8. Privacy And Telemetry Posture
+### 9. Privacy And Telemetry Posture
 
 - [x] No telemetry by default. Local logs and artifacts may contain workspace paths, local URLs, session labels, process command lines, and editor state; users must scrub them before sharing.
 - [ ] Other: \`TODO\`
 
-### 9. Dependency Review Evidence
+### 10. Dependency Review Evidence
 
 - [x] Run the dependency review commands in \`docs/release/DEPENDENCY_REVIEW.md\` and record findings in the release notes.
 - [ ] Other: \`TODO\`
 
 ## Required Before Binary Distribution
 
-### 10. macOS Signing and Notarization
+### 11. macOS Signing and Notarization
 
 - [$signing_checked] No public binaries until Developer ID signing and notarization are automated.
 - [ ] Other: \`TODO\`
 
-### 11. Update Channel
+### 12. Update Channel
 
 - [$update_checked] No auto-update in alpha.
 - [ ] Other: \`TODO\`
 
-### 12. Branding Stability
+### 13. Branding Stability
 
 - [$branding_checked] \`Fleet\` name and current icon are alpha placeholders.
 - [ ] Other: \`TODO\`

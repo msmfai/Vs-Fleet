@@ -16,7 +16,7 @@ Decision record status: $status
 
 ## Required Before Public GitHub Visibility
 
-### 6. Contribution Intake
+### 7. Contribution Intake
 
 - [$([ "$checked" = "accept" ] && echo x || echo ' ')] Accept small focused PRs under the chosen project license using the PR
   template certification.
@@ -24,7 +24,7 @@ Decision record status: $status
 - [$([ "$checked" = "closed" ] && echo x || echo ' ')] Keep code PRs closed; accept issues and docs feedback only.
 - [$([ "$checked" = "other" ] && echo x || echo ' ')] Other: \`Maintainer invitation only\`
 
-### 7. Public CI Evidence
+### 8. Public CI Evidence
 EOF
 }
 
