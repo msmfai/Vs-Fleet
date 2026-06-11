@@ -67,6 +67,18 @@ EOF
 - local `code serve-web` sessions
 - container/remote deployment as a supported user path is excluded
 EOF
+  mkdir -p "$root/containers/fleet-env/eval"
+  cat >"$root/containers/fleet-env/eval/README.md" <<'EOF'
+# Fleet behaviour-test suite
+
+## Public alpha support boundary
+
+This directory is development and release-verification infrastructure.
+Containerized evals, Docker setup, screenshot review tooling, and
+remote/container Fleet workflows are not supported public alpha user paths.
+The supported source-alpha workflow is the local macOS Fleet host with local
+user-provided `code serve-web` sessions.
+EOF
 }
 
 expect_pass() {
@@ -101,6 +113,11 @@ missing_boundary="$TMPDIR/missing-boundary"
 write_local_scope_docs "$missing_boundary"
 printf '# Quickstart\n\nlocal macOS and local code serve-web only\n' >"$missing_boundary/docs/QUICKSTART.md"
 expect_fail "missing remote/container boundary is rejected" "$owner_local" "$missing_boundary"
+
+missing_eval_boundary="$TMPDIR/missing-eval-boundary"
+write_local_scope_docs "$missing_eval_boundary"
+printf '# Eval\n\nContainer eval runner.\n' >"$missing_eval_boundary/containers/fleet-env/eval/README.md"
+expect_fail "missing eval harness non-support boundary is rejected" "$owner_local" "$missing_eval_boundary"
 
 owner_broad="$TMPDIR/owner-broad.md"
 broad_root="$TMPDIR/broad-root"
