@@ -1,8 +1,13 @@
 # Fleet Host Artifacts
 
-This directory is the source-controlled home for host-side Fleet visual probes.
+This directory is the local home for host-side Fleet visual probes. The probe
+outputs are intentionally ignored for public source release because they can
+contain local paths, process command lines, local URLs, screenshots, and other
+machine-specific state.
+
 Generated keepalive scratch runs go under ignored `keepalive/<timestamp>/`.
-Promoted review evidence goes under `keepalive-reviewed/<date>/` and includes:
+Local promoted review evidence can go under ignored `keepalive-reviewed/<date>/`
+and includes:
 
 - `host-keepalive.json`: review-server-compatible report;
 - `screenshots/*.png`: direct Fleet-window captures tagged with PNG metadata;
@@ -11,7 +16,7 @@ Promoted review evidence goes under `keepalive-reviewed/<date>/` and includes:
 - `fleet-host.log`: host stdout/stderr for bridge/editor lifecycle evidence;
 - `rss.json` and `rss.txt`: process RSS snapshot.
 
-Browse a run with:
+Browse a local run with:
 
 ```sh
 node containers/fleet-env/eval/scripts/review-server.mjs \
@@ -30,3 +35,7 @@ Mac titlebar regression captures should note `FLEET_MACOS_TITLEBAR_STYLE`.
 Fleet defaults to `transparent` so child VS Code webviews do not render under the
 native titlebar. Set `FLEET_MACOS_TITLEBAR_STYLE=overlay` only to reproduce or
 compare the stale tab/titlebar strip behavior.
+
+If a visual artifact is worth committing, curate it first: remove raw logs/RSS,
+strip local absolute paths, and prefer a small documented screenshot over a whole
+run directory.

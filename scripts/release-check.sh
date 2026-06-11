@@ -3,11 +3,11 @@ set -euo pipefail
 
 fail=0
 
-check_absent() {
+check_tracked_absent() {
   local pattern=$1
   local description=$2
   shift 2
-  if rg -n "$pattern" "$@" >/tmp/fleet-release-check.$$ 2>/dev/null; then
+  if git grep -n -E "$pattern" -- "$@" ':(exclude)scripts/release-check.sh' >/tmp/fleet-release-check.$$ 2>/dev/null; then
     echo "FAIL: $description"
     sed -n '1,40p' /tmp/fleet-release-check.$$
     fail=1
@@ -20,22 +20,18 @@ if [ ! -f LICENSE ]; then
   fail=1
 fi
 
-check_absent 'license\s*=\s*"UNLICENSED"|"license"\s*:\s*"UNLICENSED"' \
+check_tracked_absent 'license[[:space:]]*=[[:space:]]*"UNLICENSED"|"license"[[:space:]]*:[[:space:]]*"UNLICENSED"' \
   "package manifests still declare UNLICENSED" \
   Cargo.toml crates packages
 
-check_absent '/Users/|/private/tmp|/var/folders|C:\\\\Users\\\\' \
+local_path_pattern='/private/tmp/|/private/var/folders/[[:alnum:]]{2}/|/var/folders/[[:alnum:]]{2}/|C:\\Users\\[^[:space:]"/]+'
+if [ -n "${USER:-}" ]; then
+  local_path_pattern="/Users/${USER}(/|$)|${local_path_pattern}"
+fi
+
+check_tracked_absent "$local_path_pattern" \
   "tracked release-facing text artifacts contain local absolute paths" \
-  --glob '!target/**' \
-  --glob '!**/node_modules/**' \
-  --glob '!**/out/**' \
-  --glob '!**/*.png' \
-  --glob '!**/*.jpg' \
-  --glob '!**/*.jpeg' \
-  --glob '!**/*.icns' \
-  crates/fleet-host/artifacts \
-  containers/fleet-env/eval/artifacts \
-  packages/extension
+  .
 
 if git ls-files | rg '(^|/)coverage/|(^|/)node_modules/|(^|/)out/|\.vsix$|Fleet\.app/' >/tmp/fleet-release-check.$$; then
   echo "FAIL: generated dependency/build outputs are tracked"

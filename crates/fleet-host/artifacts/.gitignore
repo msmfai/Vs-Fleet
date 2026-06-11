@@ -1,2 +1,4 @@
 /keepalive/*
 !/keepalive/.gitkeep
+/keepalive-reviewed/
+/titlebar/
