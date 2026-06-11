@@ -9,8 +9,8 @@ the exact commit that will be published.
 
 ## Inputs
 
-Record these in `docs/release/OWNER_DECISION_RECORD.md` before using this
-runbook:
+Answer `docs/release/PUBLIC_ALPHA_OWNER_PROMPT.md`, then record the final
+choices in `docs/release/OWNER_DECISION_RECORD.md` before using this runbook:
 
 - License.
 - Public history strategy.
