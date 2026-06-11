@@ -58,8 +58,7 @@ done
 if [ ! -f docs/release/OWNER_DECISION_RECORD.md ]; then
   echo "FAIL: missing docs/release/OWNER_DECISION_RECORD.md"
   fail=1
-elif ! rg -q '^Decision record status: APPROVED$' docs/release/OWNER_DECISION_RECORD.md; then
-  echo "FAIL: owner decision record is not approved"
+elif ! scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md; then
   fail=1
 fi
 
