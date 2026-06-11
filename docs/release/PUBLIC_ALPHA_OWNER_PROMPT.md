@@ -229,5 +229,5 @@ Then run:
 
 ```sh
 ./scripts/release-evidence-status.sh
-./scripts/release-check.sh
+./scripts/check-public-release-branch.sh public-alpha "$(git rev-parse HEAD)"
 ```

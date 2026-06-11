@@ -101,4 +101,47 @@ if (cd "$repo" && ./scripts/prepare-public-branch.sh public-alpha) >"$output" 2>
   exit 1
 fi
 
+if ! rg -q 'FLEET_PUBLIC_BRANCH_FORCE=1' "$output"; then
+  echo "FAIL: existing-branch rejection should explain the force refresh override" >&2
+  cat "$output" >&2
+  exit 1
+fi
+
+printf 'refreshed public tree\n' >"$repo/README.md"
+git -C "$repo" add README.md
+git -C "$repo" commit -q -m "refresh public content"
+refresh_source_commit="$(git -C "$repo" rev-parse HEAD)"
+refresh_source_tree="$(git -C "$repo" rev-parse HEAD^{tree})"
+
+if ! (cd "$repo" && FLEET_PUBLIC_BRANCH_FORCE=1 ./scripts/prepare-public-branch.sh public-alpha HEAD) >"$output" 2>&1; then
+  echo "FAIL: forced public branch refresh should pass" >&2
+  cat "$output" >&2
+  exit 1
+fi
+
+refresh_public_commit="$(git -C "$repo" rev-parse public-alpha)"
+refresh_public_tree="$(git -C "$repo" rev-parse public-alpha^{tree})"
+
+if [ "$refresh_public_commit" = "$public_commit" ]; then
+  echo "FAIL: forced refresh should replace the old public branch commit" >&2
+  exit 1
+fi
+
+if [ "$refresh_public_tree" != "$refresh_source_tree" ]; then
+  echo "FAIL: refreshed public branch tree does not match refreshed source tree" >&2
+  exit 1
+fi
+
+if ! git -C "$repo" log -1 --format=%B public-alpha | rg -q "Source snapshot: $refresh_source_commit"; then
+  echo "FAIL: refreshed public branch commit message must record refreshed source commit" >&2
+  git -C "$repo" log -1 --format=%B public-alpha >&2
+  exit 1
+fi
+
+if ! rg -q 'Refreshed clean public branch: public-alpha' "$output"; then
+  echo "FAIL: forced refresh output should say the branch was refreshed" >&2
+  cat "$output" >&2
+  exit 1
+fi
+
 echo "Public branch preparation tests passed."

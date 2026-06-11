@@ -6,7 +6,9 @@ usage() {
 usage: scripts/prepare-public-branch.sh <new-branch> [source-ref]
 
 Create a new single-commit branch from the tree at source-ref, default HEAD.
-This does not rewrite the current branch or include source-ref's parent history.
+This does not switch branches or include source-ref's parent history.
+
+Existing branches are not overwritten unless FLEET_PUBLIC_BRANCH_FORCE=1 is set.
 EOF
 }
 
@@ -29,8 +31,20 @@ if ! git -C "$root" check-ref-format --branch "$branch" >/dev/null; then
   exit 1
 fi
 
+current_branch="$(git -C "$root" branch --show-current)"
+if [ "$current_branch" = "$branch" ]; then
+  echo "FAIL: refusing to replace the currently checked out branch: $branch" >&2
+  exit 1
+fi
+
+exists=0
 if git -C "$root" show-ref --verify --quiet "refs/heads/$branch"; then
+  exists=1
+fi
+
+if [ "$exists" -eq 1 ] && [ "${FLEET_PUBLIC_BRANCH_FORCE:-0}" != "1" ]; then
   echo "FAIL: branch already exists: $branch" >&2
+  echo "Set FLEET_PUBLIC_BRANCH_FORCE=1 to refresh it." >&2
   exit 1
 fi
 
@@ -44,10 +58,14 @@ commit="$(
     git -C "$root" commit-tree "$tree"
 )"
 
-git -C "$root" branch "$branch" "$commit"
+if [ "$exists" -eq 1 ]; then
+  git -C "$root" branch -f "$branch" "$commit"
+else
+  git -C "$root" branch "$branch" "$commit"
+fi
 
 cat <<EOF
-Created clean public branch: $branch
+$([ "$exists" -eq 1 ] && printf 'Refreshed' || printf 'Created') clean public branch: $branch
 Source commit: $source_commit
 Public root commit: $commit
 
