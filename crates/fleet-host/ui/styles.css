@@ -65,6 +65,10 @@ header {
 .header-actions .spawn,
 .header-actions .tool-button { margin-left: 0; }
 .tool-button { color: var(--muted); font-size: 12px; font-weight: 800; }
+.tool-button.unread-button {
+  width: 54px;
+  font-size: 10.5px;
+}
 .spawn:hover, .tool-button:hover { background: var(--panel-hi); border-color: var(--muted); color: var(--text); }
 .tool-button.attention {
   color: #fbbf24;
