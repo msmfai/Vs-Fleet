@@ -27,6 +27,9 @@ jobs:
       - name: License decision gate self-test
         run: ./scripts/test-license-decision-check.sh
 
+      - name: Namespace decision gate self-test
+        run: ./scripts/test-namespace-decision-check.sh
+
       - name: History release gate self-test
         run: ./scripts/test-history-release-check.sh
 

@@ -40,6 +40,9 @@ closed or explicitly accepted.
   not production-ready.
 - [ ] Confirm package namespaces before publishing anything to crates.io,
   Open-VSX, VS Code Marketplace, npm, or GitHub Releases.
+- [ ] Run `./scripts/check-namespace-decision.sh` after filling the namespace
+  table to verify product name, crate names, npm package names, extension
+  publisher fields, and macOS bundle id agree with the owner record.
 
 ## Recommended before public alpha, but not necessarily blocking
 
@@ -80,6 +83,8 @@ closed or explicitly accepted.
 - `scripts/check-license-decision.sh` validates that the approved owner license
   choice matches the root `LICENSE`, Rust package metadata, npm package
   metadata, and package lockfile root metadata.
+- `scripts/check-namespace-decision.sh` validates that the approved namespace
+  table matches locally-verifiable Rust, npm, Tauri, and extension metadata.
 - Root `README.md` is now a public alpha front door; the long engineering spec
   was moved to `docs/ENGINEERING_SPEC.md`.
 - `crates/fleet-host/artifacts/**` is now a local ignored artifact area; raw
