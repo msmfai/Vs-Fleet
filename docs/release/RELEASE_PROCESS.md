@@ -21,6 +21,8 @@ Do not publish a public alpha until these are true:
   alpha.
 - Generated artifacts, local logs, screenshots, VSIX files, app bundles, and
   machine-specific paths are not tracked.
+- `./scripts/secret-release-check.sh` passes for the tracked tree and git
+  history.
 - `./scripts/history-release-check.sh` passes, or the approved owner decision
   record explicitly accepts current branch history exposure.
 - Rust crate manifests retain `publish = false` and extension package manifests
@@ -128,6 +130,7 @@ Do not publish a public alpha until these are true:
    ./scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"
    ./scripts/check-dependabot-config.sh .github/dependabot.yml
    ./scripts/check-support-decision.sh docs/release/OWNER_DECISION_RECORD.md SUPPORT.md .
+   ./scripts/secret-release-check.sh
    ./scripts/release-check.sh
    ```
 
@@ -155,14 +158,24 @@ Do not publish a public alpha until these are true:
    If it fails, either publish a cleaned/squashed first public branch or approve
    the owner decision record choice that accepts current branch history exposure.
 
-10. Run the normal GitHub "CI" workflow and the manual GitHub "Release
+10. Run the secret exposure audit:
+
+   ```sh
+   ./scripts/secret-release-check.sh
+   ```
+
+   If it fails, remove the secret from the tracked tree and publish rewritten or
+   squashed history. Do not treat credential-looking history as an accepted
+   public-alpha exception.
+
+11. Run the normal GitHub "CI" workflow and the manual GitHub "Release
    Readiness" workflow on the exact commit you intend to publish, then update
    [PUBLIC_CI_EVIDENCE.md](PUBLIC_CI_EVIDENCE.md) with the commit SHA, branch,
    CI workflow run URL, and Release Readiness workflow run URL. Release
    Readiness is expected to fail until the owner decision record is approved and
    the license metadata is applied.
 
-11. Create a signed git tag after checks pass:
+12. Create a signed git tag after checks pass:
 
    ```sh
    git tag -s v0.1.0-alpha.1 -m "Fleet v0.1.0-alpha.1"
@@ -171,18 +184,18 @@ Do not publish a public alpha until these are true:
    Use an annotated tag if signing is not configured, but record that choice in
    the release notes.
 
-12. Draft release notes from
+13. Draft release notes from
    [ALPHA_RELEASE_NOTES_TEMPLATE.md](ALPHA_RELEASE_NOTES_TEMPLATE.md). Replace
    every placeholder with exact commit, scope, verification, dependency review,
    history exposure, security, support, and known-rough-edge evidence.
 
-13. Validate the drafted release notes:
+14. Validate the drafted release notes:
 
    ```sh
    ./scripts/check-release-notes.sh path/to/release-notes.md "$(git rev-parse HEAD)"
    ```
 
-14. Push the tag and create a GitHub release marked pre-release. The release
+15. Push the tag and create a GitHub release marked pre-release. The release
    should be source-only unless binary distribution has been explicitly approved.
    Before changing repository visibility or publishing the pre-release, walk
    [GITHUB_PUBLICATION_RUNBOOK.md](GITHUB_PUBLICATION_RUNBOOK.md) against the

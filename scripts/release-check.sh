@@ -96,6 +96,8 @@ for required in \
   scripts/test-owner-decision-gate.sh \
   scripts/history-release-check.sh \
   scripts/test-history-release-check.sh \
+  scripts/secret-release-check.sh \
+  scripts/test-secret-release-check.sh \
   scripts/check-license-decision.sh \
   scripts/test-license-decision-check.sh \
   scripts/check-namespace-decision.sh \
@@ -145,6 +147,10 @@ if ! scripts/check-github-intake-templates.sh \
   .github/ISSUE_TEMPLATE/alpha_feedback.yml \
   .github/ISSUE_TEMPLATE/config.yml \
   .github/PULL_REQUEST_TEMPLATE.md; then
+  fail=1
+fi
+
+if ! scripts/secret-release-check.sh; then
   fail=1
 fi
 
