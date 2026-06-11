@@ -146,7 +146,7 @@ impl FakeReporter {
             let json = serde_json::to_string(&msg)
                 .with_context(|| format!("fake: failed to serialize step {i}"))?;
             debug!(step = i, label = step.label(), "sending scripted delta");
-            ws.send(Message::Text(json))
+            ws.send(Message::Text(json.into()))
                 .await
                 .with_context(|| format!("fake: failed to send step {i} ({})", step.label()))?;
             info!(step = i, label = step.label(), "scripted delta sent");
@@ -402,7 +402,7 @@ mod tests {
         for step in steps.iter() {
             let msg = FakeReporter::step_to_message(step);
             let json = serde_json::to_string(&msg).unwrap();
-            rep.send(WsMsg::Text(json)).await.unwrap();
+            rep.send(WsMsg::Text(json.into())).await.unwrap();
             // Yield to let the hub's connection task process this message.
             tokio::task::yield_now().await;
             // Extra yield to ensure the hub's mutex is released and state is visible.
@@ -446,7 +446,7 @@ mod tests {
         // Subscribe face.
         let (mut face, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
         let sub = serde_json::to_string(&ClientMessage::Subscribe).unwrap();
-        face.send(WsMsg::Text(sub)).await.unwrap();
+        face.send(WsMsg::Text(sub.into())).await.unwrap();
         match next_event(&mut face).await {
             Event::Snapshot { sessions, .. } => assert!(sessions.is_empty()),
             other => panic!("expected snapshot: {other:?}"),
@@ -463,7 +463,7 @@ mod tests {
         for step in &steps {
             let msg = FakeReporter::step_to_message(step);
             let json = serde_json::to_string(&msg).unwrap();
-            rep.send(WsMsg::Text(json)).await.unwrap();
+            rep.send(WsMsg::Text(json.into())).await.unwrap();
 
             // Read all events the face sees for this step (with a short timeout).
             // A session.upsert → session.added (1 event).
@@ -534,7 +534,7 @@ mod tests {
         for step in &steps {
             let msg = FakeReporter::step_to_message(step);
             let json = serde_json::to_string(&msg).unwrap();
-            rep.send(WsMsg::Text(json)).await.unwrap();
+            rep.send(WsMsg::Text(json.into())).await.unwrap();
             // Yield to let the hub process this message.
             tokio::task::yield_now().await;
             tokio::task::yield_now().await;
@@ -562,8 +562,8 @@ mod tests {
         let (mut face_a, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
         let (mut face_b, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
         let sub = serde_json::to_string(&ClientMessage::Subscribe).unwrap();
-        face_a.send(WsMsg::Text(sub.clone())).await.unwrap();
-        face_b.send(WsMsg::Text(sub)).await.unwrap();
+        face_a.send(WsMsg::Text(sub.clone().into())).await.unwrap();
+        face_b.send(WsMsg::Text(sub.into())).await.unwrap();
 
         let snap_a = next_event(&mut face_a).await;
         let snap_b = next_event(&mut face_b).await;
@@ -593,7 +593,10 @@ mod tests {
         })
         .unwrap();
         let (mut verifier, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-        verifier.send(WsMsg::Text(session_b_json)).await.unwrap();
+        verifier
+            .send(WsMsg::Text(session_b_json.into()))
+            .await
+            .unwrap();
 
         let ev_a = next_event(&mut face_a).await;
         let ev_b = next_event(&mut face_b).await;

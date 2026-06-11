@@ -6,30 +6,29 @@
 //! asserts the file on disk is byte-identical to freshly generated output so it
 //! can never drift unnoticed.
 
-use schemars::schema::RootSchema;
-use schemars::schema_for;
+use schemars::{schema_for, Schema};
 
 use crate::commands::Command;
 use crate::events::Event;
 use crate::objects::{AgentRun, Session};
 
 /// JSON Schema for the [`Event`] envelope (Hub→face).
-pub fn event_schema() -> RootSchema {
+pub fn event_schema() -> Schema {
     schema_for!(Event)
 }
 
 /// JSON Schema for the [`Command`] envelope (face→Hub).
-pub fn command_schema() -> RootSchema {
+pub fn command_schema() -> Schema {
     schema_for!(Command)
 }
 
 /// JSON Schema for a bare [`Session`] object.
-pub fn session_schema() -> RootSchema {
+pub fn session_schema() -> Schema {
     schema_for!(Session)
 }
 
 /// JSON Schema for a bare [`AgentRun`] object.
-pub fn run_schema() -> RootSchema {
+pub fn run_schema() -> Schema {
     schema_for!(AgentRun)
 }
 

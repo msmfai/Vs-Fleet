@@ -73,7 +73,7 @@ impl Connection for WsConnection {
             let json = serde_json::to_string(msg)
                 .map_err(|e| TransportError::Send(format!("serialize: {e}")))?;
             self.ws
-                .send(Message::Text(json))
+                .send(Message::Text(json.into()))
                 .await
                 .map_err(|e| TransportError::Send(e.to_string()))
         })
@@ -133,7 +133,7 @@ mod unix {
                 let json = serde_json::to_string(msg)
                     .map_err(|e| TransportError::Send(format!("serialize: {e}")))?;
                 self.ws
-                    .send(Message::Text(json))
+                    .send(Message::Text(json.into()))
                     .await
                     .map_err(|e| TransportError::Send(e.to_string()))
             })
