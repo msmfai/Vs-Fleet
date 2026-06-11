@@ -51,6 +51,8 @@ Set these before public visibility:
 - Default branch is the exact public branch.
 - Issues are enabled only if the support commitment allows public issue intake.
 - Discussions and wiki are disabled unless deliberately supported.
+- `./scripts/check-github-intake-templates.sh` passes before enabling public
+  issue intake.
 - Packages are not used for the source-only alpha.
 - Releases are allowed for source tags and release notes only; no app bundle,
   VSIX, npm package, crate, Open VSX package, or container image is attached

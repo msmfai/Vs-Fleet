@@ -88,6 +88,8 @@ for required in \
   .github/dependabot.yml \
   scripts/check-github-workflows.sh \
   scripts/test-github-workflows-check.sh \
+  scripts/check-github-intake-templates.sh \
+  scripts/test-github-intake-templates-check.sh \
   scripts/check-dependabot-config.sh \
   scripts/test-dependabot-config-check.sh \
   scripts/check-owner-decisions.sh \
@@ -120,6 +122,7 @@ for required in \
   scripts/check-release-notes.sh \
   scripts/test-release-notes-check.sh \
   .github/PULL_REQUEST_TEMPLATE.md \
+  .github/ISSUE_TEMPLATE/config.yml \
   .github/ISSUE_TEMPLATE/bug_report.yml \
   .github/ISSUE_TEMPLATE/alpha_feedback.yml
 do
@@ -134,6 +137,14 @@ if ! scripts/check-dependabot-config.sh .github/dependabot.yml; then
 fi
 
 if ! scripts/check-github-workflows.sh .github/workflows/ci.yml .github/workflows/release-readiness.yml; then
+  fail=1
+fi
+
+if ! scripts/check-github-intake-templates.sh \
+  .github/ISSUE_TEMPLATE/bug_report.yml \
+  .github/ISSUE_TEMPLATE/alpha_feedback.yml \
+  .github/ISSUE_TEMPLATE/config.yml \
+  .github/PULL_REQUEST_TEMPLATE.md; then
   fail=1
 fi
 

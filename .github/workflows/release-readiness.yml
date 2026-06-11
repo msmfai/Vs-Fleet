@@ -45,6 +45,9 @@ jobs:
       - name: Contribution decision gate self-test
         run: ./scripts/test-contribution-decision-check.sh
 
+      - name: GitHub intake template gate self-test
+        run: ./scripts/test-github-intake-templates-check.sh
+
       - name: Public CI evidence gate self-test
         run: ./scripts/test-ci-evidence-decision-check.sh
 
