@@ -55,6 +55,9 @@ Do not publish a public alpha until these are true:
 - GitHub pre-release notes are drafted from
   [ALPHA_RELEASE_NOTES_TEMPLATE.md](ALPHA_RELEASE_NOTES_TEMPLATE.md), with every
   placeholder replaced.
+- [GITHUB_PUBLICATION_RUNBOOK.md](GITHUB_PUBLICATION_RUNBOOK.md) has been walked
+  for the exact GitHub repository before public visibility or the first public
+  pre-release.
 
 ## Source Alpha Steps
 
@@ -167,6 +170,9 @@ Do not publish a public alpha until these are true:
 
 14. Push the tag and create a GitHub release marked pre-release. The release
    should be source-only unless binary distribution has been explicitly approved.
+   Before changing repository visibility or publishing the pre-release, walk
+   [GITHUB_PUBLICATION_RUNBOOK.md](GITHUB_PUBLICATION_RUNBOOK.md) against the
+   exact GitHub repository settings.
 
 ## First Public GitHub Publish
 

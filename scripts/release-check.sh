@@ -36,7 +36,7 @@ check_tracked_absent "$local_path_pattern" \
 
 check_tracked_absent 'not ready for (a )?(general )?public alpha yet|still blocked for public open-source release|No open-source license has been chosen yet|UNLICENSED' \
   "public release-facing docs still describe unresolved alpha blockers" \
-  README.md docs/QUICKSTART.md docs/release/ALPHA_RELEASE_CHECKLIST.md docs/release/PUBLIC_ALPHA_DECISIONS.md
+  README.md docs/QUICKSTART.md docs/release/ALPHA_RELEASE_CHECKLIST.md docs/release/PUBLIC_ALPHA_DECISIONS.md docs/release/GITHUB_PUBLICATION_RUNBOOK.md
 
 if git ls-files | rg '(^|/)coverage/|(^|/)node_modules/|(^|/)out/|\.vsix$|Fleet\.app/' >/tmp/fleet-release-check.$$; then
   echo "FAIL: generated dependency/build outputs are tracked"
@@ -80,6 +80,7 @@ for required in \
   docs/release/RELEASE_PROCESS.md \
   docs/release/DEPENDENCY_REVIEW.md \
   docs/release/DEPENDENCY_REVIEW_EVIDENCE.md \
+  docs/release/GITHUB_PUBLICATION_RUNBOOK.md \
   docs/release/PUBLIC_CI_EVIDENCE.md \
   docs/release/ALPHA_RELEASE_NOTES_TEMPLATE.md \
   scripts/check-owner-decisions.sh \
