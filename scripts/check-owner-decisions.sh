@@ -8,14 +8,16 @@ if [ ! -f "$file" ]; then
   exit 1
 fi
 
+fail=0
+
 if ! rg -q '^Decision record status: APPROVED$' "$file"; then
   echo "FAIL: owner decision record is not approved"
-  exit 1
+  fail=1
 fi
 
 if rg -n '^- \[x\] Other: `TODO`' "$file"; then
   echo "FAIL: owner decision record has a checked Other choice without a concrete value"
-  exit 1
+  fail=1
 fi
 
 required_start="$(rg -n '^## Required Before Public GitHub Visibility$' "$file" | cut -d: -f1 | head -n1)"
@@ -80,8 +82,10 @@ do
 done
 
 namespace_block="$(printf '%s\n' "$required_block" | sed -n '/^### 3\. Public Namespace$/,/^### 4\. Distribution Scope$/p')"
-if printf '%s\n' "$namespace_block" | rg -n '`TODO`'; then
+namespace_todos="$(printf '%s\n' "$namespace_block" | rg '`TODO`' || true)"
+if [ -n "$namespace_todos" ]; then
   echo "FAIL: Public Namespace table still contains TODO placeholders"
+  printf '%s\n' "$namespace_todos"
   missing_required=1
 fi
 
@@ -109,6 +113,10 @@ if distribution_block="$(section_block "$required_block" "### 4. Distribution Sc
 fi
 
 if [ "$missing_required" -ne 0 ]; then
+  fail=1
+fi
+
+if [ "$fail" -ne 0 ]; then
   exit 1
 fi
 

@@ -132,6 +132,18 @@ expect_fail() {
   fi
 }
 
+expect_fail_contains() {
+  local label=$1
+  local file=$2
+  local pattern=$3
+  expect_fail "$label" "$file"
+  if ! rg -q "$pattern" /tmp/fleet-owner-gate.out; then
+    echo "FAIL: expected failure output for $label to contain: $pattern" >&2
+    cat /tmp/fleet-owner-gate.out >&2
+    exit 1
+  fi
+}
+
 source_only="$TMPDIR/source-only.md"
 write_record "$source_only" APPROVED source undecided
 expect_pass "source-only alpha does not require binary-only decisions" "$source_only"
@@ -146,6 +158,13 @@ expect_pass "public app bundle passes after binary-only decisions are recorded" 
 
 pending="$TMPDIR/pending.md"
 write_record "$pending" PENDING source undecided
-expect_fail "pending records are rejected" "$pending"
+expect_fail_contains "pending records are rejected" "$pending" \
+  "owner decision record is not approved"
+
+pending_missing="$TMPDIR/pending-missing.md"
+write_record "$pending_missing" PENDING source undecided
+perl -0pi -e 's/- \[x\] MIT only\./- [ ] MIT only./' "$pending_missing"
+expect_fail_contains "pending records still report missing choices" "$pending_missing" \
+  "### 1\\. License must have exactly one checked choice; found 0"
 
 echo "Owner decision gate tests passed."
