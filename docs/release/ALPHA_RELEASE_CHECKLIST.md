@@ -50,9 +50,10 @@ visibility.
 - [x] Remove or redact tracked artifacts that include local paths, process
   command lines, raw logs, or failed eval output.
 - [x] Add a redacted secret exposure gate for the tracked tree and git history.
-- [ ] Run `./scripts/secret-release-check.sh` before public visibility; any
-  credential-looking hit must be removed from the tracked tree and public
-  history rather than accepted.
+- [ ] Run `./scripts/secret-release-check.sh` before public visibility, or
+  `./scripts/secret-release-check.sh <public-branch>` for a cleaned first
+  public branch; any credential-looking hit must be removed from the tracked
+  tree and public history rather than accepted.
 - [ ] Run `./scripts/release-check.sh`; it includes
   `./scripts/history-release-check.sh`, `./scripts/secret-release-check.sh`,
   and requires either cleaned history or explicit owner acceptance of current
@@ -63,6 +64,8 @@ visibility.
   Generate `docs/release/PUBLIC_BRANCH_EVIDENCE.md` with
   `./scripts/generate-public-branch-evidence.sh <public-branch> <source-ref> docs/release/PUBLIC_BRANCH_EVIDENCE.md`,
   then run `./scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md <source-ref-sha>`.
+  Run `./scripts/secret-release-check.sh <public-branch>` for the same public
+  ref.
   In the same private clone, run
   `FLEET_RELEASE_HISTORY_REF=<public-branch> ./scripts/release-check.sh` for the
   aggregate gate.
@@ -217,9 +220,10 @@ visibility.
 - `scripts/check-release-notes.sh` validates the filled release notes draft for
   required sections and unresolved placeholders before a GitHub pre-release is
   published.
-- `scripts/secret-release-check.sh` scans the tracked tree and all reachable
-  git history for private-key blocks and common token shapes, reports only
-  redacted commit/path/line findings, and passes on the current scanned refs.
+- `scripts/secret-release-check.sh` scans the tracked tree and, by default, all
+  reachable git history for private-key blocks and common token shapes. Passing
+  a public branch name scopes the history scan to that release ref. Findings
+  report only redacted commit/path/line scope.
 - `docs/release/OWNER_DECISION_RECORD.md` is present but still marked
   `PENDING`; `scripts/release-check.sh` requires `APPROVED` before public
   visibility and now requires a branding stability choice before public alpha.
@@ -308,8 +312,9 @@ visibility.
   artifacts. On the current branch it still fails because prior commits contain
   reviewed host/eval artifacts; publish a cleaned history or explicitly accept
   that exposure in the owner record.
-- `scripts/release-check.sh` also runs `scripts/secret-release-check.sh`; secret
-  exposure is not an owner-accepted exception path.
+- `scripts/release-check.sh` also runs `scripts/secret-release-check.sh` against
+  the same ref as `FLEET_RELEASE_HISTORY_REF`; secret exposure is not an
+  owner-accepted exception path.
 - The GitHub CI workflow exists, but should be re-run after the public tree is
   cleaned.
 

@@ -60,6 +60,14 @@ git -C "$repo" add -u
 git -C "$repo" commit -q -m "remove current secret"
 expect_fail_redacted "removed AWS key remains in history" "$aws_key"
 
+clean_root="$(git -C "$repo" rev-list --max-parents=0 HEAD)"
+git -C "$repo" branch public-alpha "$clean_root"
+if ! (cd "$repo" && ./scripts/secret-release-check.sh public-alpha) >"$output" 2>&1; then
+  echo "FAIL: clean public branch should pass scoped secret scan" >&2
+  cat "$output" >&2
+  exit 1
+fi
+
 history_repo="$TMPDIR/history-repo"
 mkdir -p "$history_repo/scripts"
 cp "$ROOT/scripts/secret-release-check.sh" "$history_repo/scripts/secret-release-check.sh"

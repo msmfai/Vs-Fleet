@@ -56,7 +56,7 @@ Next checks:
   ./scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md $branch
   ./scripts/generate-public-branch-evidence.sh $branch $source_commit docs/release/PUBLIC_BRANCH_EVIDENCE.md
   ./scripts/check-public-branch-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_BRANCH_EVIDENCE.md $source_commit
-  ./scripts/secret-release-check.sh
+  ./scripts/secret-release-check.sh $branch
   FLEET_RELEASE_HISTORY_REF=$branch ./scripts/release-check.sh
 
 Push only after release-check passes:

@@ -221,6 +221,8 @@ exit 1'
 write_script "scripts/history-release-check.sh" 'echo "HISTORY_ARGS:$*"
 echo HISTORY_FAIL
 exit 1'
+write_script "scripts/secret-release-check.sh" 'echo "SECRET_ARGS:$*"
+exit 0'
 
 output_owner_pending="$TMPDIR/release-check-owner-pending.out"
 if (cd "$repo" && FLEET_RELEASE_HISTORY_REF=public-alpha ./scripts/release-check.sh) >"$output_owner_pending" 2>&1; then
@@ -243,6 +245,12 @@ fi
 
 if ! rg -q 'HISTORY_ARGS:docs/release/OWNER_DECISION_RECORD.md public-alpha' "$output_owner_pending"; then
   echo "FAIL: release check did not pass the requested history ref to the history gate" >&2
+  cat "$output_owner_pending" >&2
+  exit 1
+fi
+
+if ! rg -q 'SECRET_ARGS:public-alpha' "$output_owner_pending"; then
+  echo "FAIL: release check did not pass the requested history ref to the secret gate" >&2
   cat "$output_owner_pending" >&2
   exit 1
 fi

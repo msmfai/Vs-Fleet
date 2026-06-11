@@ -77,6 +77,12 @@ if ! rg -q './scripts/generate-public-branch-evidence.sh public-alpha' "$output"
   exit 1
 fi
 
+if ! rg -q './scripts/secret-release-check.sh public-alpha' "$output"; then
+  echo "FAIL: helper output must show the ref-scoped secret release check" >&2
+  cat "$output" >&2
+  exit 1
+fi
+
 if ! (cd "$repo" && ./scripts/history-release-check.sh missing-owner.md public-alpha) >"$TMPDIR/history-public.out" 2>&1; then
   echo "FAIL: public branch history should be clean" >&2
   cat "$TMPDIR/history-public.out" >&2
