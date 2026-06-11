@@ -35,3 +35,11 @@ Required source checks: `TODO`
 Required release checks: `TODO`
 Linear history policy: `TODO`
 Signed commit policy: `TODO`
+
+## Release Custody
+
+Release authority: `TODO`
+Tag protection or accepted unavailable reason: `TODO`
+Release artifact custody: `TODO`
+Package publishing credentials: `TODO`
+Emergency removal owner: `TODO`

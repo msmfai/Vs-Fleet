@@ -215,12 +215,27 @@ Current default recommendation: open only the scoped bug and alpha-feedback
 templates for source alpha; keep blank issues disabled and keep Discussions off
 until there is maintainer capacity for broad community support.
 
+### 16. Release Custody And Maintainer Authority
+
+Choose who can create public release artifacts or change public repository
+controls during alpha.
+
+- [ ] Single-maintainer alpha. Only the repository owner or named maintainer may
+  push release tags, create GitHub releases, change repository settings, or
+  publish packages.
+- [ ] Multi-maintainer governance before public alpha.
+- [ ] Other: `TODO`
+
+Current default recommendation: single-maintainer alpha with source tags and
+release notes only, no package publishing credentials, and explicit evidence for
+tag protection or an accepted unavailable/deferred reason.
+
 ## Required Before Binary Distribution
 
 These do not block a source-only alpha, but they must be decided before any
 public app bundle.
 
-### 16. macOS Signing and Notarization
+### 17. macOS Signing and Notarization
 
 - [ ] No public binaries until Developer ID signing and notarization are
   automated.
@@ -230,7 +245,7 @@ public app bundle.
 Current default recommendation: no public binaries until signing and notarization
 are automated.
 
-### 17. Update Channel
+### 18. Update Channel
 
 - [ ] No auto-update in alpha.
 - [ ] GitHub Releases only.

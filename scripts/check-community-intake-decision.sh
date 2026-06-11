@@ -20,7 +20,7 @@ if ! rg -q '^Decision record status: APPROVED$' "$owner_record"; then
 fi
 
 community_block="$(
-  sed -n '/^### 15\. Community Intake And Moderation$/,/^## Required Before Binary Distribution$/p' "$owner_record"
+  sed -n '/^### 15\. Community Intake And Moderation$/,/^### 16\. Release Custody And Maintainer Authority$/p' "$owner_record"
 )"
 
 checked_count="$(printf '%s\n' "$community_block" | rg -c '^- \[x\] ' || true)"

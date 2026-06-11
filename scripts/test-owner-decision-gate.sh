@@ -19,6 +19,7 @@ write_record() {
   local branding_checked=' '
   local versioning_checked='x'
   local community_checked='x'
+  local custody_checked='x'
 
   case "$distribution" in
     source) source_checked='x' ;;
@@ -140,14 +141,19 @@ Decision record status: $status
 - [$community_checked] Open public issues only for scoped bug reports and alpha feedback; keep blank issues disabled and keep discussions off unless explicitly enabled later.
 - [ ] Other: \`TODO\`
 
+### 16. Release Custody And Maintainer Authority
+
+- [$custody_checked] Single-maintainer alpha. Only the repository owner or named maintainer may push release tags, create GitHub releases, change repository settings, or publish packages.
+- [ ] Other: \`TODO\`
+
 ## Required Before Binary Distribution
 
-### 16. macOS Signing and Notarization
+### 17. macOS Signing and Notarization
 
 - [$signing_checked] No public binaries until Developer ID signing and notarization are automated.
 - [ ] Other: \`TODO\`
 
-### 17. Update Channel
+### 18. Update Channel
 
 - [$update_checked] No auto-update in alpha.
 - [ ] Other: \`TODO\`
@@ -206,6 +212,12 @@ write_record "$community_missing" APPROVED source decided undecided
 perl -0pi -e 's/- \[x\] Open public issues only/- [ ] Open public issues only/' "$community_missing"
 expect_fail_contains "source-only alpha requires a community intake decision" "$community_missing" \
   "### 15\\. Community Intake And Moderation must have exactly one checked choice; found 0"
+
+custody_missing="$TMPDIR/custody-missing.md"
+write_record "$custody_missing" APPROVED source decided undecided
+perl -0pi -e 's/- \[x\] Single-maintainer alpha\./- [ ] Single-maintainer alpha./' "$custody_missing"
+expect_fail_contains "source-only alpha requires a release custody decision" "$custody_missing" \
+  "### 16\\. Release Custody And Maintainer Authority must have exactly one checked choice; found 0"
 
 binary_missing="$TMPDIR/binary-missing.md"
 write_record "$binary_missing" APPROVED unsigned decided undecided

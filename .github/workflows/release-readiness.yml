@@ -87,6 +87,9 @@ jobs:
       - name: Community intake decision gate self-test
         run: ./scripts/test-community-intake-decision-check.sh
 
+      - name: Release custody decision gate self-test
+        run: ./scripts/test-release-custody-decision-check.sh
+
       - name: GitHub publication evidence gate self-test
         run: ./scripts/test-github-publication-evidence-check.sh
 

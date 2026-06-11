@@ -25,6 +25,9 @@ choices in `docs/release/OWNER_DECISION_RECORD.md` before using this runbook:
 - Dependency review evidence.
 - Support commitment.
 - Branding stability for the public alpha name and icon.
+- Versioning and compatibility commitment.
+- Community intake and moderation posture.
+- Release custody and maintainer authority.
 
 ## Public Visibility
 
@@ -111,6 +114,20 @@ successful, skipped, or neutral before merging.
 
 Reference: <https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches>
 
+## Release Custody
+
+Record the release custody evidence before the first public tag or pre-release:
+
+- Only the approved release authority may push source tags or create GitHub
+  releases.
+- Tag protection is enabled if available, or the evidence record names the
+  accepted unavailable/deferred reason.
+- GitHub releases contain source tags and release notes only unless the
+  distribution decision explicitly approves binaries or packages.
+- Package publishing credentials do not exist, are disabled, or are outside the
+  repository for source-only alpha.
+- The emergency removal owner is named in the publication evidence.
+
 ## Final Publish Sequence
 
 1. Update `docs/release/OWNER_DECISION_RECORD.md` to `APPROVED`.
@@ -122,7 +139,8 @@ Reference: <https://docs.github.com/en/repositories/configuring-branches-and-mer
    `docs/release/PUBLIC_CI_EVIDENCE.md`.
 6. Record exact repository settings evidence in
    `docs/release/GITHUB_PUBLICATION_EVIDENCE.md`, including visibility review,
-   issue/discussion/wiki settings, security settings, and branch protection.
+   issue/discussion/wiki settings, security settings, branch protection, and
+   release custody.
 7. Run:
 
    ```sh
@@ -131,6 +149,7 @@ Reference: <https://docs.github.com/en/repositories/configuring-branches-and-mer
    ./scripts/check-public-tree-size.sh
    ./scripts/check-lockfile-policy.sh
    ./scripts/check-github-publication-evidence.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md "$(git rev-parse HEAD)"
+   ./scripts/check-release-custody-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/GITHUB_PUBLICATION_EVIDENCE.md .
    ./scripts/release-check.sh
    ./scripts/check-release-notes.sh path/to/release-notes.md "$(git rev-parse HEAD)"
    ```
@@ -158,3 +177,6 @@ Abort publication if any of these are true:
   support that the owner decision record did not approve.
 - The history audit finds local artifacts and the owner did not explicitly
   accept that exposure.
+- Release tags, GitHub releases, repository settings, or package publishing
+  credentials are controlled by anyone outside the approved release custody
+  decision.
