@@ -125,6 +125,8 @@ for required in \
   scripts/test-privacy-decision-check.sh \
   scripts/check-dependency-review-decision.sh \
   scripts/test-dependency-review-decision-check.sh \
+  scripts/run-dependency-review.sh \
+  scripts/test-dependency-review-runner.sh \
   scripts/check-support-decision.sh \
   scripts/test-support-decision-check.sh \
   scripts/test-release-check.sh \

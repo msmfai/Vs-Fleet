@@ -49,8 +49,8 @@ closed or explicitly accepted.
   `./scripts/history-release-check.sh`, `./scripts/secret-release-check.sh`,
   and requires either cleaned history or explicit owner acceptance of current
   branch history exposure.
-- [ ] Run dependency review for the exact public branch, or explicitly accept
-  skipping it in the owner decision record.
+- [ ] Run `./scripts/run-dependency-review.sh` for the exact public branch, or
+  explicitly accept skipping dependency review in the owner decision record.
 - [ ] Record dependency review evidence in
   `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` and run
   `./scripts/check-dependency-review-decision.sh`.

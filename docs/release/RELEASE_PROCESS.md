@@ -59,6 +59,9 @@ Do not publish a public alpha until these are true:
   required source-alpha checks.
 - `./scripts/check-privacy-decision.sh docs/release/OWNER_DECISION_RECORD.md .`
   passes.
+- `./scripts/run-dependency-review.sh` generates
+  `docs/release/DEPENDENCY_REVIEW_EVIDENCE.md` for the exact public commit when
+  the owner chooses to run dependency review.
 - `./scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"`
   passes.
 - `./scripts/check-dependabot-config.sh .github/dependabot.yml` passes, so the
@@ -137,6 +140,7 @@ Do not publish a public alpha until these are true:
    ./scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"
    ./scripts/check-github-workflows.sh .github/workflows/ci.yml .github/workflows/release-readiness.yml
    ./scripts/check-privacy-decision.sh docs/release/OWNER_DECISION_RECORD.md .
+   ./scripts/run-dependency-review.sh
    ./scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"
    ./scripts/check-dependabot-config.sh .github/dependabot.yml
    ./scripts/check-lockfile-policy.sh
@@ -145,11 +149,11 @@ Do not publish a public alpha until these are true:
    ./scripts/release-check.sh
    ```
 
-7. Run the dependency review in
-   [DEPENDENCY_REVIEW.md](DEPENDENCY_REVIEW.md), and record any accepted
-   findings in [DEPENDENCY_REVIEW_EVIDENCE.md](DEPENDENCY_REVIEW_EVIDENCE.md)
-   and the release notes. If this is deliberately skipped for the first public
-   source alpha, record that accepted risk in
+7. Review the generated
+   [DEPENDENCY_REVIEW_EVIDENCE.md](DEPENDENCY_REVIEW_EVIDENCE.md), and record
+   any accepted findings in the release notes. If dependency review is
+   deliberately skipped for the first public source alpha, record that accepted
+   risk in
    [OWNER_DECISION_RECORD.md](OWNER_DECISION_RECORD.md).
 
 8. Verify the public tree has no tracked generated artifacts:
