@@ -54,6 +54,21 @@ fi
 
 commit="$(git -C "$root" rev-parse HEAD)"
 reviewed_date="$(date -u +%Y-%m-%d)"
+release_control_path=""
+case "$out" in
+  "$root"/*) release_control_path="${out#"$root/"}" ;;
+  /*)
+    if [ -d "$(dirname "$out")" ]; then
+      physical_root="$(cd "$root" && pwd -P)"
+      physical_out="$(cd "$(dirname "$out")" && pwd -P)/$(basename "$out")"
+      case "$physical_out" in
+        "$physical_root"/*) release_control_path="${physical_out#"$physical_root/"}" ;;
+        *) release_control_path="" ;;
+      esac
+    fi
+    ;;
+  *) release_control_path="$out" ;;
+esac
 
 mkdir -p "$(dirname "$out")"
 cat >"$out" <<EOF
@@ -68,6 +83,7 @@ become the first public GitHub alpha. Do not mark the owner decision record
 
 Commit: \`$commit\`
 Reviewed date: \`$reviewed_date\`
+Release-control evidence file: \`${release_control_path:-not tracked in this worktree}\`
 
 ## Command Evidence
 

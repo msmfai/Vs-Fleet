@@ -85,6 +85,7 @@ for pattern in \
   '^fleet-bridge npm audit: `pass`$' \
   '^extension npm audit: `pass`$' \
   '^generated artifact check: `pass`$' \
+  '^Release-control evidence file: `../.*DEPENDENCY_REVIEW_EVIDENCE.md`$|^Release-control evidence file: `not tracked in this worktree`$' \
   '^Accepted findings: `none`$'
 do
   if ! rg -q "$pattern" "$evidence"; then

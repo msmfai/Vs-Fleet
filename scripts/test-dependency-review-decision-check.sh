@@ -135,4 +135,55 @@ owner_pending="$TMPDIR/owner-pending.md"
 write_owner_record "$owner_pending" PENDING run
 expect_fail "pending owner record is rejected" "$owner_pending" "$evidence_run"
 
+repo="$TMPDIR/repo"
+mkdir -p "$repo/docs/release"
+git -C "$repo" init -q
+git -C "$repo" config user.email "release-test@example.invalid"
+git -C "$repo" config user.name "Fleet Release Test"
+
+printf '# Fleet fixture\n' >"$repo/README.md"
+write_owner_record "$repo/docs/release/OWNER_DECISION_RECORD.md" APPROVED run
+git -C "$repo" add .
+git -C "$repo" commit -q -m "reviewed source"
+reviewed_commit="$(git -C "$repo" rev-parse HEAD)"
+
+write_evidence "$repo/docs/release/DEPENDENCY_REVIEW_EVIDENCE.md" PASS "$reviewed_commit" \
+  "Reviewed date: 2026-06-11
+Release-control evidence file: docs/release/DEPENDENCY_REVIEW_EVIDENCE.md
+cargo tree: pass
+cargo metadata --locked: pass
+fleet-host cargo metadata --locked: pass
+lockfile policy: pass
+fleet-bridge npm audit: pass
+extension npm audit: pass
+generated artifact check: pass
+Accepted findings: none"
+
+git -C "$repo" add docs/release/DEPENDENCY_REVIEW_EVIDENCE.md
+git -C "$repo" commit -q -m "record dependency review evidence"
+evidence_commit="$(git -C "$repo" rev-parse HEAD)"
+
+if ! (cd "$repo" && "$ROOT/scripts/check-dependency-review-decision.sh" \
+  docs/release/OWNER_DECISION_RECORD.md \
+  docs/release/DEPENDENCY_REVIEW_EVIDENCE.md \
+  "$evidence_commit") >"$TMPDIR/evidence-commit.out" 2>&1; then
+  echo "FAIL: evidence commit should pass when only the dependency evidence file differs" >&2
+  cat "$TMPDIR/evidence-commit.out" >&2
+  exit 1
+fi
+
+printf 'unexpected dependency-reviewed payload drift\n' >"$repo/README.md"
+git -C "$repo" add README.md
+git -C "$repo" commit -q -m "drift reviewed payload"
+drift_commit="$(git -C "$repo" rev-parse HEAD)"
+
+if (cd "$repo" && "$ROOT/scripts/check-dependency-review-decision.sh" \
+  docs/release/OWNER_DECISION_RECORD.md \
+  docs/release/DEPENDENCY_REVIEW_EVIDENCE.md \
+  "$drift_commit") >"$TMPDIR/evidence-drift.out" 2>&1; then
+  echo "FAIL: evidence check should reject reviewed payload drift outside the evidence file" >&2
+  cat "$TMPDIR/evidence-drift.out" >&2
+  exit 1
+fi
+
 echo "Dependency review decision check tests passed."
