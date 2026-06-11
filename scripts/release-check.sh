@@ -108,6 +108,7 @@ for required in \
   scripts/test-dependency-review-decision-check.sh \
   scripts/check-support-decision.sh \
   scripts/test-support-decision-check.sh \
+  scripts/test-release-check.sh \
   scripts/check-release-notes.sh \
   scripts/test-release-notes-check.sh \
   .github/workflows/release-readiness.yml \
@@ -126,30 +127,43 @@ if [ ! -f docs/release/OWNER_DECISION_RECORD.md ]; then
   fail=1
 elif ! scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md; then
   fail=1
-elif ! scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md; then
-  fail=1
-elif ! scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
-  fail=1
-elif ! scripts/check-namespace-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
-  fail=1
-elif ! scripts/check-alpha-scope-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
-  fail=1
-elif ! scripts/check-editor-server-boundary-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
-  fail=1
-elif ! scripts/check-distribution-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
-  fail=1
-elif ! scripts/check-security-reporting-decision.sh docs/release/OWNER_DECISION_RECORD.md SECURITY.md; then
-  fail=1
-elif ! scripts/check-contribution-decision.sh docs/release/OWNER_DECISION_RECORD.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md; then
-  fail=1
-elif ! scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"; then
-  fail=1
-elif ! scripts/check-privacy-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
-  fail=1
-elif ! scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"; then
-  fail=1
-elif ! scripts/check-support-decision.sh docs/release/OWNER_DECISION_RECORD.md SUPPORT.md .; then
-  fail=1
+else
+  if ! scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md; then
+    fail=1
+  fi
+  if ! scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
+    fail=1
+  fi
+  if ! scripts/check-namespace-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
+    fail=1
+  fi
+  if ! scripts/check-alpha-scope-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
+    fail=1
+  fi
+  if ! scripts/check-editor-server-boundary-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
+    fail=1
+  fi
+  if ! scripts/check-distribution-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
+    fail=1
+  fi
+  if ! scripts/check-security-reporting-decision.sh docs/release/OWNER_DECISION_RECORD.md SECURITY.md; then
+    fail=1
+  fi
+  if ! scripts/check-contribution-decision.sh docs/release/OWNER_DECISION_RECORD.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md; then
+    fail=1
+  fi
+  if ! scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"; then
+    fail=1
+  fi
+  if ! scripts/check-privacy-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
+    fail=1
+  fi
+  if ! scripts/check-dependency-review-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/DEPENDENCY_REVIEW_EVIDENCE.md "$(git rev-parse HEAD)"; then
+    fail=1
+  fi
+  if ! scripts/check-support-decision.sh docs/release/OWNER_DECISION_RECORD.md SUPPORT.md .; then
+    fail=1
+  fi
 fi
 
 if [ "$fail" -ne 0 ]; then
