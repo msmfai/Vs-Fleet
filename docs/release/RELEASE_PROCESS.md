@@ -26,6 +26,8 @@ Do not publish a public alpha until these are true:
 - GitHub Private Vulnerability Reporting is enabled, or `SECURITY.md` names a
   private contact channel.
 - Public namespaces are confirmed, even if packages are not published yet.
+- `./scripts/check-namespace-decision.sh docs/release/OWNER_DECISION_RECORD.md .`
+  passes.
 - Dependency review has been run for the exact public commit, or the approved
   owner decision record explicitly accepts publishing without it.
 - GitHub pre-release notes are drafted from
@@ -78,6 +80,7 @@ Do not publish a public alpha until these are true:
 
    ```sh
    ./scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .
+   ./scripts/check-namespace-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/release-check.sh
    ```
 
