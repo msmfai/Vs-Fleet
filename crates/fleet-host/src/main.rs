@@ -247,6 +247,41 @@ fn main() {
                 run_rail_action(app, "__fleetJumpNextUnread");
             } else if id == "rail:cycle-unread" {
                 run_rail_action(app, "__fleetCycleUnread");
+            } else if id == "app:quit" {
+                app.exit(0);
+            } else if id == "window:minimize" {
+                if let Some(window) = app.get_window(mux::WINDOW) {
+                    if let Err(e) = window.minimize() {
+                        mux::emit_host_status(app, "error", "menu", format!("minimize failed: {e}"));
+                    }
+                }
+            } else if id == "window:fullscreen" {
+                if let Some(window) = app.get_window(mux::WINDOW) {
+                    match window.is_fullscreen() {
+                        Ok(fullscreen) => {
+                            if let Err(e) = window.set_fullscreen(!fullscreen) {
+                                mux::emit_host_status(
+                                    app,
+                                    "error",
+                                    "menu",
+                                    format!("fullscreen failed: {e}"),
+                                );
+                            }
+                        }
+                        Err(e) => mux::emit_host_status(
+                            app,
+                            "error",
+                            "menu",
+                            format!("fullscreen state unavailable: {e}"),
+                        ),
+                    }
+                }
+            } else if id == "window:close" {
+                if let Some(window) = app.get_window(mux::WINDOW) {
+                    if let Err(e) = window.close() {
+                        mux::emit_host_status(app, "error", "menu", format!("close failed: {e}"));
+                    }
+                }
             } else if id == "external:open-current" {
                 let Some(mux_state) = app.try_state::<mux::MuxState>() else {
                     mux::emit_host_status(app, "error", "menu", "server selector unavailable");

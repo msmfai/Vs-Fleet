@@ -30,12 +30,6 @@ const PENDING_SLOW_MS = 15_000;
 const PENDING_TIMEOUT_MS = 45_000;
 const STATUS_CLEAR_MS = 8_000;
 const STATUS_CLEAR_BY_LEVEL_MS = { error: 30_000, warning: 20_000, info: 10_000 };
-const SHORTCUTS = {
-  jump: "Cmd/Ctrl+J",
-  cycle: "Cmd/Ctrl+Shift+J",
-  palette: "Cmd/Ctrl+K",
-  spawn: "Cmd/Ctrl+Shift+N",
-};
 
 let servers = [];          // registered (phoned home) — from the backend
 let pending = [];          // [{id, label, startedAt}] spawned but not yet registered
@@ -677,7 +671,7 @@ function updateSpawnButton() {
   if (!spawnBtn) return;
   spawnBtn.disabled = spawning;
   spawnBtn.classList.toggle("busy", spawning);
-  spawnBtn.title = spawning ? "Starting server" : `New server (${SHORTCUTS.spawn})`;
+  spawnBtn.title = spawning ? "Starting server" : "New server";
   spawnBtn.setAttribute("aria-label", spawning ? "Starting server" : "New server");
   spawnBtn.setAttribute("aria-busy", spawning ? "true" : "false");
 }
@@ -718,7 +712,6 @@ function updateToolbarButtons() {
     title: openableUnread.length
       ? `Jump to next unread (${countPhrase(openableUnread.length, "session")})`
       : waitingOnBridge ? "Unread sessions are waiting for editor bridges" : "No unread sessions",
-    shortcut: SHORTCUTS.jump,
   });
   setToolButtonState(cycleBtn, {
     disabled: !unread.length,
@@ -727,14 +720,12 @@ function updateToolbarButtons() {
     title: unread.length
       ? `Cycle unread without marking read (${countPhrase(unread.length, "session")})`
       : "No unread sessions",
-    shortcut: SHORTCUTS.cycle,
   });
   setToolButtonState(paletteBtn, {
     disabled: !rowCount,
     attention: false,
     count: 0,
     title: rowCount ? `Session palette (${countPhrase(rowCount, "session")})` : "No sessions",
-    shortcut: SHORTCUTS.palette,
   });
 }
 
@@ -1887,7 +1878,6 @@ window.addEventListener("resize", () => {
 });
 
 document.addEventListener("keydown", (ev) => {
-  const command = ev.metaKey || ev.ctrlKey;
   const key = ev.key.toLowerCase();
   if (rowMenu.open) {
     if (ev.key === "Escape") {
@@ -1897,31 +1887,14 @@ document.addEventListener("keydown", (ev) => {
     return;
   }
   if (paletteOpen) {
-    if (command && key === "k") {
+    if (ev.key === "Escape") {
       ev.preventDefault();
       closePalette();
-    } else if (ev.key === "Escape") {
-      ev.preventDefault();
-      closePalette();
-    } else if (command && (key === "j" || (ev.shiftKey && key === "n"))) {
-      ev.preventDefault();
     }
     return;
   }
 
-  if (command && key === "k") {
-    ev.preventDefault();
-    openPalette();
-  } else if (command && ev.shiftKey && key === "j") {
-    ev.preventDefault();
-    cycleUnread();
-  } else if (command && key === "j") {
-    ev.preventDefault();
-    jumpNextUnread();
-  } else if (command && ev.shiftKey && key === "n") {
-    ev.preventDefault();
-    spawnServer();
-  } else if (ev.key === "Escape" && statusOverride) {
+  if (ev.key === "Escape" && statusOverride) {
     clearStatusOverride();
   }
 });

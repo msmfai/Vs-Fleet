@@ -59,6 +59,13 @@ struct RailMenuState {
     openable_unread_count: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MenuSignature {
+    servers: Vec<Server>,
+    selected: Option<String>,
+    rail_state: RailMenuState,
+}
+
 /// One persistent editor webview owned by a server id.
 #[derive(Debug, Clone)]
 struct EditorEntry {
@@ -73,6 +80,7 @@ struct EditorEntry {
 pub struct MuxState {
     pub selected: Mutex<Option<String>>,
     pub status: Mutex<Option<HostStatus>>,
+    menu_signature: Mutex<Option<MenuSignature>>,
     /// Legacy singleton loaded URL, used only when `FLEET_EDITOR_KEEPALIVE=0`.
     loaded: Mutex<Option<String>>,
     /// Persistent editor webviews keyed by Fleet server id.
@@ -778,7 +786,22 @@ fn sync_rail_selection(app: &AppHandle) {
 /// menus. The webview can't own the OS menu bar, so Fleet provides one wired to
 /// the active surface.
 pub fn build_menu(app: &mut App) -> tauri::Result<()> {
-    app.set_menu(build_app_menu(app, &[], None, RailMenuState::default())?)?;
+    let signature = MenuSignature {
+        servers: Vec::new(),
+        selected: None,
+        rail_state: RailMenuState::default(),
+    };
+    app.set_menu(build_app_menu(
+        app,
+        &signature.servers,
+        signature.selected.as_deref(),
+        signature.rail_state,
+    )?)?;
+    if let Some(state) = app.try_state::<MuxState>() {
+        if let Ok(mut cached) = state.menu_signature.lock() {
+            *cached = Some(signature);
+        }
+    }
     Ok(())
 }
 
@@ -794,12 +817,30 @@ fn refresh_menu_result(app: &AppHandle) -> tauri::Result<()> {
         .try_state::<MuxState>()
         .and_then(|state| state.selected.lock().ok().and_then(|g| g.clone()));
     let rail_state = rail_menu_state(app, &servers);
+    let signature = MenuSignature {
+        servers,
+        selected,
+        rail_state,
+    };
+    if let Some(state) = app.try_state::<MuxState>() {
+        if let Ok(cached) = state.menu_signature.lock() {
+            if cached.as_ref() == Some(&signature) {
+                return Ok(());
+            }
+        }
+    }
+
     app.set_menu(build_app_menu(
         app,
-        &servers,
-        selected.as_deref(),
-        rail_state,
+        &signature.servers,
+        signature.selected.as_deref(),
+        signature.rail_state,
     )?)?;
+    if let Some(state) = app.try_state::<MuxState>() {
+        if let Ok(mut cached) = state.menu_signature.lock() {
+            *cached = Some(signature);
+        }
+    }
     Ok(())
 }
 
@@ -859,11 +900,7 @@ fn build_app_menu<M: Manager<tauri::Wry>>(
                 .build(manager)?,
         )
         .separator()
-        .hide()
-        .hide_others()
-        .show_all()
-        .separator()
-        .quit()
+        .item(&MenuItemBuilder::with_id("app:quit", "Quit Fleet").build(manager)?)
         .build()?;
 
     // The VS Code menu tree. Each `Cmd(label, id)` forwards a real VS Code command
@@ -885,10 +922,10 @@ fn build_app_menu<M: Manager<tauri::Wry>>(
     let server_menu = build_server_menu(manager, servers, selected, rail_state)?;
 
     let window_menu = SubmenuBuilder::new(manager, "Window")
-        .minimize()
-        .fullscreen()
+        .item(&MenuItemBuilder::with_id("window:minimize", "Minimize").build(manager)?)
+        .item(&MenuItemBuilder::with_id("window:fullscreen", "Toggle Full Screen").build(manager)?)
         .separator()
-        .close_window()
+        .item(&MenuItemBuilder::with_id("window:close", "Close Window").build(manager)?)
         .build()?;
 
     let help_menu = build_sub(manager, "Help", HELP)?;
@@ -1052,9 +1089,22 @@ fn build_sub<M: Manager<tauri::Wry>>(
     for it in items {
         b = match it {
             MItem::Sep => b.separator(),
-            MItem::Cut => b.cut(),
-            MItem::Copy => b.copy(),
-            MItem::Paste => b.paste(),
+            MItem::Cut => {
+                let mi = MenuItemBuilder::with_id("cmd:editor.action.clipboardCutAction", "Cut")
+                    .build(manager)?;
+                b.item(&mi)
+            }
+            MItem::Copy => {
+                let mi = MenuItemBuilder::with_id("cmd:editor.action.clipboardCopyAction", "Copy")
+                    .build(manager)?;
+                b.item(&mi)
+            }
+            MItem::Paste => {
+                let mi =
+                    MenuItemBuilder::with_id("cmd:editor.action.clipboardPasteAction", "Paste")
+                        .build(manager)?;
+                b.item(&mi)
+            }
             MItem::Cmd(label, id) => {
                 let mi = MenuItemBuilder::with_id(format!("cmd:{id}"), *label).build(manager)?;
                 b.item(&mi)
