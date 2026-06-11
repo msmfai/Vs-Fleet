@@ -82,7 +82,8 @@ closed or explicitly accepted.
 - [x] Add a code of conduct if you want public contributions.
 - [x] Add a manual release-readiness CI workflow for the exact public ref.
 - [ ] Run CI on the exact public branch after artifact cleanup.
-- [ ] Record exact CI evidence in `docs/release/PUBLIC_CI_EVIDENCE.md` and run
+- [ ] Record exact CI and Release Readiness workflow evidence in
+  `docs/release/PUBLIC_CI_EVIDENCE.md` and run
   `./scripts/check-ci-evidence-decision.sh`.
 
 ## Current evidence from the repository
@@ -104,8 +105,9 @@ closed or explicitly accepted.
 - `.github/dependabot.yml` is present for GitHub Actions, root Cargo workspace,
   standalone Fleet host Cargo crate, and both npm packages; the release gate
   validates those entries with `scripts/check-dependabot-config.sh`.
-- `docs/release/PUBLIC_CI_EVIDENCE.md` is present as the exact commit/run
-  evidence record for the first public GitHub alpha.
+- `docs/release/PUBLIC_CI_EVIDENCE.md` is present as the exact commit, branch,
+  CI workflow run, and Release Readiness workflow run evidence record for the
+  first public GitHub alpha.
 - `docs/release/GITHUB_PUBLICATION_RUNBOOK.md` is present for the final
   repository visibility, security settings, branch protection, and pre-release
   sequence.
@@ -140,8 +142,8 @@ closed or explicitly accepted.
   contribution intake choice matches `CONTRIBUTING.md` and the pull request
   template before outside code PRs arrive.
 - `scripts/check-ci-evidence-decision.sh` validates that the approved public CI
-  evidence choice has exact commit evidence and, for the recommended path, a
-  GitHub Actions run URL.
+  evidence choice has exact commit evidence and, for the recommended path,
+  GitHub Actions run URLs for both normal CI and Release Readiness.
 - `scripts/check-privacy-decision.sh` validates that the approved
   privacy/telemetry posture matches the README, security policy, architecture
   notes, issue template, and release notes template.

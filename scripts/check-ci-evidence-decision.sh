@@ -106,6 +106,8 @@ case "$checked" in
     require_status "PASS"
     require_commit
     require_field_pattern "Branch" '^[A-Za-z0-9._/-]+$' "a concrete branch name"
+    require_field_pattern "CI workflow run" '^https://github\.com/[^/]+/[^/]+/actions/runs/[0-9]+$' \
+      "a GitHub Actions run URL"
     require_field_pattern "Release Readiness workflow run" '^https://github\.com/[^/]+/[^/]+/actions/runs/[0-9]+$' \
       "a GitHub Actions run URL"
     ;;
