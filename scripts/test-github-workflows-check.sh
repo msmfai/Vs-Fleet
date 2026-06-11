@@ -67,9 +67,13 @@ jobs:
   release-gate:
     steps:
       - run: ./scripts/test-release-check.sh
+      - run: ./scripts/test-draft-owner-decisions.sh
+      - run: ./scripts/test-public-alpha-decision-packet.sh
       - run: ./scripts/test-owner-release-approval-check.sh
       - run: ./scripts/test-license-intent-check.sh
+      - run: ./scripts/test-apply-license-decision.sh
       - run: ./scripts/test-dco-signoff.sh
+      - run: ./scripts/test-apply-namespace-decision.sh
       - run: ./scripts/test-dependabot-config-check.sh
       - run: ./scripts/test-secret-release-check.sh
       - run: ./scripts/test-doc-link-check.sh
@@ -202,5 +206,15 @@ no_release_notes="$TMPDIR/no-release-notes.yml"
 write_release "$no_release_notes"
 perl -0pi -e 's/\n      - run: \.\/scripts\/test-release-notes-check\.sh\n//' "$no_release_notes"
 expect_fail "Release Readiness must keep release notes self-test" "$ci" "$no_release_notes"
+
+no_owner_helpers="$TMPDIR/no-owner-helpers.yml"
+write_release "$no_owner_helpers"
+perl -0pi -e 's/\n      - run: \.\/scripts\/test-draft-owner-decisions\.sh\n//; s/\n      - run: \.\/scripts\/test-public-alpha-decision-packet\.sh\n//' "$no_owner_helpers"
+expect_fail "Release Readiness must keep owner decision helper self-tests" "$ci" "$no_owner_helpers"
+
+no_apply_helpers="$TMPDIR/no-apply-helpers.yml"
+write_release "$no_apply_helpers"
+perl -0pi -e 's/\n      - run: \.\/scripts\/test-apply-license-decision\.sh\n//; s/\n      - run: \.\/scripts\/test-apply-namespace-decision\.sh\n//' "$no_apply_helpers"
+expect_fail "Release Readiness must keep owner decision apply helper self-tests" "$ci" "$no_apply_helpers"
 
 echo "GitHub workflow check tests passed."
