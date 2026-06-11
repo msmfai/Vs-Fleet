@@ -13,6 +13,8 @@ license, artifact, security, and support decisions tracked in:
 
 - [Public alpha decisions](docs/release/PUBLIC_ALPHA_DECISIONS.md)
 - [Alpha release checklist](docs/release/ALPHA_RELEASE_CHECKLIST.md)
+- [Quickstart](docs/QUICKSTART.md)
+- [Architecture overview](docs/ARCHITECTURE.md)
 
 The long-form product and architecture spec lives in
 [docs/ENGINEERING_SPEC.md](docs/ENGINEERING_SPEC.md).
@@ -76,6 +78,8 @@ Release hygiene gate:
 ```
 
 The release check is expected to fail until public-alpha blockers are resolved.
+See [docs/release/RELEASE_PROCESS.md](docs/release/RELEASE_PROCESS.md) for the
+source-alpha release process.
 
 ## Security and privacy
 
