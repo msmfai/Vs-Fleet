@@ -116,6 +116,7 @@ for script in \
   scripts/check-github-intake-templates.sh \
   scripts/check-ci-evidence-decision.sh \
   scripts/generate-public-ci-evidence.sh \
+  scripts/release-evidence-status.sh \
   scripts/check-github-publication-evidence.sh \
   scripts/check-github-workflows.sh \
   scripts/check-privacy-decision.sh \
@@ -162,6 +163,7 @@ for script in \
   scripts/test-github-intake-templates-check.sh \
   scripts/test-ci-evidence-decision-check.sh \
   scripts/test-generate-public-ci-evidence.sh \
+  scripts/test-release-evidence-status.sh \
   scripts/test-github-publication-evidence-check.sh \
   scripts/test-github-workflows-check.sh \
   scripts/test-privacy-decision-check.sh \

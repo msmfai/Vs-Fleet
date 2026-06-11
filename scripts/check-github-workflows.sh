@@ -107,6 +107,8 @@ require_text "$release" './scripts/test-check-public-release-branch.sh' \
   "public release branch verifier self-test"
 require_text "$release" './scripts/test-generate-public-ci-evidence.sh' \
   "public CI evidence generator self-test"
+require_text "$release" './scripts/test-release-evidence-status.sh' \
+  "release evidence status self-test"
 require_text "$release" './scripts/test-dependency-review-runner.sh' \
   "dependency review runner self-test"
 require_text "$release" './scripts/check-owner-decisions.sh docs/release/OWNER_DECISION_RECORD.md' \

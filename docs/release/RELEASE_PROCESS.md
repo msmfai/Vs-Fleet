@@ -21,6 +21,8 @@ Do not publish a public alpha until these are true:
   updated manually. Rust crate renames are intentionally not automatic.
 - `./scripts/public-alpha-decision-packet.sh` reports
   `Release readiness: OWNER DECISIONS COMPLETE`.
+- `./scripts/release-evidence-status.sh` reports `Release evidence status:
+  COMPLETE`.
 - `./scripts/release-check.sh` passes.
 - CI is green on the exact public branch or commit, including the manual
   "Release Readiness" workflow.
@@ -240,6 +242,15 @@ Do not publish a public alpha until these are true:
    evidence for the public repo. If you commit this evidence after reviewing the
    settings, the checker permits only this evidence file to differ from the
    reviewed commit.
+
+   At any point during evidence collection, run:
+
+   ```sh
+   ./scripts/release-evidence-status.sh
+   ```
+
+   It reports which release evidence records are still pending or still contain
+   placeholders before the owner decision record is approved.
 
 13. Create a signed git tag after checks pass:
 
