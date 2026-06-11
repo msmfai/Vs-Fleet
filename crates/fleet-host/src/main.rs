@@ -28,6 +28,7 @@ use std::time::Duration;
 
 use render::RenderedInbox;
 use tauri::{Emitter, Manager};
+use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::EnvFilter;
 
 const DEFAULT_HUB_URL: &str = "ws://127.0.0.1:51777";
@@ -50,6 +51,85 @@ fn embedded_hub_runtime_dir_from(override_dir: Option<PathBuf>, home: Option<Pat
     home.unwrap_or_else(std::env::temp_dir)
         .join(".fleet")
         .join("run")
+}
+
+fn host_log_path() -> PathBuf {
+    embedded_hub_runtime_dir().join("fleet-host.log")
+}
+
+fn host_log_path_from_runtime_dir(runtime_dir: PathBuf) -> PathBuf {
+    runtime_dir.join("fleet-host.log")
+}
+
+#[derive(Clone)]
+struct FleetLogWriter {
+    file: Arc<Mutex<std::fs::File>>,
+}
+
+struct FleetLogGuard {
+    file: Arc<Mutex<std::fs::File>>,
+}
+
+impl Write for FleetLogGuard {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let _ = std::io::stderr().write_all(buf);
+        match self.file.lock() {
+            Ok(mut file) => file.write(buf),
+            Err(_) => Ok(buf.len()),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        let _ = std::io::stderr().flush();
+        if let Ok(mut file) = self.file.lock() {
+            file.flush()?;
+        }
+        Ok(())
+    }
+}
+
+impl<'a> MakeWriter<'a> for FleetLogWriter {
+    type Writer = FleetLogGuard;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        FleetLogGuard {
+            file: self.file.clone(),
+        }
+    }
+}
+
+fn init_logging() {
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into());
+    let path = host_log_path();
+    if let Some(parent) = path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!("Fleet host log directory could not be created: {e}");
+        }
+    }
+
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        Ok(file) => {
+            tracing_subscriber::fmt()
+                .with_env_filter(filter)
+                .with_writer(FleetLogWriter {
+                    file: Arc::new(Mutex::new(file)),
+                })
+                .init();
+            tracing::info!(path = %path.display(), "Fleet host logging initialized");
+        }
+        Err(e) => {
+            eprintln!(
+                "Fleet host log file could not be opened at {}: {e}",
+                path.display()
+            );
+            tracing_subscriber::fmt().with_env_filter(filter).init();
+            tracing::warn!(path = %path.display(), error = %e, "Fleet host logging fell back to stderr");
+        }
+    }
 }
 
 fn embedded_hub_persist_enabled() -> bool {
@@ -89,9 +169,7 @@ fn get_inbox(state: tauri::State<'_, hub_client::Shared>) -> RenderedInbox {
 }
 
 fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
-        .init();
+    init_logging();
 
     let explicit_ws_url = std::env::args()
         .nth(1)
@@ -465,6 +543,14 @@ mod tests {
                 Some(PathBuf::from("/Users/example"))
             ),
             PathBuf::from("/custom/fleet-run")
+        );
+    }
+
+    #[test]
+    fn host_log_path_lives_under_runtime_dir() {
+        assert_eq!(
+            host_log_path_from_runtime_dir(PathBuf::from("/tmp/fleet-run")),
+            PathBuf::from("/tmp/fleet-run/fleet-host.log")
         );
     }
 
