@@ -46,6 +46,8 @@ Do not publish a public alpha until these are true:
 - `./scripts/check-github-intake-templates.sh` passes, so public issue and PR
   templates keep alpha scope, privacy, security-reporting, and contribution
   boundaries visible.
+- `./scripts/check-doc-links.sh` passes, so tracked Markdown does not contain
+  broken local links.
 - `./scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"`
   passes.
 - `./scripts/check-github-workflows.sh .github/workflows/ci.yml .github/workflows/release-readiness.yml`
@@ -126,6 +128,7 @@ Do not publish a public alpha until these are true:
    ./scripts/check-security-reporting-decision.sh docs/release/OWNER_DECISION_RECORD.md SECURITY.md
    ./scripts/check-contribution-decision.sh docs/release/OWNER_DECISION_RECORD.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md
    ./scripts/check-github-intake-templates.sh
+   ./scripts/check-doc-links.sh
    ./scripts/check-ci-evidence-decision.sh docs/release/OWNER_DECISION_RECORD.md docs/release/PUBLIC_CI_EVIDENCE.md "$(git rev-parse HEAD)"
    ./scripts/check-github-workflows.sh .github/workflows/ci.yml .github/workflows/release-readiness.yml
    ./scripts/check-privacy-decision.sh docs/release/OWNER_DECISION_RECORD.md .

@@ -68,6 +68,7 @@ Set these before public visibility:
   .github/workflows/release-readiness.yml` passes before recording public CI
   evidence.
 - `./scripts/secret-release-check.sh` passes on the exact public branch.
+- `./scripts/check-doc-links.sh` passes on the exact public branch.
 
 ## Security Settings
 
@@ -116,6 +117,7 @@ Reference: <https://docs.github.com/en/repositories/configuring-branches-and-mer
 
    ```sh
    ./scripts/secret-release-check.sh
+   ./scripts/check-doc-links.sh
    ./scripts/release-check.sh
    ./scripts/check-release-notes.sh path/to/release-notes.md "$(git rev-parse HEAD)"
    ```
@@ -131,6 +133,7 @@ Abort publication if any of these are true:
 
 - `./scripts/release-check.sh` fails.
 - `./scripts/secret-release-check.sh` fails.
+- `./scripts/check-doc-links.sh` fails.
 - The exact public commit differs from the commit recorded in CI or dependency
   review evidence.
 - The selected security reporting channel is not actually available.

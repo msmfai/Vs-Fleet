@@ -48,6 +48,9 @@ jobs:
       - name: GitHub intake template gate self-test
         run: ./scripts/test-github-intake-templates-check.sh
 
+      - name: Documentation link gate self-test
+        run: ./scripts/test-doc-link-check.sh
+
       - name: Public CI evidence gate self-test
         run: ./scripts/test-ci-evidence-decision-check.sh
 
@@ -80,6 +83,9 @@ jobs:
 
       - name: Secret exposure gate
         run: ./scripts/secret-release-check.sh
+
+      - name: Documentation link gate
+        run: ./scripts/check-doc-links.sh
 
       - name: Release hygiene gate
         run: ./scripts/release-check.sh
