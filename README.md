@@ -1,13 +1,56 @@
-# Fleet
+<p align="center">
+  <img src="crates/fleet-host/icons/icon.png" alt="VS Fleet logo" width="128" height="128">
+</p>
 
-Fleet is a local-first control surface for terminal-based AI coding sessions.
-It collects the state of local VS Code web sessions, shows them in a compact
-Tauri host window, and lets you switch between sessions without Fleet owning the
-agent process or the user's keystrokes.
+<h1 align="center">VS Fleet</h1>
 
-## Alpha status
+<p align="center">
+  A local-first control surface for terminal-based AI coding sessions in VS Code web.
+</p>
 
-Fleet is in source-alpha release preparation. The codebase is suitable for
+<p align="center">
+  <a href="docs/release/PUBLIC_ALPHA_READINESS_ASSESSMENT.md"><img alt="Status: source alpha" src="https://img.shields.io/badge/status-source--alpha-orange"></a>
+  <img alt="Platform: macOS" src="https://img.shields.io/badge/platform-macOS-lightgrey">
+  <img alt="Mode: local first" src="https://img.shields.io/badge/mode-local--first-blue">
+  <img alt="Architecture: app plus extension" src="https://img.shields.io/badge/architecture-Fleet.app%20%2B%20VS%20Code%20bridge-6f42c1">
+  <a href="LICENSE"><img alt="License: MIT OR Apache-2.0" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-green"></a>
+</p>
+
+## Overview
+
+VS Fleet is a compact macOS app for supervising local `code serve-web` sessions
+used by terminal-based AI coding agents. It collects editor and agent state,
+shows each session in a small Fleet window, and lets you switch between sessions
+without Fleet owning the agent process or capturing the user's keystrokes.
+
+This repository contains two runtime pieces that work together:
+
+| Piece | Path | Role |
+|---|---|---|
+| Fleet app / host | `crates/fleet-host` | The macOS Tauri app, sidebar UI, embedded session webviews, local bridge, and convenience session launcher. |
+| Fleet Bridge extension | `packages/fleet-bridge` | A VS Code extension packaged as a VSIX and installed into each spawned `code serve-web` profile so the editor can register with Fleet and report state. |
+
+The app bundle build assembles both pieces. `crates/fleet-host/bundle.sh` builds
+the Rust host, builds the Fleet Bridge VSIX, copies both into `Fleet.app`, and
+the host installs the bridge extension into spawned local VS Code web sessions.
+
+## Quickstart
+
+Source-alpha macOS build:
+
+```sh
+cd crates/fleet-host
+./bundle.sh debug
+open Fleet.app
+```
+
+From Fleet, use the plus menu to start a local session in your home folder or
+open another local folder. Remote and container launch paths are not the
+supported alpha path.
+
+## Project Status
+
+VS Fleet is in source-alpha release preparation. The codebase is suitable for
 private dogfooding and technical review; public visibility is gated by the
 owner decision record, history/artifact cleanup, security evidence, and support
 evidence tracked in:
@@ -23,17 +66,17 @@ evidence tracked in:
 The long-form product and architecture spec lives in
 [docs/ENGINEERING_SPEC.md](docs/ENGINEERING_SPEC.md).
 
-## What works today
+## What Works Today
 
 - A Rust Hub, protocol crate, reporter, CLI, and host-core model.
 - A macOS Tauri Fleet host that embeds local `code serve-web` sessions.
-- A Fleet bridge VS Code extension used by the host to register editor sessions
+- A Fleet Bridge VS Code extension used by the host to register editor sessions
   and route commands.
 - Local session spawning from the host as a convenience function.
 - Session rename, mute/solo/dismiss, unread/waiting state, and host logs.
 - Automated Rust tests and host-level visual probe infrastructure.
 
-## What is experimental or not release-ready
+## Not Release-Ready
 
 - Public binary distribution: no signing/notarization policy yet.
 - Remote/container deployment: design and eval harness exist, but this is not a
