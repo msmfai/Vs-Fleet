@@ -227,6 +227,8 @@ expect_fail "pending incomplete record" "$pending"
 expect_output "pending incomplete record" 'Decision record status: not APPROVED'
 expect_output "pending incomplete record" '2\. Public History'
 expect_output "pending incomplete record" '6\. Distribution Scope'
+expect_output "pending incomplete record" 'Owner review helper:'
+expect_output "pending incomplete record" './scripts/draft-owner-decisions.sh <github-owner> <github-repo>'
 expect_output "pending incomplete record" 'Choose Public History before selecting the release-check command'
 expect_output "pending incomplete record" 'Release readiness: BLOCKED'
 
