@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="docs/release/PUBLIC_ALPHA_READINESS_ASSESSMENT.md"><img alt="Status" src="https://img.shields.io/badge/status-alpha-orange"></a>
+  <a href="docs/release/PUBLIC_ALPHA_READINESS_ASSESSMENT.md"><img alt="Status" src="https://img.shields.io/badge/status-pre--alpha%20prototype-orange"></a>
   <img alt="Platform" src="https://img.shields.io/badge/platform-macOS-lightgrey">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
@@ -71,8 +71,9 @@ spawned sessions.
 
 ## 🟪 Status
 
-🟪 VS Fleet is alpha software. It is suitable for private dogfooding and technical
-review, but not for general users or production workflows.
+🟪 VS Fleet is an AI-assisted pre-alpha concept prototype. It exists to test
+whether there is broader interest in VS Code multiplexing before the project
+receives sustained product, support, and release engineering effort.
 
 🟪 Current support boundary:
 
