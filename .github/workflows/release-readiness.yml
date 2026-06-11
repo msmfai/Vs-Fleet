@@ -33,6 +33,9 @@ jobs:
       - name: Security reporting gate self-test
         run: ./scripts/test-security-reporting-decision-check.sh
 
+      - name: Contribution decision gate self-test
+        run: ./scripts/test-contribution-decision-check.sh
+
       - name: History release gate self-test
         run: ./scripts/test-history-release-check.sh
 

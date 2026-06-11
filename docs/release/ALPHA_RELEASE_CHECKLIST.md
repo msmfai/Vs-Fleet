@@ -28,6 +28,9 @@ closed or explicitly accepted.
 - [ ] Run `./scripts/check-security-reporting-decision.sh` after choosing the
   security reporting channel to verify `SECURITY.md` matches the owner record.
 - [x] Add `CONTRIBUTING.md` and a contribution licensing policy.
+- [ ] Run `./scripts/check-contribution-decision.sh` after choosing the
+  contribution intake policy to verify `CONTRIBUTING.md` and the PR template
+  match the owner record.
 - [x] Remove or redact tracked artifacts that include local paths, process
   command lines, raw logs, or failed eval output.
 - [ ] Run `./scripts/history-release-check.sh` and either publish cleaned
@@ -90,6 +93,9 @@ closed or explicitly accepted.
 - `scripts/check-security-reporting-decision.sh` validates that the approved
   security reporting choice matches `SECURITY.md`, so the public repo does not
   publish ambiguous "once enabled" vulnerability reporting instructions.
+- `scripts/check-contribution-decision.sh` validates that the approved
+  contribution intake choice matches `CONTRIBUTING.md` and the pull request
+  template before outside code PRs arrive.
 - Root `README.md` is now a public alpha front door; the long engineering spec
   was moved to `docs/ENGINEERING_SPEC.md`.
 - `crates/fleet-host/artifacts/**` is now a local ignored artifact area; raw

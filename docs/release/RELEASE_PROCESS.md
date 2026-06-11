@@ -30,6 +30,8 @@ Do not publish a public alpha until these are true:
   passes.
 - `./scripts/check-security-reporting-decision.sh docs/release/OWNER_DECISION_RECORD.md SECURITY.md`
   passes.
+- `./scripts/check-contribution-decision.sh docs/release/OWNER_DECISION_RECORD.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md`
+  passes.
 - Dependency review has been run for the exact public commit, or the approved
   owner decision record explicitly accepts publishing without it.
 - GitHub pre-release notes are drafted from
@@ -84,6 +86,7 @@ Do not publish a public alpha until these are true:
    ./scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/check-namespace-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/check-security-reporting-decision.sh docs/release/OWNER_DECISION_RECORD.md SECURITY.md
+   ./scripts/check-contribution-decision.sh docs/release/OWNER_DECISION_RECORD.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md
    ./scripts/release-check.sh
    ```
 
