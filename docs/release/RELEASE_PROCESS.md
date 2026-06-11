@@ -11,6 +11,8 @@ Do not publish a public alpha until these are true:
 - A project license is chosen.
 - A root `LICENSE` file exists.
 - Rust and npm package metadata no longer declare `UNLICENSED`.
+- `./scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .`
+  passes.
 - `./scripts/release-check.sh` passes.
 - CI is green on the exact public branch or commit, including the manual
   "Release Readiness" workflow.
@@ -75,6 +77,7 @@ Do not publish a public alpha until these are true:
 6. Run the public release hygiene gate:
 
    ```sh
+   ./scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/release-check.sh
    ```
 
