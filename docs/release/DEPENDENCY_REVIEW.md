@@ -47,8 +47,11 @@ For `DEPENDENCY_REVIEW_EVIDENCE.md` and the alpha release notes, record:
   alpha,
 - whether the release is source-only or includes any bundled binary artifacts.
 
-Use [ALPHA_RELEASE_NOTES_TEMPLATE.md](ALPHA_RELEASE_NOTES_TEMPLATE.md) so this
-evidence is captured in the public GitHub pre-release body.
+Use `./scripts/generate-alpha-release-notes.sh` after the owner decisions and
+release evidence pass so this evidence is captured in the public GitHub
+pre-release body. [ALPHA_RELEASE_NOTES_TEMPLATE.md](ALPHA_RELEASE_NOTES_TEMPLATE.md)
+remains the checked content template that the generator and release-notes
+checker enforce.
 
 Run `./scripts/check-dependency-review-decision.sh` from the repository root
 before approving the owner decision record.
