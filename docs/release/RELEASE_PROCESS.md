@@ -16,6 +16,10 @@ Do not publish a public alpha until these are true:
   and copy only reviewed choices into `docs/release/OWNER_DECISION_RECORD.md`.
 - `./scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .`
   passes.
+- `./scripts/check-public-alpha-readiness-assessment.sh` passes, so the public
+  release posture still says source-only alpha after gates, not binaries,
+  package publication, production support, stable APIs, or remote/container
+  support.
 - `./scripts/apply-namespace-decision.sh docs/release/OWNER_DECISION_RECORD.md .`
   has been run after the approved namespace decision, unless the metadata was
   updated manually. Rust crate renames are intentionally not automatic.
@@ -161,6 +165,7 @@ Do not publish a public alpha until these are true:
 
    ```sh
    ./scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .
+   ./scripts/check-public-alpha-readiness-assessment.sh
    ./scripts/check-namespace-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/check-alpha-scope-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/check-editor-server-boundary-decision.sh docs/release/OWNER_DECISION_RECORD.md .

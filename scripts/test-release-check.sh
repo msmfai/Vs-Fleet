@@ -66,6 +66,7 @@ for doc in \
   docs/ARCHITECTURE.md \
   docs/LOCAL_DATA_AND_UNINSTALL.md \
   docs/release/RELEASE_PROCESS.md \
+  docs/release/PUBLIC_ALPHA_READINESS_ASSESSMENT.md \
   docs/release/DEPENDENCY_REVIEW.md \
   docs/release/DEPENDENCY_REVIEW_EVIDENCE.md \
   docs/release/GITHUB_PUBLICATION_RUNBOOK.md \
@@ -96,6 +97,7 @@ done
 for script in \
   scripts/check-owner-decisions.sh \
   scripts/check-owner-release-approval.sh \
+  scripts/check-public-alpha-readiness-assessment.sh \
   scripts/draft-owner-decisions.sh \
   scripts/public-alpha-decision-packet.sh \
   scripts/history-release-check.sh \
@@ -137,6 +139,7 @@ for script in \
   scripts/check-dco-signoff.sh \
   scripts/test-owner-decision-gate.sh \
   scripts/test-owner-release-approval-check.sh \
+  scripts/test-public-alpha-readiness-assessment-check.sh \
   scripts/test-draft-owner-decisions.sh \
   scripts/test-public-alpha-decision-packet.sh \
   scripts/test-history-release-check.sh \

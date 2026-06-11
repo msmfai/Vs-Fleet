@@ -13,6 +13,7 @@ owner decision record, history/artifact cleanup, security evidence, and support
 evidence tracked in:
 
 - [Public alpha decisions](docs/release/PUBLIC_ALPHA_DECISIONS.md)
+- [Public alpha readiness assessment](docs/release/PUBLIC_ALPHA_READINESS_ASSESSMENT.md)
 - [Alpha release checklist](docs/release/ALPHA_RELEASE_CHECKLIST.md)
 - [Quickstart](docs/QUICKSTART.md)
 - [Architecture overview](docs/ARCHITECTURE.md)

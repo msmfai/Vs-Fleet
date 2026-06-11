@@ -70,6 +70,7 @@ jobs:
       - run: ./scripts/test-draft-owner-decisions.sh
       - run: ./scripts/test-public-alpha-decision-packet.sh
       - run: ./scripts/test-owner-release-approval-check.sh
+      - run: ./scripts/test-public-alpha-readiness-assessment-check.sh
       - run: ./scripts/test-license-intent-check.sh
       - run: ./scripts/test-apply-license-decision.sh
       - run: ./scripts/test-dco-signoff.sh
@@ -229,6 +230,11 @@ no_owner_helpers="$TMPDIR/no-owner-helpers.yml"
 write_release "$no_owner_helpers"
 perl -0pi -e 's/\n      - run: \.\/scripts\/test-draft-owner-decisions\.sh\n//; s/\n      - run: \.\/scripts\/test-public-alpha-decision-packet\.sh\n//' "$no_owner_helpers"
 expect_fail "Release Readiness must keep owner decision helper self-tests" "$ci" "$no_owner_helpers"
+
+no_readiness_assessment="$TMPDIR/no-readiness-assessment.yml"
+write_release "$no_readiness_assessment"
+perl -0pi -e 's/\n      - run: \.\/scripts\/test-public-alpha-readiness-assessment-check\.sh\n//' "$no_readiness_assessment"
+expect_fail "Release Readiness must keep public alpha readiness assessment self-test" "$ci" "$no_readiness_assessment"
 
 no_apply_helpers="$TMPDIR/no-apply-helpers.yml"
 write_release "$no_apply_helpers"
