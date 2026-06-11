@@ -60,12 +60,13 @@ missing_required=0
 for section in \
   "### 1. License" \
   "### 2. Public History" \
-  "### 4. Distribution Scope" \
-  "### 5. Security Reporting Channel" \
-  "### 6. Contribution Intake" \
-  "### 7. Public CI Evidence" \
-  "### 8. Privacy And Telemetry Posture" \
-  "### 9. Dependency Review Evidence"
+  "### 4. Alpha Scope" \
+  "### 5. Distribution Scope" \
+  "### 6. Security Reporting Channel" \
+  "### 7. Contribution Intake" \
+  "### 8. Public CI Evidence" \
+  "### 9. Privacy And Telemetry Posture" \
+  "### 10. Dependency Review Evidence"
 do
   if ! block="$(section_block "$required_block" "$section")"; then
     echo "FAIL: owner decision record missing required section: $section"
@@ -81,7 +82,7 @@ do
   fi
 done
 
-namespace_block="$(printf '%s\n' "$required_block" | sed -n '/^### 3\. Public Namespace$/,/^### 4\. Distribution Scope$/p')"
+namespace_block="$(printf '%s\n' "$required_block" | sed -n '/^### 3\. Public Namespace$/,/^### 4\. Alpha Scope$/p')"
 namespace_todos="$(printf '%s\n' "$namespace_block" | rg '`TODO`' || true)"
 if [ -n "$namespace_todos" ]; then
   echo "FAIL: Public Namespace table still contains TODO placeholders"
@@ -89,12 +90,12 @@ if [ -n "$namespace_todos" ]; then
   missing_required=1
 fi
 
-if distribution_block="$(section_block "$required_block" "### 4. Distribution Scope")"; then
+if distribution_block="$(section_block "$required_block" "### 5. Distribution Scope")"; then
   if printf '%s\n' "$distribution_block" | rg -q '^- \[x\] Source plus|^- \[x\] Other:'; then
     for section in \
-      "### 10. macOS Signing and Notarization" \
-      "### 11. Update Channel" \
-      "### 12. Branding Stability"
+      "### 11. macOS Signing and Notarization" \
+      "### 12. Update Channel" \
+      "### 13. Branding Stability"
     do
       if ! block="$(section_block "$binary_block" "$section")"; then
         echo "FAIL: owner decision record missing binary distribution section: $section"

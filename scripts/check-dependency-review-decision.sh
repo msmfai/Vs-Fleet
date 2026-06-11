@@ -25,7 +25,7 @@ if ! rg -q '^Decision record status: APPROVED$' "$owner_record"; then
 fi
 
 review_block="$(
-  sed -n '/^### 9\. Dependency Review Evidence$/,/^## Required Before Binary Distribution$/p' "$owner_record"
+  sed -n '/^### 10\. Dependency Review Evidence$/,/^## Required Before Binary Distribution$/p' "$owner_record"
 )"
 
 checked_count="$(printf '%s\n' "$review_block" | rg -c '^- \[x\] ' || true)"

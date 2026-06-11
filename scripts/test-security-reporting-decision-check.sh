@@ -16,13 +16,13 @@ Decision record status: $status
 
 ## Required Before Public GitHub Visibility
 
-### 5. Security Reporting Channel
+### 6. Security Reporting Channel
 
 - [$([ "$checked" = "pvr" ] && echo x || echo ' ')] Enable GitHub Private Vulnerability Reporting.
 - [$([ "$checked" = "contact" ] && echo x || echo ' ')] Add a private security email/contact to \`SECURITY.md\`.
 - [$([ "$checked" = "other" ] && echo x || echo ' ')] Other: \`Use a private maintainer intake form\`
 
-### 6. Contribution Intake
+### 7. Contribution Intake
 EOF
 }
 
@@ -92,13 +92,13 @@ Decision record status: APPROVED
 
 ## Required Before Public GitHub Visibility
 
-### 5. Security Reporting Channel
+### 6. Security Reporting Channel
 
 - [x] Enable GitHub Private Vulnerability Reporting.
 - [x] Add a private security email/contact to `SECURITY.md`.
 - [ ] Other: `TODO`
 
-### 6. Contribution Intake
+### 7. Contribution Intake
 EOF
 expect_fail "multiple checked security choices are rejected" "$owner_multi" "$security_pvr"
 

@@ -30,6 +30,9 @@ jobs:
       - name: Namespace decision gate self-test
         run: ./scripts/test-namespace-decision-check.sh
 
+      - name: Alpha scope decision gate self-test
+        run: ./scripts/test-alpha-scope-decision-check.sh
+
       - name: Distribution decision gate self-test
         run: ./scripts/test-distribution-decision-check.sh
 

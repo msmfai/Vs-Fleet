@@ -54,7 +54,22 @@ Fill these before publishing packages or telling users names are stable.
 Current default recommendation: confirm the GitHub repo and bundle id now; defer
 marketplace/crates/npm publication until after source alpha.
 
-### 4. Distribution Scope
+### 4. Alpha Scope
+
+Choose what public users can treat as the supported source-alpha surface.
+
+- [ ] Local macOS Fleet host plus local `code serve-web` sessions, Fleet bridge,
+  Fleet reporter, CLI, and embedded local Hub. Remote, SSH, Docker/container,
+  visual probe, and eval harness paths remain development infrastructure, not
+  public support commitments.
+- [ ] Broaden public alpha scope to include remote, SSH, Docker/container, or
+  eval harness paths as supported user workflows.
+- [ ] Other: `TODO`
+
+Current default recommendation: keep the first public alpha scoped to the local
+macOS host and local `code serve-web` workflow.
+
+### 5. Distribution Scope
 
 Choose what the first public alpha promises.
 
@@ -66,7 +81,7 @@ Choose what the first public alpha promises.
 
 Current default recommendation: source-only alpha.
 
-### 5. Security Reporting Channel
+### 6. Security Reporting Channel
 
 Choose the private vulnerability path before public visibility.
 
@@ -76,7 +91,7 @@ Choose the private vulnerability path before public visibility.
 
 Current default recommendation: GitHub Private Vulnerability Reporting.
 
-### 6. Contribution Intake
+### 7. Contribution Intake
 
 Choose how to handle first outside PRs after the license is applied.
 
@@ -89,7 +104,7 @@ Choose how to handle first outside PRs after the license is applied.
 Current default recommendation: accept small focused PRs only after the license
 is applied; no CLA for alpha.
 
-### 7. Public CI Evidence
+### 8. Public CI Evidence
 
 Choose the CI gate for the public branch.
 
@@ -101,7 +116,7 @@ Choose the CI gate for the public branch.
 Current default recommendation: require GitHub Actions green on the exact public
 branch/commit.
 
-### 8. Privacy And Telemetry Posture
+### 9. Privacy And Telemetry Posture
 
 Choose the privacy/logging promise before public visibility.
 
@@ -115,7 +130,7 @@ Choose the privacy/logging promise before public visibility.
 Current default recommendation: no telemetry by default, with explicit local log
 contents and scrub-before-sharing warnings in public docs.
 
-### 9. Dependency Review Evidence
+### 10. Dependency Review Evidence
 
 Choose what dependency evidence is required for the exact public commit.
 
@@ -134,7 +149,7 @@ invite-only.
 These do not block a source-only alpha, but they must be decided before any
 public app bundle.
 
-### 10. macOS Signing and Notarization
+### 11. macOS Signing and Notarization
 
 - [ ] No public binaries until Developer ID signing and notarization are
   automated.
@@ -144,7 +159,7 @@ public app bundle.
 Current default recommendation: no public binaries until signing and notarization
 are automated.
 
-### 11. Update Channel
+### 12. Update Channel
 
 - [ ] No auto-update in alpha.
 - [ ] GitHub Releases only.
@@ -154,7 +169,7 @@ are automated.
 Current default recommendation: no auto-update in alpha; GitHub Releases only
 for source tags.
 
-### 12. Branding Stability
+### 13. Branding Stability
 
 - [ ] `Fleet` name and current icon are alpha placeholders.
 - [ ] `Fleet` name is stable, icon may change.

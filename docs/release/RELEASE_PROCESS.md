@@ -32,6 +32,8 @@ Do not publish a public alpha until these are true:
 - Public namespaces are confirmed, even if packages are not published yet.
 - `./scripts/check-namespace-decision.sh docs/release/OWNER_DECISION_RECORD.md .`
   passes.
+- `./scripts/check-alpha-scope-decision.sh docs/release/OWNER_DECISION_RECORD.md .`
+  passes.
 - `./scripts/check-security-reporting-decision.sh docs/release/OWNER_DECISION_RECORD.md SECURITY.md`
   passes.
 - `./scripts/check-contribution-decision.sh docs/release/OWNER_DECISION_RECORD.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md`
@@ -97,6 +99,7 @@ Do not publish a public alpha until these are true:
    ```sh
    ./scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/check-namespace-decision.sh docs/release/OWNER_DECISION_RECORD.md .
+   ./scripts/check-alpha-scope-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/check-distribution-decision.sh docs/release/OWNER_DECISION_RECORD.md .
    ./scripts/check-security-reporting-decision.sh docs/release/OWNER_DECISION_RECORD.md SECURITY.md
    ./scripts/check-contribution-decision.sh docs/release/OWNER_DECISION_RECORD.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md

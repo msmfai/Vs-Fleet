@@ -19,14 +19,14 @@ Decision record status: $status
 
 ## Required Before Public GitHub Visibility
 
-### 7. Public CI Evidence
+### 8. Public CI Evidence
 
 - [$([ "$checked" = "github" ] && echo x || echo ' ')] Require GitHub Actions green on the exact branch/commit before public
   visibility.
 - [$([ "$checked" = "local" ] && echo x || echo ' ')] Accept local check output only for the first publish.
 - [$([ "$checked" = "other" ] && echo x || echo ' ')] Other: \`Use GitLab pipeline evidence\`
 
-### 8. Privacy And Telemetry Posture
+### 9. Privacy And Telemetry Posture
 EOF
 }
 

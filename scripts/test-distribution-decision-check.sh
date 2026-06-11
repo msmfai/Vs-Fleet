@@ -16,7 +16,7 @@ Decision record status: $status
 
 ## Required Before Public GitHub Visibility
 
-### 4. Distribution Scope
+### 5. Distribution Scope
 
 - [$([ "$checked" = "source" ] && echo x || echo ' ')] Source-only alpha. No public app bundle, crates.io, npm, Open VSX, VS Code
   Marketplace, or container image publishing.
@@ -24,19 +24,19 @@ Decision record status: $status
 - [$([ "$checked" = "signed" ] && echo x || echo ' ')] Source plus signed/notarized macOS app bundle.
 - [$([ "$checked" = "other" ] && echo x || echo ' ')] Other: \`Private source snapshot only\`
 
-### 5. Security Reporting Channel
+### 6. Security Reporting Channel
 
 ## Required Before Binary Distribution
 
-### 10. macOS Signing and Notarization
+### 11. macOS Signing and Notarization
 
 - [$([ "$checked" = "source" ] && echo ' ' || echo x)] Publish unsigned binaries and document Gatekeeper warnings.
 
-### 11. Update Channel
+### 12. Update Channel
 
 - [$([ "$checked" = "source" ] && echo ' ' || echo x)] No auto-update in alpha.
 
-### 12. Branding Stability
+### 13. Branding Stability
 
 - [$([ "$checked" = "source" ] && echo ' ' || echo x)] \`Fleet\` name and current icon are alpha placeholders.
 EOF

@@ -20,7 +20,7 @@ if ! rg -q '^Decision record status: APPROVED$' "$owner_record"; then
 fi
 
 distribution_block="$(
-  sed -n '/^### 4\. Distribution Scope$/,/^### 5\. Security Reporting Channel$/p' "$owner_record"
+  sed -n '/^### 5\. Distribution Scope$/,/^### 6\. Security Reporting Channel$/p' "$owner_record"
 )"
 
 checked_count="$(printf '%s\n' "$distribution_block" | rg -c '^- \[x\] ' || true)"
@@ -113,9 +113,9 @@ section_block() {
 
 require_binary_sections_decided() {
   for section in \
-    "### 10. macOS Signing and Notarization" \
-    "### 11. Update Channel" \
-    "### 12. Branding Stability"
+    "### 11. macOS Signing and Notarization" \
+    "### 12. Update Channel" \
+    "### 13. Branding Stability"
   do
     local block
     if ! block="$(section_block "$section")"; then

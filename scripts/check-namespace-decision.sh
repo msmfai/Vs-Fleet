@@ -21,7 +21,7 @@ if ! rg -q '^Decision record status: APPROVED$' "$owner_record"; then
 fi
 
 namespace_block="$(
-  sed -n '/^### 3\. Public Namespace$/,/^### 4\. Distribution Scope$/p' "$owner_record"
+  sed -n '/^### 3\. Public Namespace$/,/^### 4\. Alpha Scope$/p' "$owner_record"
 )"
 
 decision_for() {

@@ -90,6 +90,8 @@ for required in \
   scripts/test-license-decision-check.sh \
   scripts/check-namespace-decision.sh \
   scripts/test-namespace-decision-check.sh \
+  scripts/check-alpha-scope-decision.sh \
+  scripts/test-alpha-scope-decision-check.sh \
   scripts/check-distribution-decision.sh \
   scripts/test-distribution-decision-check.sh \
   scripts/check-security-reporting-decision.sh \
@@ -125,6 +127,8 @@ elif ! scripts/history-release-check.sh docs/release/OWNER_DECISION_RECORD.md; t
 elif ! scripts/check-license-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
   fail=1
 elif ! scripts/check-namespace-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
+  fail=1
+elif ! scripts/check-alpha-scope-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
   fail=1
 elif ! scripts/check-distribution-decision.sh docs/release/OWNER_DECISION_RECORD.md .; then
   fail=1

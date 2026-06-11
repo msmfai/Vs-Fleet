@@ -29,7 +29,7 @@ Decision record status: $status
 | Open VSX publisher | fleet-team |
 | macOS bundle id | dev.fleet.host |
 
-### 4. Distribution Scope
+### 4. Alpha Scope
 EOF
 }
 
