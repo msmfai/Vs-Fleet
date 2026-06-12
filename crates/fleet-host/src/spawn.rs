@@ -235,8 +235,10 @@ impl ServerSupervisor {
             &self.bridge_token,
             &base.to_string_lossy(),
         );
-        let mut cmd = fleet_command(&server_bin);
-        cmd.args(&args)
+        let (spawn_bin, spawn_prefix_args) = server_spawn_target(&server_bin);
+        let mut cmd = fleet_command(&spawn_bin);
+        cmd.args(&spawn_prefix_args)
+            .args(&args)
             .env("PATH", path)
             .env("TMPDIR", &tmp_dir)
             .current_dir(&process_cwd);
@@ -674,6 +676,30 @@ fn disclaim_command(trampoline: &OsStr, program: &OsStr) -> Command {
     let mut cmd = Command::new(trampoline);
     cmd.arg(DISCLAIM_EXEC_ARG).arg(program);
     cmd
+}
+
+/// What to actually spawn for a local server. serve-web's `bin/code-server` is
+/// a bash wrapper that keeps running as the tree's parent, so on macOS the TCC
+/// disclaim (see [`fleet_command`]) would attribute every privacy prompt to
+/// "bash" — generic, and a grant to bash is a grant to every shell script. When
+/// the standard serve-web layout is present (`<root>/node` +
+/// `<root>/out/server-main.js` next to `<root>/bin/code-server`), spawn the
+/// node binary directly so prompts name the editor process. Falls back to the
+/// wrapper whenever the layout doesn't match.
+fn server_spawn_target(server_bin: &Path) -> (PathBuf, Vec<OsString>) {
+    #[cfg(target_os = "macos")]
+    if let Some((node, server_main)) = direct_server_invocation(server_bin) {
+        return (node, vec![server_main.into_os_string()]);
+    }
+    (server_bin.to_path_buf(), Vec::new())
+}
+
+#[cfg(target_os = "macos")]
+fn direct_server_invocation(server_bin: &Path) -> Option<(PathBuf, PathBuf)> {
+    let root = server_bin.parent()?.parent()?;
+    let node = root.join("node");
+    let server_main = root.join("out").join("server-main.js");
+    (node.is_file() && server_main.is_file()).then_some((node, server_main))
 }
 
 /// TCC responsibility disclaim (macOS). By default macOS attributes a child
@@ -1646,6 +1672,32 @@ mod tests {
         assert_eq!(cmd.get_program(), "/Applications/Fleet");
         let args: Vec<&OsStr> = cmd.get_args().collect();
         assert_eq!(args, [DISCLAIM_EXEC_ARG, "/bin/echo"]);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn server_spawn_target_bypasses_serve_web_bash_wrapper() {
+        let root = temp_test_dir("fleet-direct-node-spawn");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("bin")).unwrap();
+        std::fs::create_dir_all(root.join("out")).unwrap();
+        std::fs::write(root.join("bin/code-server"), "#!/bin/bash\n").unwrap();
+        std::fs::write(root.join("node"), "").unwrap();
+        std::fs::write(root.join("out/server-main.js"), "").unwrap();
+
+        let (bin, prefix) = server_spawn_target(&root.join("bin/code-server"));
+        assert_eq!(bin, root.join("node"));
+        assert_eq!(
+            prefix,
+            vec![root.join("out/server-main.js").into_os_string()]
+        );
+
+        // Unknown layout (no sibling node) falls back to the wrapper itself.
+        std::fs::remove_file(root.join("node")).unwrap();
+        let wrapper = root.join("bin/code-server");
+        let (bin, prefix) = server_spawn_target(&wrapper);
+        assert_eq!(bin, wrapper);
+        assert!(prefix.is_empty());
     }
 
     #[test]

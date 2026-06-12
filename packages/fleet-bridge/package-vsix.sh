@@ -30,7 +30,15 @@ mkdir -p "$STAGE/extension"
 cp package.json tsconfig.json .gitignore "$STAGE/extension/"
 cp -R src out "$STAGE/extension/"
 mkdir -p "$STAGE/extension/node_modules"
-cp -R node_modules/ws "$STAGE/extension/node_modules/"
+# -L dereferences: under pnpm, node_modules/ws is a symlink into the pnpm
+# store; copying the link verbatim leaves it dangling in the stage and zip
+# silently drops it — shipping a VSIX whose `require("ws")` throws before
+# activate() ever runs (no phone-home, no command bridge).
+cp -RL node_modules/ws "$STAGE/extension/node_modules/"
+test -f "$STAGE/extension/node_modules/ws/package.json" || {
+  echo "error: staged ws package is incomplete" >&2
+  exit 1
+}
 
 cat > "$STAGE/extension.vsixmanifest" <<EOF
 <?xml version="1.0" encoding="utf-8"?>
@@ -80,4 +88,10 @@ EOF
 
 rm -f "$OUT"
 (cd "$STAGE" && zip -qr "$OUT" .)
+# No `grep -q` here: under pipefail its early exit SIGPIPEs unzip and fails
+# the pipeline even on success.
+unzip -l "$OUT" | grep "extension/node_modules/ws/" >/dev/null || {
+  echo "error: built VSIX is missing node_modules/ws" >&2
+  exit 1
+}
 echo "built $OUT"
