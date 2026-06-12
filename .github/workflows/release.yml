@@ -1,0 +1,205 @@
+name: Release
+
+# Tag-triggered cross-platform release builds (alpha quality, unsigned).
+# `workflow_dispatch` runs the full pipeline without publishing a release,
+# so the bundling + smoke lanes can be exercised before cutting a tag.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # The bridge VSIX is platform-independent; build it once (its packer needs
+  # `zip`, which Windows runners lack) and feed it to every bundle lane.
+  vsix:
+    name: fleet-bridge VSIX
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Build + package VSIX
+        working-directory: packages/fleet-bridge
+        run: |
+          npm install
+          bash package-vsix.sh
+          cp fleet-bridge-*.vsix fleet-bridge.vsix
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fleet-bridge-vsix
+          path: packages/fleet-bridge/fleet-bridge.vsix
+          if-no-files-found: error
+
+  bundle:
+    name: Bundle (${{ matrix.platform }})
+    needs: vsix
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-x64
+            runner: macos-15-intel
+            bundles: app,dmg
+          - platform: macos-arm64
+            runner: macos-latest
+            bundles: app,dmg
+          - platform: linux-x64
+            runner: ubuntu-latest
+            bundles: appimage,deb,rpm
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+            bundles: appimage,deb,rpm
+          - platform: windows-x64
+            runner: windows-latest
+            bundles: nsis
+          - platform: windows-arm64
+            runner: windows-11-arm
+            bundles: nsis
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Tauri system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb imagemagick
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry + build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            crates/fleet-host/target
+          key: ${{ matrix.platform }}-release-cargo-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
+          restore-keys: |
+            ${{ matrix.platform }}-release-cargo-
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Fetch bridge VSIX
+        uses: actions/download-artifact@v4
+        with:
+          name: fleet-bridge-vsix
+          path: crates/fleet-host/resources
+
+      - name: Build fleet-reporter (release)
+        run: cargo build --release -p fleet-reporter
+
+      - name: Stage sidecar binaries
+        shell: bash
+        run: |
+          TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
+          mkdir -p crates/fleet-host/binaries
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp "target/release/fleet-reporter.exe" "crates/fleet-host/binaries/fleet-reporter-$TRIPLE.exe"
+          else
+            cp "target/release/fleet-reporter" "crates/fleet-host/binaries/fleet-reporter-$TRIPLE"
+          fi
+
+      - name: Build Fleet bundles (Tauri)
+        working-directory: crates/fleet-host
+        shell: bash
+        run: npx --yes @tauri-apps/cli@^2 build --config tauri.release.conf.json --bundles ${{ matrix.bundles }}
+
+      # The launch smoke: boot the built binary, phone home one session over the
+      # bridge, assert a rail tab appears + selects, capture a screenshot. This
+      # is the gate that separates "it compiled" from "it runs on this OS".
+      - name: Smoke test (Linux, under Xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node scripts/release-smoke.mjs --bin crates/fleet-host/target/release/fleet-host --out smoke-out
+
+      - name: Smoke test (macOS)
+        if: runner.os == 'macOS'
+        run: node scripts/release-smoke.mjs --bin crates/fleet-host/target/release/fleet-host --out smoke-out
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        run: node scripts/release-smoke.mjs --bin crates/fleet-host/target/release/fleet-host.exe --out smoke-out
+
+      - name: Collect bundles
+        shell: bash
+        run: |
+          mkdir -p dist
+          BUNDLE_DIR=crates/fleet-host/target/release/bundle
+          find "$BUNDLE_DIR" -type f \( \
+            -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \
+            -o -name '*-setup.exe' -o -name '*.msi' \) -exec cp {} dist/ \;
+          # The bare .app is shipped inside the .dmg; also tar it for direct use.
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            APP="$(find "$BUNDLE_DIR/macos" -maxdepth 1 -name '*.app' | head -1)"
+            if [ -n "$APP" ]; then
+              tar -C "$(dirname "$APP")" -czf "dist/Fleet-${{ matrix.platform }}.app.tar.gz" "$(basename "$APP")"
+            fi
+          fi
+          # Stamp every artifact name with its platform so the six lanes never collide.
+          cd dist
+          for f in *; do
+            case "$f" in
+              *${{ matrix.platform }}*) ;;
+              *) mv "$f" "${f%.*}-${{ matrix.platform }}.${f##*.}" ;;
+            esac
+          done
+          ls -la
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundles-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-${{ matrix.platform }}
+          path: smoke-out/
+          if-no-files-found: warn
+
+  publish:
+    name: Publish GitHub release
+    needs: bundle
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download all bundles
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bundles-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        working-directory: dist
+        run: |
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --title "VS Fleet ${GITHUB_REF_NAME}" \
+            --notes-file docs/release/NOTES.md \
+            --draft
