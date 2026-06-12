@@ -4,9 +4,15 @@
 /Fleet.app
 
 # Local icon iteration assets and derived build icons. The app icon source is
-# /icons/icon.png; everything below is regenerated from it.
+# /icons/icon.png; everything below is regenerated from it (by build.rs).
 /icons/32x32.png
 /icons/128x128.png
 /icons/Fleet.icns
+/icons/icon.ico
 /icons/source/
 /icons/prompts/
+
+# Release-bundle staging (populated by the release workflow before
+# `cargo tauri build`): sidecar binaries + bundled resources.
+/binaries/
+/resources/
