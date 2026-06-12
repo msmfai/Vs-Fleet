@@ -8,9 +8,10 @@ Fleet is experimental software.
 - Breaking changes are expected.
 - There are no production support guarantees, response SLAs, paid support
   terms, or stable release lines yet.
-- Source builds and local macOS use are the intended path.
-- Public binary distribution, remote/container deployment, auto-update, and
-  packaged extension publishing are not currently supported user workflows.
+- Local macOS use is the primary path; Linux and Windows builds are alpha.
+- Unsigned binary releases are published on GitHub Releases; signing,
+  auto-update, remote/container deployment, and packaged extension publishing
+  are not currently supported user workflows.
 
 ## Where to ask
 

@@ -1,7 +1,8 @@
 # Quickstart
 
-This is the current source-only local macOS path. Fleet does not currently ship
-signed or notarized binary releases.
+This is the local macOS source-build path. Unsigned alpha binaries for macOS
+and Linux are also available on GitHub Releases; Fleet does not currently ship
+signed or notarized binaries.
 
 ## Prerequisites
 

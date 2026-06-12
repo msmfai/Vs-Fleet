@@ -7,18 +7,18 @@
 <h1 align="center">VS Fleet</h1>
 
 <p align="center">
-  Experimental macOS prototype for managing local VS Code web sessions used by terminal-based coding agents.
+  Experimental desktop app for managing local VS Code web sessions used by terminal-based coding agents.
 </p>
 
 <p align="center">
   <img alt="Status" src="https://img.shields.io/badge/status-experimental%20prototype-orange">
-  <img alt="Platform" src="https://img.shields.io/badge/platform-macOS-lightgrey">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows%20(alpha)-lightgrey">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
 ## What is VS Fleet?
 
-VS Fleet is a compact macOS app for supervising local `code serve-web` sessions.
+VS Fleet is a compact desktop app for supervising local `code serve-web` sessions.
 It collects editor and agent state, shows each session in a small Fleet window,
 and switches between sessions without owning agent processes or capturing
 keystrokes.
@@ -36,13 +36,19 @@ Code CLI and starts local web sessions from the Fleet app.
 
 ## Requirements
 
-- macOS.
+- macOS or Linux (Windows builds are alpha; agent-state reporting is not yet
+  supported there).
 - A local VS Code installation with the `code` command available.
 - Rust and Node.js tooling for building from source.
 
 ## Getting Started
 
-Build the macOS app:
+Download an unsigned alpha build from
+[Releases](https://github.com/msmfai/Vs-Fleet/releases) (macOS dmg, Linux AppImage/deb/rpm) and verify it
+against `SHA256SUMS.txt` — see the release notes for the per-OS unsigned-binary
+caveats.
+
+Or build the macOS app from source:
 
 ```sh
 cd crates/fleet-host
@@ -58,7 +64,7 @@ supported user workflows.
 
 | Component | Path | Description |
 |---|---|---|
-| Fleet host | `crates/fleet-host` | Tauri macOS app, session list, embedded VS Code webviews, local bridge, and local session launcher. |
+| Fleet host | `crates/fleet-host` | Tauri desktop app, session list, embedded VS Code webviews, local bridge, and local session launcher. |
 | Fleet Bridge | `packages/fleet-bridge` | VS Code extension packaged into the app and installed into spawned `code serve-web` profiles. |
 | Fleet reporter | `crates/fleet-reporter` | Reports editor/session/agent state back to Fleet. |
 | Fleet hub | `crates/fleet-hub` | Local state projection used by the host, reporter, and CLI. |
@@ -80,9 +86,10 @@ external demand.
 
 Current support boundary:
 
-- Local macOS app.
+- Local desktop app; macOS is the primary platform, Linux and Windows are alpha.
 - Local `code serve-web` sessions launched from the local VS Code install.
-- Source builds only; no signed or notarized binary distribution yet.
+- Unsigned binary releases (see [Releases](https://github.com/msmfai/Vs-Fleet/releases)); no signing or
+  notarization yet.
 
 ## Documentation
 
@@ -90,10 +97,13 @@ Current support boundary:
 - [Architecture overview](docs/ARCHITECTURE.md)
 - [Local data and uninstall](docs/LOCAL_DATA_AND_UNINSTALL.md)
 - [Engineering spec](docs/ENGINEERING_SPEC.md)
+- [Release process](docs/RELEASING.md)
 
 ## Limitations
 
-- Public binary distribution: no signing or notarization policy yet.
+- Binary releases are unsigned; no signing or notarization policy yet.
+- Windows: sessions and tabs work, but agent-state reporting (the reporter
+  hook receiver and terminal shim) is unix-only for now.
 - Remote/container deployment: design and eval harness code exists, but it is
   not a supported user path yet.
 - External contributions: DCO sign-off is required; large outside code changes
@@ -108,7 +118,7 @@ Current support boundary:
 | `crates/fleet-reporter` | Reporter adapters and reporter binary. |
 | `crates/fleet-cli` | CLI face, currently `fleet ls` and related commands. |
 | `crates/fleet-host-core` | Pure Rust inbox/view-model logic. |
-| `crates/fleet-host` | Standalone Tauri macOS host app. |
+| `crates/fleet-host` | Standalone Tauri host app. |
 | `packages/fleet-bridge` | VS Code bridge extension packaged into the host app. |
 | `packages/extension` | VS Code extension face. |
 | `containers/fleet-env` | Container/eval harness material. |
