@@ -195,11 +195,17 @@ jobs:
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
-      - name: Create release
+      - name: Create or update release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" dist/* \
-            --title "VS Fleet ${GITHUB_REF_NAME}" \
-            --notes-file docs/release/NOTES.md \
-            --draft
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            # Release already exists (e.g. published from a local build run) —
+            # add/refresh this run's artifacts instead of failing.
+            gh release upload "${GITHUB_REF_NAME}" dist/* --clobber --repo "${GITHUB_REPOSITORY}"
+          else
+            gh release create "${GITHUB_REF_NAME}" dist/* \
+              --title "VS Fleet ${GITHUB_REF_NAME}" \
+              --notes-file docs/release/NOTES.md \
+              --draft
+          fi
