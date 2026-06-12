@@ -42,19 +42,31 @@
 //! untagged line is accepted as a legacy/manual Claude payload (the validated
 //! hooks-first path) so a hand-sent `printf '{...}' | nc -U` still works.
 
-use std::path::Path;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
+use tracing::debug;
+
+#[cfg(unix)]
+use std::path::Path;
+#[cfg(unix)]
+use std::sync::Arc;
+#[cfg(unix)]
+use std::time::Duration;
+#[cfg(unix)]
 use tokio::io::{AsyncBufReadExt, BufReader};
+#[cfg(unix)]
 use tokio::net::UnixListener;
+#[cfg(unix)]
 use tokio::sync::Mutex;
-use tracing::{debug, info, warn};
+#[cfg(unix)]
+use tracing::{info, warn};
 
 use crate::claude::ClaudeAdapter;
 use crate::claude_infer::ClaudeInferAdapter;
 use crate::codex::CodexAdapter;
-use crate::reporter::{ReporterCommand, ReporterHandle};
+use crate::reporter::ReporterCommand;
+#[cfg(unix)]
+use crate::reporter::ReporterHandle;
 
 /// How often the receiver advances the S16 inference clock (the debounce TICK).
 ///
@@ -65,6 +77,7 @@ use crate::reporter::{ReporterCommand, ReporterHandle};
 /// must be comfortably finer than [`crate::claude_infer::DEFAULT_DEBOUNCE_MS`]
 /// so the inferred waiting surfaces within roughly one window of the real
 /// stall, but coarse enough not to spin.
+#[cfg(unix)]
 const INFER_TICK_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Which agent a hook frame came from. The frame's leading tag selects this; the
@@ -280,6 +293,7 @@ fn truncate(s: &str) -> String {
 /// Runs until the returned future is dropped/aborted (the binary races it
 /// against Ctrl-C). The `receiver` is shared so its adapter state persists
 /// across the many short-lived hook connections a window produces.
+#[cfg(unix)]
 pub async fn serve_unix(
     socket_path: std::path::PathBuf,
     receiver: Arc<Mutex<Receiver>>,
@@ -369,6 +383,7 @@ pub async fn serve_unix(
 /// user can connect and inject spoofed hook frames — defence-in-depth on the
 /// local trust boundary (a hook frame can mutate this window's reported agent
 /// state, so the channel must be owner-only).
+#[cfg(unix)]
 async fn bind_reclaiming(path: &Path) -> anyhow::Result<UnixListener> {
     let listener = match UnixListener::bind(path) {
         Ok(l) => l,
@@ -402,9 +417,6 @@ fn restrict_socket_perms(path: &Path) {
         warn!(error = %e, socket = %path.display(), "could not restrict reporter socket to 0600");
     }
 }
-
-#[cfg(not(unix))]
-fn restrict_socket_perms(_path: &Path) {}
 
 #[cfg(test)]
 mod tests {
@@ -522,6 +534,7 @@ mod tests {
 
     // ── serve_unix: the real socket → adapter → handle path ──────────────────
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn serve_unix_forwards_a_framed_hook_to_the_handle() {
         use crate::reporter::{Reporter, ReporterConfig};
@@ -571,6 +584,7 @@ mod tests {
         serve.abort();
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn serve_unix_reclaims_a_stale_socket_file() {
         // A leftover socket *file* with no live owner must be reclaimed, not fatal.

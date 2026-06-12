@@ -23,6 +23,7 @@
 //!   `--fake [--ws <url>] [--delay-ms <ms>]` — scripted fake lifecycle
 //!   `--fake --unix <path>` — unix fast path (`cfg(unix)` only)
 
+#[cfg(unix)]
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -31,9 +32,12 @@ use fleet_protocol::{
     AgentKind, AgentRun, Confidence, Extra, Location, LocationGlyph, LocationKind, Server,
     ServerKind, Session, State, SCHEMA_VERSION,
 };
+#[cfg(unix)]
+use fleet_reporter::Receiver;
 use fleet_reporter::{
-    FakeReporter, FakeReporterConfig, Receiver, Reporter, ReporterConfig, Transport, WsConnector,
+    FakeReporter, FakeReporterConfig, Reporter, ReporterConfig, Transport, WsConnector,
 };
+#[cfg(unix)]
 use tokio::sync::Mutex;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -58,8 +62,19 @@ async fn main() -> Result<()> {
     run_real(&args, ws_url).await
 }
 
+/// SERVE mode on non-unix platforms: the hook-receiver needs a unix domain
+/// socket, which Windows does not have yet. Refuse loudly instead of binding
+/// nothing — Fleet degrades to "no agent state" on these platforms.
+#[cfg(not(unix))]
+async fn run_serve(_args: &[String], _ws_url: String) -> Result<()> {
+    anyhow::bail!(
+        "`fleet-reporter --serve` requires unix domain sockets and is not supported on this platform yet"
+    )
+}
+
 /// SERVE mode: connect to the Hub, register the window session, then bind the
 /// reporter socket and feed every hook payload through the detection adapters.
+#[cfg(unix)]
 async fn run_serve(args: &[String], ws_url: String) -> Result<()> {
     // The window session id is injected by the VS Code extension as
     // FLEET_SESSION_ID; `--session-id` overrides; otherwise a local fallback.
@@ -125,6 +140,7 @@ async fn run_serve(args: &[String], ws_url: String) -> Result<()> {
 }
 
 /// The session shell for a VS Code editor window hosting agent terminals.
+#[cfg(unix)]
 fn window_session(id: &str) -> Session {
     let mut s = window_session_base(id);
     s.editor = Some(fleet_protocol::Editor {
@@ -135,6 +151,7 @@ fn window_session(id: &str) -> Session {
     s
 }
 
+#[cfg(unix)]
 fn window_session_base(id: &str) -> Session {
     Session {
         schema_version: SCHEMA_VERSION,

@@ -737,13 +737,30 @@ fn editor_bin(path: &OsStr) -> PathBuf {
     }
     find_on_path("code", path)
         .or_else(|| {
-            [
+            let mut candidates: Vec<PathBuf> = [
                 "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
                 "/Applications/Visual Studio Code - Insiders.app/Contents/Resources/app/bin/code",
             ]
             .into_iter()
             .map(PathBuf::from)
-            .find(|p| p.is_file())
+            .collect();
+            // Default Windows install locations (per-user, then machine-wide).
+            if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+                candidates.extend(executable_candidates(
+                    &PathBuf::from(local)
+                        .join("Programs")
+                        .join("Microsoft VS Code")
+                        .join("bin"),
+                    "code",
+                ));
+            }
+            if let Some(pf) = std::env::var_os("ProgramFiles") {
+                candidates.extend(executable_candidates(
+                    &PathBuf::from(pf).join("Microsoft VS Code").join("bin"),
+                    "code",
+                ));
+            }
+            candidates.into_iter().find(|p| p.is_file())
         })
         .unwrap_or_else(|| PathBuf::from("code"))
 }
@@ -757,7 +774,7 @@ fn local_code_server_bin(editor: &Path) -> Option<PathBuf> {
             return Some(PathBuf::from(bin));
         }
     }
-    let from_home = code_server_bin_from_home(std::env::var_os("HOME").map(PathBuf::from));
+    let from_home = code_server_bin_from_home(home_dir());
     if from_home.is_some() {
         return from_home;
     }
@@ -769,11 +786,12 @@ fn local_code_server_bin(editor: &Path) -> Option<PathBuf> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
-    code_server_bin_from_home(std::env::var_os("HOME").map(PathBuf::from))
+    code_server_bin_from_home(home_dir())
 }
 
 fn is_code_server_bin(path: &Path) -> bool {
-    path.file_name()
+    // file_stem so the Windows `code-server.cmd` / `code-server.exe` forms match.
+    path.file_stem()
         .and_then(|name| name.to_str())
         .is_some_and(|name| name == "code-server")
 }
@@ -789,17 +807,21 @@ fn code_server_bin_from_home(home: Option<PathBuf>) -> Option<PathBuf> {
             continue;
         };
         for entry in entries.filter_map(Result::ok) {
-            let bin = entry.path().join("bin").join("code-server");
-            if bin.is_file() {
-                let modified = bin
-                    .metadata()
-                    .and_then(|m| m.modified())
-                    .ok()
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs())
-                    .unwrap_or_default();
-                candidates.push((modified, bin));
-            }
+            let bin_dir = entry.path().join("bin");
+            let Some(bin) = executable_candidates(&bin_dir, "code-server")
+                .into_iter()
+                .find(|candidate| candidate.is_file())
+            else {
+                continue;
+            };
+            let modified = bin
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or_default();
+            candidates.push((modified, bin));
         }
     }
     candidates.sort_by_key(|(modified, _)| *modified);
@@ -818,10 +840,26 @@ fn reporter_bin() -> PathBuf {
 }
 
 fn bundled_bin(name: &str) -> Option<PathBuf> {
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join(name)))
-        .filter(|path| path.is_file())
+    let exe = std::env::current_exe().ok()?;
+    let exe_dir = exe.parent()?;
+    bundle_search_dirs(exe_dir)
+        .into_iter()
+        .flat_map(|dir| executable_candidates(&dir, name))
+        .find(|path| path.is_file())
+}
+
+/// Where a Tauri bundle can put files relative to the running binary:
+/// next to it (Windows install root, macOS Contents/MacOS sidecars),
+/// `../Resources` (macOS), or `../lib/<app>` (Linux deb/rpm/AppImage).
+fn bundle_search_dirs(exe_dir: &Path) -> Vec<PathBuf> {
+    let mut dirs = vec![exe_dir.to_path_buf()];
+    if let Some(parent) = exe_dir.parent() {
+        dirs.push(parent.join("Resources"));
+        for app in ["fleet", "Fleet", "fleet-host"] {
+            dirs.push(parent.join("lib").join(app));
+        }
+    }
+    dirs
 }
 
 /// PATH used for Fleet-launched tools.
@@ -831,7 +869,7 @@ fn bundled_bin(name: &str) -> Option<PathBuf> {
 fn fleet_tool_path() -> OsString {
     fleet_tool_path_from(
         std::env::var_os("PATH"),
-        std::env::var_os("HOME").map(PathBuf::from),
+        home_dir(),
         std::env::var("USER").ok(),
     )
 }
@@ -912,8 +950,31 @@ fn prepend_path(dir: &Path, path: &OsStr) -> OsString {
 
 fn find_on_path(name: &str, path: &OsStr) -> Option<PathBuf> {
     std::env::split_paths(path)
-        .map(|dir| dir.join(name))
+        .flat_map(|dir| executable_candidates(&dir, name))
         .find(|path| path.is_file())
+}
+
+/// Candidate file names for executable `name` in `dir`. On Windows the VS Code
+/// CLI (and most CLI launchers) ship as `name.cmd` / `name.exe`; the bare `name`
+/// next to them is a POSIX shell script, so the Windows-native forms come first.
+fn executable_candidates(dir: &Path, name: &str) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if cfg!(windows) {
+        for ext in ["exe", "cmd", "bat"] {
+            candidates.push(dir.join(format!("{name}.{ext}")));
+        }
+    }
+    candidates.push(dir.join(name));
+    candidates
+}
+
+/// The user's home directory: `HOME` (unix, and respected if set on Windows),
+/// else `USERPROFILE` (Windows).
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .filter(|v| !v.is_empty())
+        .or_else(|| std::env::var_os("USERPROFILE").filter(|v| !v.is_empty()))
+        .map(PathBuf::from)
 }
 
 /// Inspect a running container for the host-reachable editor URL: the host port that
@@ -1066,10 +1127,7 @@ fn find_fleet_bridge_vsix() -> Option<PathBuf> {
     let mut dirs = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
-            dirs.push(exe_dir.to_path_buf());
-            if let Some(contents_dir) = exe_dir.parent() {
-                dirs.push(contents_dir.join("Resources"));
-            }
+            dirs.extend(bundle_search_dirs(exe_dir));
         }
     }
     dirs.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/fleet-bridge"));
@@ -1101,6 +1159,7 @@ fn first_vsix_in(dir: &Path) -> Option<PathBuf> {
 /// Install a `claude` shim in `shim_dir` that wraps the real `claude` with a
 /// `--settings` file whose hooks relay lifecycle payloads to `reporter_socket`.
 /// Returns the shim binary path. Skipped (Err) if the real `claude` isn't found.
+#[cfg(unix)]
 fn install_claude_shim(
     shim_dir: &Path,
     reporter_socket: &Path,
@@ -1128,6 +1187,22 @@ fn install_claude_shim(
     Ok(shim)
 }
 
+/// The shim is a POSIX shell script relaying through `nc -U` — neither exists on
+/// Windows. Degrade gracefully: no shim means `claude` runs unwrapped and the
+/// rail tab simply shows no agent state (the spawn itself still works).
+#[cfg(not(unix))]
+fn install_claude_shim(
+    _shim_dir: &Path,
+    _reporter_socket: &Path,
+    _path: &OsStr,
+) -> std::io::Result<PathBuf> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "claude shim requires a POSIX shell and unix sockets; not supported on this platform yet",
+    ))
+}
+
+#[cfg(unix)]
 fn claude_shim_script(real: &Path, hooks_file: &Path, shim_dir: &Path) -> String {
     format!(
         r#"#!/bin/sh
@@ -1188,6 +1263,7 @@ fn find_real_claude(shim_dir: &Path, path: &OsStr) -> Option<PathBuf> {
 /// The `--settings` hooks document: every relayed Claude lifecycle event sends its
 /// payload (tagged `claude`, CR/LF stripped) to the reporter socket via `nc -U`.
 /// `|| true` keeps Claude's flow alive on any relay error (observer, never denies).
+#[cfg(unix)]
 fn claude_hooks_settings(reporter_socket: &Path) -> serde_json::Value {
     let relay = format!(
         "printf 'claude %s\\n' \"$(cat | tr -d '\\r\\n')\" | nc -U '{}' 2>/dev/null || true",
@@ -1340,7 +1416,7 @@ fn resolve_repo(spec: &str) -> String {
 fn fleet_mux_base() -> PathBuf {
     fleet_mux_base_from(
         std::env::var_os("FLEET_MUX_DIR").map(PathBuf::from),
-        std::env::var_os("HOME").map(PathBuf::from),
+        home_dir(),
     )
 }
 
@@ -1365,7 +1441,7 @@ fn next_server_counter_path(base: &Path) -> PathBuf {
 fn fleet_spawn_cwd(base: &Path) -> PathBuf {
     fleet_spawn_cwd_from(
         std::env::var_os("FLEET_SPAWN_CWD").map(PathBuf::from),
-        std::env::var_os("HOME").map(PathBuf::from),
+        home_dir(),
         base,
     )
 }
@@ -1383,8 +1459,7 @@ fn fleet_spawn_cwd_from(
 }
 
 fn default_spawn_folder() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
+    home_dir()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(fleet_mux_base)
 }

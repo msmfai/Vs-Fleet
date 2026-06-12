@@ -81,7 +81,9 @@ pub use fake::{FakeReporter, FakeReporterConfig, Transport};
 pub use identity::{DurableId, IdentityLedger, RunIdentity, Stamp};
 pub use liveness::{Liveness, LivenessTracker};
 pub use reporter::{Reporter, ReporterCommand, ReporterConfig, ReporterCore, ReporterHandle};
-pub use serve::{parse_frame, serve_unix, Agent, DriftError, Receiver};
+#[cfg(unix)]
+pub use serve::serve_unix;
+pub use serve::{parse_frame, Agent, DriftError, Receiver};
 pub use transcript::{corroborate, Corroboration};
 pub use transition::{ScriptedStep, TransitionScript};
 pub use transport::{Connection, Connector, TransportError, WsConnector};

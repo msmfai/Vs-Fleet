@@ -40,7 +40,10 @@ fn default_hub_addr() -> SocketAddr {
 fn embedded_hub_runtime_dir() -> PathBuf {
     embedded_hub_runtime_dir_from(
         std::env::var_os("FLEET_RUNTIME_DIR").map(PathBuf::from),
-        std::env::var_os("HOME").map(PathBuf::from),
+        std::env::var_os("HOME")
+            .filter(|v| !v.is_empty())
+            .or_else(|| std::env::var_os("USERPROFILE").filter(|v| !v.is_empty()))
+            .map(PathBuf::from),
     )
 }
 
