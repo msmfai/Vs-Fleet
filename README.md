@@ -38,15 +38,29 @@ Code CLI and starts local web sessions from the Fleet app.
 
 - macOS or Linux (Windows builds are alpha; agent-state reporting is not yet
   supported there).
-- A local VS Code installation with the `code` command available.
+- For **local sessions**: a VS Code installation with the `code` command
+  available. VS Fleet and VS Code are separate installs — Fleet does not
+  bundle, download, or modify VS Code. Fleet itself launches without it
+  (externally started sessions phone home on their own, and the planned
+  SSH/container session paths need no local VS Code), but spawning local
+  sessions requires it.
 - Rust and Node.js tooling for building from source.
 
 ## Getting Started
 
-Download an unsigned alpha build from
-[Releases](https://github.com/msmfai/Vs-Fleet/releases) (macOS dmg, Linux AppImage/deb/rpm) and verify it
-against `SHA256SUMS.txt` — see the release notes for the per-OS unsigned-binary
-caveats.
+Install both pieces:
+
+1. **VS Code** — from Microsoft, with the `code` CLI on your PATH. The first
+   local session may make VS Code's CLI download its `serve-web` server bundle
+   into `~/.vscode/cli/`.
+2. **VS Fleet** — an unsigned alpha build from
+   [Releases](https://github.com/msmfai/Vs-Fleet/releases) (macOS dmg, Linux AppImage/deb/rpm), verified
+   against `SHA256SUMS.txt` — see the release notes for the per-OS
+   unsigned-binary caveats.
+
+Fleet drives your VS Code install but stays out of it: sessions run with
+Fleet-private data dirs, and the bridge extension installs only into those —
+never into your VS Code settings, profiles, or extensions.
 
 Or build the macOS app from source:
 
