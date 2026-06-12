@@ -17,6 +17,8 @@ packages/*/coverage/
 
 # Build artifacts
 dist/
+dist-local/
+smoke-out/
 *.vsix
 crates/fleet-host/artifacts/manual/
 docs/release/OWNER_DECISION_RECORD.draft.md
