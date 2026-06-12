@@ -235,7 +235,7 @@ impl ServerSupervisor {
             &self.bridge_token,
             &base.to_string_lossy(),
         );
-        let mut cmd = Command::new(&server_bin);
+        let mut cmd = fleet_command(&server_bin);
         cmd.args(&args)
             .env("PATH", path)
             .env("TMPDIR", &tmp_dir)
@@ -268,7 +268,7 @@ impl ServerSupervisor {
     ) -> std::io::Result<Child> {
         let bin = reporter_bin();
         let (out, err) = log_files(&format!("reporter-{id}"));
-        let mut cmd = Command::new(bin);
+        let mut cmd = fleet_command(bin);
         cmd.args([
             "--serve",
             "--ws",
@@ -452,7 +452,7 @@ impl ServerSupervisor {
         );
 
         let (out, err) = log_files(&format!("ssh-{id}"));
-        let mut cmd = Command::new("ssh");
+        let mut cmd = fleet_command("ssh");
         cmd.args([
             "-o",
             "ExitOnForwardFailure=yes",
@@ -643,6 +643,140 @@ fn spawn_fleet_child(cmd: &mut Command) -> std::io::Result<Child> {
     }
     cmd.spawn()
 }
+
+/// Trampoline flag: `fleet-host --fleet-disclaim-exec <prog> [args…]` replaces
+/// the process with `<prog>`, disclaiming TCC responsibility (macOS only).
+#[cfg(target_os = "macos")]
+pub const DISCLAIM_EXEC_ARG: &str = "--fleet-disclaim-exec";
+
+/// Command for a long-lived Fleet-spawned process (code-server tree, reporter,
+/// ssh deploy). On macOS the spawn routes through Fleet's own binary with
+/// [`DISCLAIM_EXEC_ARG`], which immediately replaces itself with the target via
+/// `posix_spawn(POSIX_SPAWN_SETEXEC)` after disclaiming TCC responsibility — so
+/// privacy prompts for anything the server tree touches (Documents, Desktop, …)
+/// attribute to the server binary, not to Fleet. Fleet stays a passthrough.
+/// The exec keeps pid, process group, stdio, cwd, and env, so `Child` handles
+/// and group termination behave exactly as a direct spawn.
+fn fleet_command(program: impl AsRef<OsStr>) -> Command {
+    #[cfg(target_os = "macos")]
+    // Under `cargo test` the current executable is the libtest harness, which
+    // has no trampoline branch — spawn directly there.
+    if !cfg!(test) {
+        if let Ok(exe) = std::env::current_exe() {
+            return disclaim_command(exe.as_os_str(), program.as_ref());
+        }
+    }
+    Command::new(program)
+}
+
+#[cfg(target_os = "macos")]
+fn disclaim_command(trampoline: &OsStr, program: &OsStr) -> Command {
+    let mut cmd = Command::new(trampoline);
+    cmd.arg(DISCLAIM_EXEC_ARG).arg(program);
+    cmd
+}
+
+/// TCC responsibility disclaim (macOS). By default macOS attributes a child
+/// tree's protected-folder access to the app that spawned it, so every prompt
+/// says "Fleet would like to access…". `responsibility_spawnattrs_setdisclaim`
+/// (private but ABI-stable since 10.14; shipped by Chromium, WezTerm, Emacs)
+/// makes the spawned image its own responsible process instead.
+#[cfg(target_os = "macos")]
+mod disclaim {
+    use std::ffi::{c_char, c_int, c_short, c_void, CString, OsString};
+    use std::os::unix::ffi::OsStrExt;
+
+    /// `typedef void *posix_spawnattr_t;` — spawn.h
+    type PosixSpawnattrT = *mut c_void;
+    /// sys/spawn.h — `posix_spawn` acts like exec, replacing this process.
+    const POSIX_SPAWN_SETEXEC: c_short = 0x0040;
+
+    extern "C" {
+        fn posix_spawnattr_init(attr: *mut PosixSpawnattrT) -> c_int;
+        fn posix_spawnattr_setflags(attr: *mut PosixSpawnattrT, flags: c_short) -> c_int;
+        fn responsibility_spawnattrs_setdisclaim(
+            attr: *mut PosixSpawnattrT,
+            disclaim: c_int,
+        ) -> c_int;
+        fn posix_spawnp(
+            pid: *mut c_int,
+            file: *const c_char,
+            file_actions: *const c_void,
+            attrp: *const PosixSpawnattrT,
+            argv: *const *const c_char,
+            envp: *const *const c_char,
+        ) -> c_int;
+        static environ: *const *const c_char;
+    }
+
+    fn disclaiming_spawnattr() -> Result<PosixSpawnattrT, std::io::Error> {
+        let mut attr: PosixSpawnattrT = std::ptr::null_mut();
+        let rc = unsafe { posix_spawnattr_init(&mut attr) };
+        if rc != 0 {
+            return Err(std::io::Error::from_raw_os_error(rc));
+        }
+        let rc = unsafe { responsibility_spawnattrs_setdisclaim(&mut attr, 1) };
+        if rc != 0 {
+            return Err(std::io::Error::from_raw_os_error(rc));
+        }
+        Ok(attr)
+    }
+
+    /// Replace this process with `argv`, disclaimed. Returns only on failure.
+    pub fn exec_disclaimed(argv: &[OsString]) -> std::io::Error {
+        let cstrings: Vec<CString> = match argv
+            .iter()
+            .map(|arg| CString::new(arg.as_bytes()))
+            .collect()
+        {
+            Ok(args) => args,
+            Err(e) => return std::io::Error::new(std::io::ErrorKind::InvalidInput, e),
+        };
+        let Some(program) = cstrings.first() else {
+            return std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "disclaim-exec: no program given",
+            );
+        };
+        let mut argv_ptrs: Vec<*const c_char> = cstrings.iter().map(|arg| arg.as_ptr()).collect();
+        argv_ptrs.push(std::ptr::null());
+
+        let mut attr = match disclaiming_spawnattr() {
+            Ok(attr) => attr,
+            Err(e) => return e,
+        };
+        let rc = unsafe { posix_spawnattr_setflags(&mut attr, POSIX_SPAWN_SETEXEC) };
+        if rc != 0 {
+            return std::io::Error::from_raw_os_error(rc);
+        }
+        let mut pid: c_int = 0;
+        let rc = unsafe {
+            posix_spawnp(
+                &mut pid,
+                program.as_ptr(),
+                std::ptr::null(),
+                &attr,
+                argv_ptrs.as_ptr(),
+                environ,
+            )
+        };
+        // SETEXEC means success never returns; reaching here is an error.
+        std::io::Error::from_raw_os_error(rc)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn disclaim_spawnattr_is_supported() {
+            // Validates the private symbol resolves and the kernel-facing attr
+            // call succeeds on this macOS — the trampoline depends on both.
+            super::disclaiming_spawnattr().expect("disclaim spawnattr");
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub use disclaim::exec_disclaimed;
 
 fn terminate_child_tree(mut child: Child) {
     #[cfg(unix)]
@@ -1504,6 +1638,24 @@ fn log_files(name: &str) -> (Stdio, Stdio) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn disclaim_command_routes_program_through_trampoline() {
+        let cmd = disclaim_command(OsStr::new("/Applications/Fleet"), OsStr::new("/bin/echo"));
+        assert_eq!(cmd.get_program(), "/Applications/Fleet");
+        let args: Vec<&OsStr> = cmd.get_args().collect();
+        assert_eq!(args, [DISCLAIM_EXEC_ARG, "/bin/echo"]);
+    }
+
+    #[test]
+    fn fleet_command_under_test_spawns_directly() {
+        // The libtest harness has no trampoline branch, so in-tree tests must
+        // get a plain spawn (the trampoline path is exercised by the smoke run).
+        let cmd = fleet_command("/bin/echo");
+        assert_eq!(cmd.get_program(), "/bin/echo");
+        assert_eq!(cmd.get_args().count(), 0);
+    }
 
     #[test]
     fn resolve_repo_shorthands_prefer_github_then_gitlab() {

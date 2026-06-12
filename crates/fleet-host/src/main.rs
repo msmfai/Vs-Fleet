@@ -167,6 +167,17 @@ fn run_rail_action(app: &tauri::AppHandle, function_name: &str) {
 }
 
 fn main() {
+    // TCC disclaim trampoline (see `spawn::fleet_command`): replace this process
+    // with the target before any logging/Tauri init so the short-lived hop has
+    // no side effects. Must stay ahead of the hub-URL positional arg below.
+    #[cfg(target_os = "macos")]
+    if std::env::args_os().nth(1).as_deref() == Some(spawn::DISCLAIM_EXEC_ARG.as_ref()) {
+        let argv: Vec<_> = std::env::args_os().skip(2).collect();
+        let err = spawn::exec_disclaimed(&argv);
+        eprintln!("fleet-host: disclaim-exec failed: {err}");
+        std::process::exit(127);
+    }
+
     init_logging();
     spawn::clear_legacy_spawn_state();
 
