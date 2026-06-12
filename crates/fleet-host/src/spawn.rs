@@ -210,6 +210,12 @@ impl ServerSupervisor {
         let tmp_dir = base.join("tmp");
         std::fs::create_dir_all(&tmp_dir)?;
         let editor = editor_bin(&tool_path);
+        if !editor_resolved(&editor, &tool_path) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                EDITOR_MISSING_MESSAGE,
+            ));
+        }
         write_spawned_server_settings(&user_data)?;
         install_fleet_bridge(&editor, &user_data)?;
         let server_bin = local_code_server_bin(&editor).unwrap_or_else(|| editor.clone());
@@ -887,6 +893,21 @@ fn docker_bin() -> PathBuf {
         }
     }
     find_on_path("docker", &fleet_tool_path()).unwrap_or_else(|| PathBuf::from("docker"))
+}
+
+/// Shown as a rail **warning** (not an error) when a local spawn is requested
+/// without a local VS Code: Fleet without VS Code is a supported setup —
+/// externally started / remote sessions phone home on their own; only local
+/// spawns need the `code` CLI. See `mux::emit_spawn_error`.
+pub(crate) const EDITOR_MISSING_MESSAGE: &str = "VS Code not found — local sessions need a VS Code install with the `code` CLI (remote sessions are unaffected)";
+
+/// Whether the resolved editor actually exists: an absolute path that is a
+/// file, or a bare name (e.g. a `FLEET_EDITOR_BIN` override) found on PATH.
+fn editor_resolved(editor: &Path, tool_path: &OsStr) -> bool {
+    editor.is_file()
+        || editor
+            .to_str()
+            .is_some_and(|name| find_on_path(name, tool_path).is_some())
 }
 
 fn editor_bin(path: &OsStr) -> PathBuf {
@@ -1698,6 +1719,22 @@ mod tests {
         let (bin, prefix) = server_spawn_target(&wrapper);
         assert_eq!(bin, wrapper);
         assert!(prefix.is_empty());
+    }
+
+    #[test]
+    fn editor_resolved_accepts_files_and_path_hits_only() {
+        let empty_path = OsString::new();
+        assert!(editor_resolved(Path::new("/bin/echo"), &empty_path));
+        // The bare-name fallback (`editor_bin` found nothing): unresolved on an
+        // empty PATH — this is the case the rail downgrades to a warning.
+        assert!(!editor_resolved(Path::new("code"), &empty_path));
+        assert!(!editor_resolved(
+            Path::new("/nonexistent/bin/code"),
+            &empty_path
+        ));
+        // A bare-name override is fine when PATH can find it.
+        let bin_dir: OsString = "/bin".into();
+        assert!(editor_resolved(Path::new("echo"), &bin_dir));
     }
 
     #[test]

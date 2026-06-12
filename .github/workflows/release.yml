@@ -176,7 +176,7 @@ jobs:
 
   publish:
     name: Publish GitHub release
-    needs: bundle
+    needs: [vsix, bundle]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
@@ -188,6 +188,15 @@ jobs:
           pattern: bundles-*
           path: dist
           merge-multiple: true
+
+      # The bridge VSIX is also a release asset of its own: Fleet embeds it for
+      # local sessions, but remote/container environments bake the bridge into
+      # their own code-server installs and need the artifact directly.
+      - name: Fetch bridge VSIX
+        uses: actions/download-artifact@v4
+        with:
+          name: fleet-bridge-vsix
+          path: dist
 
       - name: Generate checksums
         working-directory: dist

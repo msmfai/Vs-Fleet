@@ -390,6 +390,13 @@ pub fn clear_host_status_if_current(state: State<'_, MuxState>, message: String)
 }
 
 pub fn emit_spawn_error(app: &AppHandle, source: &str, error: &str) {
+    // Missing local VS Code is a supported configuration (remote/externally
+    // started sessions), not a fault — surface it as a warning, not an error.
+    if error == crate::spawn::EDITOR_MISSING_MESSAGE {
+        tracing::warn!(source, "local spawn skipped: no local VS Code install");
+        emit_host_status(app, "warning", source, error.to_string());
+        return;
+    }
     tracing::warn!(source, error, "spawn failed");
     emit_host_status(app, "error", source, format!("spawn failed: {error}"));
 }
