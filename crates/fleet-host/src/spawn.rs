@@ -1240,7 +1240,9 @@ exec {real} --settings {hooks_file} "$@"
 }
 
 /// Find the real `claude` binary: `FLEET_CLAUDE_BIN`, else the first `claude` on
-/// PATH that isn't our shim dir (so the shim never execs itself).
+/// PATH that isn't our shim dir (so the shim never execs itself). Portable logic,
+/// but only the unix shim install calls it (hence the test-or-unix gate).
+#[cfg(any(unix, test))]
 fn find_real_claude(shim_dir: &Path, path: &OsStr) -> Option<PathBuf> {
     if let Ok(bin) = std::env::var("FLEET_CLAUDE_BIN") {
         let p = PathBuf::from(bin);

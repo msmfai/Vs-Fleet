@@ -182,6 +182,8 @@ pub fn build_window(app: &mut App) -> tauri::Result<()> {
     let width = 1320.0_f64;
     let height = 860.0_f64;
 
+    // `mut` is only exercised by the macOS titlebar branch below.
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
     let mut builder = tauri::window::WindowBuilder::new(app, WINDOW)
         .title("Fleet")
         .inner_size(width, height)
