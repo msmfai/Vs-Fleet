@@ -610,7 +610,8 @@ fn percent_decode(value: &str) -> String {
 // Glue: writes the pure `probe_http_response` to a live TCP stream.
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn write_probe_json(stream: &mut TcpStream, status: u16, body: &str) -> std::io::Result<()> {
-    stream.write_all(probe_http_response(status, "application/json; charset=utf-8", body).as_bytes())
+    stream
+        .write_all(probe_http_response(status, "application/json; charset=utf-8", body).as_bytes())
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -709,7 +710,8 @@ mod tests {
 
     #[test]
     fn fleet_log_guard_tolerates_a_poisoned_file_lock() {
-        let dir = std::env::temp_dir().join(format!("fleet-host-log-poison-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("fleet-host-log-poison-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let file = std::fs::File::create(dir.join("fleet-host.log")).unwrap();
@@ -766,8 +768,14 @@ mod tests {
 
     #[test]
     fn probe_query_label_decodes_only_the_label_param() {
-        assert_eq!(probe_query_label("label=Renamed%20Session").as_deref(), Some("Renamed Session"));
-        assert_eq!(probe_query_label("x=1&label=My+Project&y=2").as_deref(), Some("My Project"));
+        assert_eq!(
+            probe_query_label("label=Renamed%20Session").as_deref(),
+            Some("Renamed Session")
+        );
+        assert_eq!(
+            probe_query_label("x=1&label=My+Project&y=2").as_deref(),
+            Some("My Project")
+        );
         // No label param ⇒ None; a label of the literal text passes through.
         assert_eq!(probe_query_label("foo=bar"), None);
         assert_eq!(probe_query_label("label=plain").as_deref(), Some("plain"));
@@ -805,7 +813,11 @@ mod tests {
         assert_eq!(body["renamed"], true);
         assert_eq!(body["server"], "server-sup");
         assert_eq!(body["label"], "Spawned Renamed");
-        let server = sup.servers().into_iter().find(|s| s.id == "server-sup").unwrap();
+        let server = sup
+            .servers()
+            .into_iter()
+            .find(|s| s.id == "server-sup")
+            .unwrap();
         assert_eq!(server.label, "Spawned Renamed");
         assert!(server.renamed);
 
@@ -819,7 +831,11 @@ mod tests {
         )
         .expect("rename returns a body");
         assert_eq!(body["renamed"], true);
-        let server = registry.servers().into_iter().find(|s| s.id == "server-reg").unwrap();
+        let server = registry
+            .servers()
+            .into_iter()
+            .find(|s| s.id == "server-reg")
+            .unwrap();
         assert_eq!(server.label, "Bridge Renamed");
         assert!(server.renamed);
     }
@@ -850,21 +866,23 @@ mod tests {
         let registry = bridge::BridgeRegistry::new();
         registry.register_test_server("server-reg", "http://127.0.0.1:9/", "auto-reported");
 
-        let body = apply_state_probe_command(
-            "rename",
-            "server-reg",
-            Some("My Project"),
-            &sup,
-            &registry,
-        )
-        .expect("rename returns a body");
+        let body =
+            apply_state_probe_command("rename", "server-reg", Some("My Project"), &sup, &registry)
+                .expect("rename returns a body");
         assert_eq!(body["renamed"], true);
 
         // The reporter reconnects and re-registers with its auto label again.
         registry.register_test_server("server-reg", "http://127.0.0.1:9/", "auto-reported");
 
-        let server = registry.servers().into_iter().find(|s| s.id == "server-reg").unwrap();
-        assert_eq!(server.label, "My Project", "reconnect must not clobber the probe rename");
+        let server = registry
+            .servers()
+            .into_iter()
+            .find(|s| s.id == "server-reg")
+            .unwrap();
+        assert_eq!(
+            server.label, "My Project",
+            "reconnect must not clobber the probe rename"
+        );
         assert!(server.renamed);
     }
 

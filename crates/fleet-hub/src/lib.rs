@@ -255,7 +255,10 @@ mod tests {
         #[cfg(unix)]
         {
             std::env::set_var("XDG_RUNTIME_DIR", "/tmp/fleet-precedence-xdg");
-            assert_eq!(state_dir(), PathBuf::from("/tmp/fleet-precedence-xdg/fleet"));
+            assert_eq!(
+                state_dir(),
+                PathBuf::from("/tmp/fleet-precedence-xdg/fleet")
+            );
         }
 
         // With both removed, the temp-dir fallback ends in `fleet`.

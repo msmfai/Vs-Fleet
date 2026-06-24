@@ -1064,7 +1064,10 @@ mod tests {
                 runs: vec![],
             };
             let line = row.render_line();
-            assert!(line.contains(want), "state {state:?} → want {want:?} in: {line}");
+            assert!(
+                line.contains(want),
+                "state {state:?} → want {want:?} in: {line}"
+            );
         }
     }
 
@@ -1091,7 +1094,10 @@ mod tests {
                 runs: vec![],
             };
             let line = row.render_line();
-            assert!(line.contains(want), "urgency {urgency:?} → want {want:?} in: {line}");
+            assert!(
+                line.contains(want),
+                "urgency {urgency:?} → want {want:?} in: {line}"
+            );
         }
         // Some(Urgency::None) renders no urgency marker (the `=> ""` arm).
         let none_row = Row {
@@ -1143,7 +1149,10 @@ mod tests {
         // arm of the RunRemoved rollup recompute, not just the `None` arm).
         let mut st = CliState::new();
         st.apply(Event::session_added(session("s1", "proj", RunState::Idle)));
-        st.apply(Event::run_added("s1", run("r-plain", RunState::Working, None)));
+        st.apply(Event::run_added(
+            "s1",
+            run("r-plain", RunState::Working, None),
+        ));
         st.apply(Event::run_added(
             "s1",
             run("r-urgent", RunState::Waiting, Some(Urgency::Approval)),
@@ -1182,7 +1191,10 @@ mod tests {
                 waiting_since: None,
             };
             let line = format_run_row(&rr, "");
-            assert!(line.contains(want), "kind {kind:?} → want {want:?} in: {line}");
+            assert!(
+                line.contains(want),
+                "kind {kind:?} → want {want:?} in: {line}"
+            );
         }
     }
 
@@ -1201,7 +1213,10 @@ mod tests {
             waiting_since: Some("2026-06-08T10:00:00Z".into()),
         };
         let line = format_run_row(&rr, "");
-        assert!(line.contains("waiting since 2026-06-08T10:00:00Z"), "{line}");
+        assert!(
+            line.contains("waiting since 2026-06-08T10:00:00Z"),
+            "{line}"
+        );
         assert!(line.contains("\"needs approval\""), "{line}");
     }
 }

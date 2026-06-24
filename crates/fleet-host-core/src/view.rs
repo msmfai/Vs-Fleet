@@ -679,7 +679,10 @@ mod tests {
 
     #[test]
     fn agenticon_from_kind_maps_each_agent_kind() {
-        assert_eq!(AgentIcon::from_kind(&AgentKind::ClaudeCode), AgentIcon::Claude);
+        assert_eq!(
+            AgentIcon::from_kind(&AgentKind::ClaudeCode),
+            AgentIcon::Claude
+        );
         assert_eq!(AgentIcon::from_kind(&AgentKind::Codex), AgentIcon::Codex);
         assert_eq!(AgentIcon::from_kind(&AgentKind::Other), AgentIcon::Other);
     }
@@ -756,9 +759,19 @@ mod tests {
         // `Some(prev) if prev <= *w => Some(prev)` retain branch).
         let mut m = InboxModel::new();
         m.apply(Event::session_added(session("s1", "p", State::Idle)));
-        let mut early = run("r-early", AgentKind::Codex, State::Waiting, Some(Urgency::Approval));
+        let mut early = run(
+            "r-early",
+            AgentKind::Codex,
+            State::Waiting,
+            Some(Urgency::Approval),
+        );
         early.waiting_since = Some("2026-06-08T10:00:00Z".into());
-        let mut late = run("r-late", AgentKind::ClaudeCode, State::Waiting, Some(Urgency::Approval));
+        let mut late = run(
+            "r-late",
+            AgentKind::ClaudeCode,
+            State::Waiting,
+            Some(Urgency::Approval),
+        );
         late.waiting_since = Some("2026-06-08T11:00:00Z".into());
         m.apply(Event::run_added("s1", early));
         m.apply(Event::run_added("s1", late));
@@ -775,9 +788,19 @@ mod tests {
         // the `_ => Some(w.clone())` replace branch must adopt it.
         let mut m = InboxModel::new();
         m.apply(Event::session_added(session("s1", "p", State::Idle)));
-        let mut late = run("r-late", AgentKind::Codex, State::Waiting, Some(Urgency::Approval));
+        let mut late = run(
+            "r-late",
+            AgentKind::Codex,
+            State::Waiting,
+            Some(Urgency::Approval),
+        );
         late.waiting_since = Some("2026-06-08T11:00:00Z".into());
-        let mut early = run("r-early", AgentKind::ClaudeCode, State::Waiting, Some(Urgency::Approval));
+        let mut early = run(
+            "r-early",
+            AgentKind::ClaudeCode,
+            State::Waiting,
+            Some(Urgency::Approval),
+        );
         early.waiting_since = Some("2026-06-08T10:00:00Z".into());
         m.apply(Event::run_added("s1", late));
         m.apply(Event::run_added("s1", early));

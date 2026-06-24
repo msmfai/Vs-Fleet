@@ -515,7 +515,10 @@ mod tests {
         let (sender, mut rx) = command_channel();
         sender.send(Command::mute("s1")).unwrap();
         let received = rx.try_recv().unwrap();
-        assert_eq!(command_frame_text(received).unwrap(), command_frame_text(Command::mute("s1")).unwrap());
+        assert_eq!(
+            command_frame_text(received).unwrap(),
+            command_frame_text(Command::mute("s1")).unwrap()
+        );
 
         // Dropping the receiver closes the channel; send then reports the error.
         drop(rx);

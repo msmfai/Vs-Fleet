@@ -550,7 +550,10 @@ mod tests {
                 },
             )
             .await;
-        assert!(!liveness, "Liveness refreshes the reporter window, not the Hub");
+        assert!(
+            !liveness,
+            "Liveness refreshes the reporter window, not the Hub"
+        );
         let shutdown = hub.apply_command("s1", ReporterCommand::Shutdown).await;
         assert!(!shutdown, "Shutdown is not a Hub delta");
     }
@@ -577,7 +580,9 @@ mod tests {
         if let Event::Snapshot { sessions, .. } = snap {
             let s = sessions.iter().find(|s| s.session_id == "s1").unwrap();
             assert!(
-                s.runs.iter().any(|r| r.run_id == "r1" && r.state == State::Dead),
+                s.runs
+                    .iter()
+                    .any(|r| r.run_id == "r1" && r.state == State::Dead),
                 "the confirmed-exit run is marked dead"
             );
         } else {
@@ -641,12 +646,16 @@ mod tests {
         let mut face = FaceClient::connect(&hub.ws_url()).await.unwrap();
         // wait_until returns immediately when the predicate already holds (the
         // early-true arm) — currently empty.
-        assert!(face.wait_until(Duration::from_millis(1), |m| m.view().is_empty()).await);
+        assert!(
+            face.wait_until(Duration::from_millis(1), |m| m.view().is_empty())
+                .await
+        );
 
         hub.register_session(sess("s1")).await;
         // Now wait for the registration to fold in (the pump-and-fold arm).
         assert!(
-            face.wait_until(Duration::from_secs(2), |m| m.view().len() == 1).await,
+            face.wait_until(Duration::from_secs(2), |m| m.view().len() == 1)
+                .await,
             "the session must appear on the face"
         );
         assert!(face.model().view().tab("s1").is_some());
@@ -705,9 +714,7 @@ mod tests {
     /// test wants. Returns the ws URL and the server task handle.
     async fn spawn_face_server<F, Fut>(after: F) -> (String, tokio::task::JoinHandle<()>)
     where
-        F: FnOnce(
-                tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
-            ) -> Fut
+        F: FnOnce(tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>) -> Fut
             + Send
             + 'static,
         Fut: std::future::Future<Output = ()> + Send,
@@ -860,7 +867,10 @@ mod tests {
         let held = face
             .wait_until(Duration::from_secs(2), |m| m.view().len() == 5)
             .await;
-        assert!(!held, "a closed connection yields the (false) predicate value");
+        assert!(
+            !held,
+            "a closed connection yields the (false) predicate value"
+        );
         server.await.unwrap();
     }
 }

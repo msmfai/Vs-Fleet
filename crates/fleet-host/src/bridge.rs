@@ -834,7 +834,10 @@ mod tests {
         );
 
         let server = &registry.servers()[0];
-        assert_eq!(server.label, "My Project", "reconnect must not clobber the rename");
+        assert_eq!(
+            server.label, "My Project",
+            "reconnect must not clobber the rename"
+        );
         assert!(server.renamed);
     }
 }

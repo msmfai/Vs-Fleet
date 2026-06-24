@@ -256,9 +256,7 @@ fn temp_config_shared_lock(tag: &str) -> HubConfig {
 
 async fn connect_with_retry(
     url: &str,
-) -> tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-> {
+) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {
     for _ in 0..200 {
         if let Ok((ws, _)) = tokio_tungstenite::connect_async(url).await {
             return ws;

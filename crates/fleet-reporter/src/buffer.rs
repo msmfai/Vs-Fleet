@@ -320,7 +320,11 @@ mod tests {
         assert_eq!(b.len(), 2);
         assert_eq!(b.dropped(), 1);
         let seqs: Vec<u64> = b.drain().iter().map(|d| d.seq).collect();
-        assert_eq!(seqs, vec![2, 3], "oldest requeued delta evicted on overflow");
+        assert_eq!(
+            seqs,
+            vec![2, 3],
+            "oldest requeued delta evicted on overflow"
+        );
     }
 
     #[test]

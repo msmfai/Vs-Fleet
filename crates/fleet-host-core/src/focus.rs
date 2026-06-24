@@ -659,7 +659,10 @@ mod tests {
         assert_eq!(current, FocusStrategy::for_platform(detected));
         // Whatever the host platform, the detected strategy is internally
         // consistent (its mechanism matches what `for_platform` assigns).
-        assert_eq!(current.mechanism, FocusStrategy::for_platform(detected).mechanism);
+        assert_eq!(
+            current.mechanism,
+            FocusStrategy::for_platform(detected).mechanism
+        );
     }
 
     /// On the macOS build host, detection resolves to macOS (compile-target arm).
