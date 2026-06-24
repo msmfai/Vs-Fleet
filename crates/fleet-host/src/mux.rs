@@ -388,32 +388,13 @@ pub fn select_spawned(app: AppHandle, id: String) {
     });
 }
 
-/// Tauri command: spawn a new code-server and add it to the rail. Returns its id.
+/// Tauri command: spawn a new code-server (with explicit options) and add it to
+/// the rail. Returns its id. The frontend's create menu (home + open-folder) is
+/// the only spawn entry point — both go through here. (The no-options variant was
+/// removed as a dead command: nothing invoked it.)
 // Glue: spawns a real server tree and drives the live `AppHandle` (status/emit/
 // navigate). The spawn + error-surfacing logic is tested in spawn.rs / via
 // `emit_spawn_error`.
-#[cfg_attr(coverage_nightly, coverage(off))]
-#[tauri::command]
-pub fn spawn_server(
-    app: AppHandle,
-    sup: State<'_, crate::spawn::ServerSupervisor>,
-) -> Result<String, String> {
-    match sup.spawn() {
-        Ok(server) => {
-            clear_host_status(&app);
-            let _ = app.emit(crate::bridge::SERVERS_CHANGED, ());
-            select_spawned(app, server.id.clone());
-            Ok(server.id)
-        }
-        Err(e) => {
-            let message = e.to_string();
-            emit_spawn_error(&app, "rail", &message);
-            Err(message)
-        }
-    }
-}
-
-// Glue: as `spawn_server`, with explicit spawn options.
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
 pub fn spawn_server_with_options(
