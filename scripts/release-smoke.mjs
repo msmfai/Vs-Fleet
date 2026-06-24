@@ -197,6 +197,51 @@ try {
     ws2.close();
   } catch {}
 
+  // ── 7. read commands: get_inbox + get_host_status over the probe ───────────
+  // The webview's bootstrap pulls (`refreshInbox` → get_inbox, `refreshStatus` →
+  // get_host_status). Assert the probe GETs return the managed-state JSON shape.
+  const inbox = await probe("/inbox");
+  if (typeof inbox !== "object" || inbox === null || !("connected" in inbox)) {
+    throw new Error(`/inbox did not return a rendered inbox: ${JSON.stringify(inbox)}`);
+  }
+  report.steps["inbox-read"] = "ok";
+
+  const initialStatus = await probe("/host-status");
+  if (!("status" in initialStatus)) {
+    throw new Error(`/host-status missing status field: ${JSON.stringify(initialStatus)}`);
+  }
+  report.steps["host-status-read"] = "ok";
+
+  // ── 8. clear_host_status_if_current round-trip ─────────────────────────────
+  // Seed an override, confirm the read reflects it, then assert the conditional
+  // clear is gated on the still-current message: a stale message must NOT clear,
+  // the matching one must (the auto-clear-only-if-current contract).
+  const STATUS_MSG = "smoke host status override";
+  await probe(`/host-status/set?message=${encodeURIComponent(STATUS_MSG)}`);
+  await poll("host-status-set", 10_000, async () => {
+    const { status } = await probe("/host-status");
+    return status && status.message === STATUS_MSG;
+  });
+
+  const staleClear = await probe(`/host-status/clear?message=${encodeURIComponent("a different message")}`);
+  if (staleClear.cleared !== false) {
+    throw new Error(`stale clear must not clear current override: ${JSON.stringify(staleClear)}`);
+  }
+  const stillSet = await probe("/host-status");
+  if (!stillSet.status || stillSet.status.message !== STATUS_MSG) {
+    throw new Error(`override cleared by a stale message: ${JSON.stringify(stillSet)}`);
+  }
+
+  const matchClear = await probe(`/host-status/clear?message=${encodeURIComponent(STATUS_MSG)}`);
+  if (matchClear.cleared !== true) {
+    throw new Error(`matching clear did not clear: ${JSON.stringify(matchClear)}`);
+  }
+  await poll("host-status-cleared", 10_000, async () => {
+    const { status } = await probe("/host-status");
+    return status === null;
+  });
+  report.steps["host-status-clear"] = "ok";
+
   // Give the child webview a moment to load the stand-in page, then screenshot.
   await sleep(5_000);
   screenshot(path.join(outDir, `smoke-${process.platform}-${process.arch}.png`));

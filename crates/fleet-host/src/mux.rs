@@ -462,21 +462,50 @@ pub fn open_server_external(app: AppHandle, id: String) -> Result<(), String> {
     open_server_external_by_id(&app, &id)
 }
 
-// Glue: Tauri command reading managed `State`.
+// Glue: thin Tauri command wrapper reading managed `State`; the read against the
+// `MuxState` status (`read_host_status`) is unit-tested + probe-round-tripped.
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
 pub fn get_host_status(state: State<'_, MuxState>) -> Option<HostStatus> {
+    read_host_status(&state)
+}
+
+/// Read the current host-status override out of `MuxState`. Headless and
+/// `State`-free so the `get_host_status` command + the `/host-status` probe GET
+/// can be round-tripped without a window.
+pub fn read_host_status(state: &MuxState) -> Option<HostStatus> {
     state.status.lock().ok().and_then(|status| status.clone())
 }
 
-// Glue: Tauri command mutating managed `State`.
+// Glue: thin Tauri command wrapper mutating managed `State`; the conditional
+// clear (`clear_host_status_if_message`) is unit-tested + probe-round-tripped.
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
 pub fn clear_host_status_if_current(state: State<'_, MuxState>, message: String) {
+    clear_host_status_if_message(&state, &message);
+}
+
+/// Clear the host-status override IFF the currently-stored message matches
+/// `message` (the auto-clear-only-if-still-current contract). Returns whether it
+/// cleared. Headless and `State`-free so the command + the `/host-status/clear`
+/// probe can be round-tripped without a window.
+pub fn clear_host_status_if_message(state: &MuxState, message: &str) -> bool {
     if let Ok(mut status) = state.status.lock() {
         if status.as_ref().is_some_and(|s| s.message == message) {
             *status = None;
+            return true;
         }
+    }
+    false
+}
+
+/// Set the host-status override directly on `MuxState` (no `AppHandle`/emit).
+/// Used by the `/host-status/set` probe seam to seed an override so the GET +
+/// conditional-clear round-trips have observable state to act on. The live app
+/// uses `set_host_status` (which also emits the event); this is the headless core.
+pub fn set_host_status_state(state: &MuxState, status: HostStatus) {
+    if let Ok(mut stored) = state.status.lock() {
+        *stored = Some(status);
     }
 }
 
@@ -1465,6 +1494,39 @@ mod tests {
         let state = super::MuxState::new();
         assert!(state.selected.lock().unwrap().is_none());
         assert!(state.status.lock().unwrap().is_none());
+    }
+
+    // Host-status round-trip at the `MuxState` seam — the headless core the
+    // `get_host_status` / `clear_host_status_if_current` Tauri commands and the
+    // `/host-status[/set|/clear]` probes share. Drives the exact observable state.
+    #[test]
+    fn host_status_set_read_and_conditional_clear_round_trip() {
+        use super::{
+            clear_host_status_if_message, read_host_status, set_host_status_state, HostStatus,
+            MuxState,
+        };
+        let state = MuxState::new();
+        // Empty to start: the read returns None.
+        assert_eq!(read_host_status(&state), None);
+
+        // Seeding an override makes the read return it verbatim.
+        let status = HostStatus {
+            level: "warning".into(),
+            source: "probe".into(),
+            message: "spawn failed: boom".into(),
+        };
+        set_host_status_state(&state, status.clone());
+        assert_eq!(read_host_status(&state), Some(status.clone()));
+
+        // A clear with a NON-matching message must NOT clear (the auto-clear is
+        // gated on the override still being the one the caller raised).
+        assert!(!clear_host_status_if_message(&state, "a different message"));
+        assert_eq!(read_host_status(&state), Some(status));
+
+        // A clear with the matching message clears it; a second clear is a no-op.
+        assert!(clear_host_status_if_message(&state, "spawn failed: boom"));
+        assert_eq!(read_host_status(&state), None);
+        assert!(!clear_host_status_if_message(&state, "spawn failed: boom"));
     }
 
     #[test]
