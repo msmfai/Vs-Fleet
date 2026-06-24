@@ -39,6 +39,9 @@
 //! ```
 
 #![forbid(unsafe_code)]
+// Enables `#[coverage(off)]` under cargo-llvm-cov's nightly run (which sets
+// cfg(coverage_nightly)). A no-op on stable.
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 pub mod commands;
 pub mod events;
