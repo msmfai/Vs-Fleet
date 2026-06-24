@@ -18,9 +18,17 @@
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
-const E2E = globalThis.__FLEET_E2E__;
+// Shared config is handed off from the wdio LAUNCHER process (onPrepare) to this
+// WORKER process via a FILE, because globalThis/module state does NOT cross the
+// process boundary. We derive the config-file path IDENTICALLY to wdio.conf.js (a
+// fixed runtime dir under tmp) and READ it lazily inside `before` — never at module
+// load, which would race ahead of onPrepare writing it.
+const RUNTIME_DIR = path.join(os.tmpdir(), "fleet-e2e-run");
+const CONFIG_PATH = path.join(RUNTIME_DIR, "e2e-config.json");
+let E2E;
 
 const SERVER_ID = "e2e-session-1";
 const AUTO_LABEL = "auto reported"; // what the reporter phones home with
@@ -92,7 +100,15 @@ describe("Fleet rail — rename flow (real UI)", () => {
   let helloWs;
 
   before(async () => {
-    assert.ok(E2E, "shared E2E config missing (wdio.conf onPrepare/before)");
+    // Load the launcher→worker handoff file written by wdio.conf onPrepare. Read
+    // here (in the worker, after onPrepare ran), NOT at module load.
+    assert.ok(
+      fs.existsSync(CONFIG_PATH),
+      `shared E2E config file missing at ${CONFIG_PATH} (wdio.conf onPrepare must run first)`
+    );
+    E2E = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+    assert.ok(E2E.runtimeDir && E2E.bridgePort && E2E.editorUrl, "incomplete E2E config");
+
     // The rail must have booted: its status pill exists once main.js init runs.
     await $("#status").waitForExist({ timeout: 60000 });
     token = await readBridgeToken();
