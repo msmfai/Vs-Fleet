@@ -196,12 +196,72 @@ pub fn servers_for_app(app: &AppHandle) -> Vec<Server> {
     merged_servers(spawned, registered)
 }
 
+/// Decide whether the host should boot in the test-only RAIL-ONLY composition.
+///
+/// In RAIL-ONLY mode the window has a single **top-level** webview (the rail's
+/// `index.html`) instead of the production two-child layout (rail child + editor
+/// child added via [`tauri::window::Window::add_child`]). This exists solely so the
+/// Layer-D WebDriver E2E (tauri-driver + WebKitWebGTKDriver) can drive the rail's
+/// real DOM: tauri-driver targets the platform WebDriver's single top-level
+/// WebView, and `add_child` child webviews are NOT exposed as WebDriver window
+/// handles, so the rail child is unreachable in the production layout. The bridge,
+/// registry, `rename_server` command, and the `renamed`-flag logic are all the
+/// real production code — only the window composition differs. Off by default;
+/// never enabled on a normal launch.
+fn rail_only_env_enabled(value: Option<&str>) -> bool {
+    matches!(
+        value.map(|v| v.trim().to_ascii_lowercase()),
+        Some(v) if matches!(v.as_str(), "1" | "true" | "on" | "yes")
+    )
+}
+
+// Thin env wrapper over the tested `rail_only_env_enabled`.
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn rail_only_enabled() -> bool {
+    rail_only_env_enabled(std::env::var("FLEET_E2E_RAIL_ONLY").ok().as_deref())
+}
+
+/// Build the host window, choosing the production multiplexer layout or — when
+/// `FLEET_E2E_RAIL_ONLY` is set — the test-only single-top-level-webview rail
+/// layout used by the Layer-D WebDriver E2E.
+// Glue: native window/webview FFI; the pure env decision (`rail_only_env_enabled`)
+// is unit-tested.
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub fn build_window(app: &mut App) -> tauri::Result<()> {
+    if rail_only_enabled() {
+        tracing::warn!(
+            "FLEET_E2E_RAIL_ONLY set: building rail as the sole top-level webview \
+             (WebDriver E2E composition — not for normal use)"
+        );
+        return build_window_rail_only(app);
+    }
+    build_window_mux(app)
+}
+
+/// Test-only window composition: the rail's `index.html` as the single TOP-LEVEL
+/// webview, so tauri-driver/WebKitWebGTKDriver can reach its DOM. The webview is
+/// labelled [`RAIL`] so the production `app.get_webview(RAIL)` hooks
+/// (`sync_rail_selection`, `run_rail_action`) keep resolving. No editor child is
+/// created; `get_window(WINDOW)` glue (retile/menu) simply no-ops without it, and
+/// the rename → `servers-changed` → rail-refresh path the E2E exercises does not
+/// depend on it.
+// Glue: native webview-window FFI — no headless equivalent.
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn build_window_rail_only(app: &mut App) -> tauri::Result<()> {
+    tauri::WebviewWindowBuilder::new(app, RAIL, tauri::WebviewUrl::App("index.html".into()))
+        .title("Fleet (rail E2E)")
+        .inner_size(RAIL_W, 860.0)
+        .min_inner_size(RAIL_W, 480.0)
+        .build()?;
+    Ok(())
+}
+
 /// Build the multiplexer window: the rail plus a placeholder editor surface.
 /// Persistent server editor webviews are created on first selection.
 // Glue: builds the native multiplexer window + rail/editor child webviews and
 // wires the resize handler — pure webview/window FFI, no headless equivalent.
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn build_window(app: &mut App) -> tauri::Result<()> {
+fn build_window_mux(app: &mut App) -> tauri::Result<()> {
     let width = 1320.0_f64;
     let height = 860.0_f64;
 
@@ -1359,7 +1419,8 @@ fn editor_parking_pane(app: &AppHandle) -> Option<(LogicalPosition<f64>, Logical
 mod tests {
     use super::{
         close_current_menu_item, editor_label_for, external_open_command, keepalive_env_enabled,
-        menu_server_label, merged_servers, sanitize_server_label, selected_server_has_url, Server,
+        menu_server_label, merged_servers, rail_only_env_enabled, sanitize_server_label,
+        selected_server_has_url, Server,
     };
 
     #[cfg(target_os = "macos")]
@@ -1434,6 +1495,23 @@ mod tests {
         assert!(!keepalive_env_enabled(Some("false")));
         assert!(!keepalive_env_enabled(Some("OFF")));
         assert!(!keepalive_env_enabled(Some(" no ")));
+    }
+
+    #[test]
+    fn rail_only_defaults_off_and_opts_in_on_truthy_values() {
+        // Off by default and for any non-truthy / unset value — production launches
+        // must never accidentally land in the WebDriver-E2E rail-only composition.
+        assert!(!rail_only_env_enabled(None));
+        assert!(!rail_only_env_enabled(Some("")));
+        assert!(!rail_only_env_enabled(Some("0")));
+        assert!(!rail_only_env_enabled(Some("false")));
+        assert!(!rail_only_env_enabled(Some("off")));
+        assert!(!rail_only_env_enabled(Some("no")));
+        // Opt-in only on the explicit truthy set (trim + case-insensitive).
+        assert!(rail_only_env_enabled(Some("1")));
+        assert!(rail_only_env_enabled(Some("true")));
+        assert!(rail_only_env_enabled(Some(" ON ")));
+        assert!(rail_only_env_enabled(Some("Yes")));
     }
 
     #[test]

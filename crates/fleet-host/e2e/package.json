@@ -1,0 +1,17 @@
+{
+  "name": "fleet-host-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Layer D — real UI end-to-end tests for the Fleet Tauri host (tauri-driver + WebdriverIO). Drives the built fleet-host binary in its FLEET_E2E_RAIL_ONLY composition and asserts the rename flow + the survives-reregister regression against the live rail DOM. CI/Linux only — never run locally (heavy node/GUI + macOS TCC prompts).",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "wdio run wdio.conf.js"
+  },
+  "devDependencies": {
+    "@wdio/cli": "^9.2.8",
+    "@wdio/local-runner": "^9.2.8",
+    "@wdio/mocha-framework": "^9.2.8",
+    "@wdio/spec-reporter": "^9.2.8"
+  }
+}

@@ -269,3 +269,69 @@ jobs:
           name: host-smoke-out
           path: smoke-out/
           if-no-files-found: warn
+
+  # Layer D: real-UI E2E. Boots the built fleet-host under tauri-driver +
+  # WebKitWebGTKDriver (webkit2gtk-driver) on Xvfb in its FLEET_E2E_RAIL_ONLY
+  # composition (rail = the single top-level webview, so the WebDriver session can
+  # reach the rail DOM — the production add_child child webview is not a reachable
+  # WebDriver target). The WebdriverIO spec drives the rename flow through the rail
+  # DOM (right-click row → Rename → type into #prompt-input → Enter, asserting
+  # `.label`) and regression-locks that a fresh reporter re-register with the AUTO
+  # label does not revert the rename. PR-blocking: it is the only check that
+  # exercises the rename bug end-to-end through the real webview + IPC + bridge.
+  host-e2e:
+    name: Host E2E (tauri-driver UI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Tauri + WebDriver system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev webkit2gtk-driver \
+            build-essential curl wget file libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev xvfb
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Cache Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            crates/fleet-host/target
+          key: ${{ runner.os }}-e2e-cargo-${{ hashFiles('crates/fleet-host/Cargo.toml', 'crates/fleet-host/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-e2e-cargo-
+
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked
+
+      - name: Build fleet-host (release)
+        working-directory: crates/fleet-host
+        run: cargo build --release
+
+      - name: npm install (e2e)
+        working-directory: crates/fleet-host/e2e
+        run: npm install
+
+      - name: Run WebdriverIO E2E under Xvfb
+        working-directory: crates/fleet-host/e2e
+        env:
+          # Absolute path so the worker (any cwd) finds the built binary.
+          FLEET_HOST_BIN: ${{ github.workspace }}/crates/fleet-host/target/release/fleet-host
+        run: xvfb-run -a npm test
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: host-e2e-logs
+          path: |
+            crates/fleet-host/e2e/*.log
+            /tmp/fleet-e2e-run-*/fleet-host.log
+          if-no-files-found: warn
