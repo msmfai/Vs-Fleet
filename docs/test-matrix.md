@@ -5,11 +5,12 @@ UI flow — generalizing the layers that gate the rename flow (the template) to 
 whole frontend↔IPC↔webview boundary.
 
 Layers:
-- **B — contract**: `scripts/check-frontend-contract.sh` asserts each `invoke()` maps
-  to a registered `#[tauri::command]`. *Extension owed:* argument-KEY matching +
-  dead-command detection.
-- **B — lint**: webview-safety lint bans WKWebView-unsupported / platform-divergent
-  web APIs in `ui/`.
+- **B — contract** ✅: `scripts/check-frontend-contract.sh` asserts each `invoke()`
+  maps to a registered `#[tauri::command]` with matching argument KEYS
+  (snake↔camel), and flags dead commands (no caller, not allow-listed).
+- **B — lint** ✅: webview-safety lint bans WKWebView-unsupported / platform-divergent
+  web APIs in `ui/` (prompt/alert/confirm/open); clipboard is allowed (guarded +
+  execCommand fallback).
 - **C — frontend unit**: vitest + jsdom over `ui/main.js` (mocked `window.__TAURI__`);
   asserts the invoke command+args and the observable DOM/state change.
 - **E — Rust round-trip**: deterministic integration test asserting observable state —
@@ -39,7 +40,9 @@ Legend: ✅ done · 🔸 partial · ⬜ gap · — n/a
 | `get_inbox` | `refreshInbox` (bootstrap) | ✅ | ✅ inbox events | ✅ `/inbox` | — |
 | `get_host_status` | `refreshStatus` (bootstrap) | ✅ | ✅ host-status | ✅ `/host-status` | — |
 | `clear_host_status_if_current` | `clearStatusOverride` (auto) | ✅ | ✅ | ✅ `/host-status/clear` | — |
-| `spawn_server` | **no frontend caller** | ⚠️ dead? | — | ⬜ | — |
+
+(`spawn_server` was removed — it was a registered command with no caller; the
+dead-command check now guards against reintroducing one.)
 
 ## UI-only flows (no 1:1 command)
 
@@ -54,17 +57,14 @@ Legend: ✅ done · 🔸 partial · ⬜ gap · — n/a
 
 ## Outstanding work (drives the goal)
 
-1. **B-contract**: extend `check-frontend-contract.sh` to match argument keys per
-   command signature; resolve `spawn_server` (wire a caller or mark backend-only).
-2. **B-lint**: audit `ui/` for other platform-divergent web APIs; extend the lint list.
+1. ✅ **B-contract**: arg-key matching + dead-command detection done; `spawn_server` removed.
+2. ✅ **B-lint**: audited; `window.open` added; clipboard documented as allowed.
 3. **C**: confirm every enumerated path is covered; raise the per-file vitest threshold
-   to the real floor; fill any straggler handler.
-4. **E**: add probe endpoints + round-trips for `spawn_server_with_options`,
-   `open_server_external`, `get_inbox`, `get_host_status`, `clear_host_status_if_current`;
-   add an in-process Hub harness round-trip for `set_session_muted/soloed`,
-   `dismiss_session`, `focus_session`.
+   to the real floor; fill any straggler handler. *(CI-only / node.)*
+4. ✅ **E**: every command has a Rust-boundary round-trip (probe / Hub-harness /
+   pure-logic+smoke).
 5. **D**: extend the tauri-driver suite to spawn-appears, select/switch, open-folder,
-   mute/solo visuals, dismiss-removes-row, unread-badge, open-external.
+   mute/solo visuals, dismiss-removes-row, unread-badge, open-external. *(CI-only / node.)*
 6. **F (CI)**: every layer gates PRs (no ratchet-down); existing layers + the 100%
    unit-coverage gate stay green; Node runs CI-only.
 

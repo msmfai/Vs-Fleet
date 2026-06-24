@@ -19,8 +19,17 @@ HOST="$ROOT/crates/fleet-host"
 UI="$HOST/ui"
 fail=0
 
-echo "==> webview-safety lint (no window.prompt/alert/confirm in ui/)"
-bad="$(grep -nE '(window\.(prompt|alert|confirm)[[:space:]]*\()|(^|[^A-Za-z0-9_.])(prompt|alert|confirm)[[:space:]]*\(' "$UI"/*.js 2>/dev/null \
+# Audited forbidden web APIs (use the in-DOM/Tauri-command equivalent instead):
+#   window.prompt/alert/confirm — no-op / native dialog unavailable in WKWebView
+#     (the rename bug). Use the domPrompt() overlay.
+#   window.open — unreliable / opens the wrong context in WKWebView; route external
+#     URLs through the `open_server_external` Tauri command.
+# Audited-and-ALLOWED: navigator.clipboard / document.execCommand — used in
+#   `copyText` WITH a capability guard + execCommand fallback (graceful
+#   degradation), so they don't silently fail. localStorage/sessionStorage/
+#   Notification/window.print/etc. are not used by the rail.
+echo "==> webview-safety lint (no window.prompt/alert/confirm/open in ui/)"
+bad="$(grep -nE '(window\.(prompt|alert|confirm|open)[[:space:]]*\()|(^|[^A-Za-z0-9_.])(prompt|alert|confirm)[[:space:]]*\(' "$UI"/*.js 2>/dev/null \
   | grep -vE '^[^:]*:[0-9]+:[[:space:]]*//' \
   | grep -vE '(domPrompt|closePrompt|openFolderPrompt)' || true)"
 if [ -n "$bad" ]; then
