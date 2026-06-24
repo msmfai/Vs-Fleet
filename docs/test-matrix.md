@@ -53,7 +53,8 @@ dead-command check now guards against reintroducing one.)
 | Unread jump button enable/disable | ✅ | ⬜ |
 | Row context menu render (Open/Rename/Close/…) | ✅ | 🔸 (rename + mute/solo/dismiss items exercised) |
 | Status / error override render + auto-clear | ✅ | 🔸 (spawn-error override shown in `open-folder.e2e.js`) |
-| Waiting / attention indicators | ✅ | ✅ `agent-state.e2e.js` (attention class + badge + status pill) |
+| Waiting state on a row | ✅ | ✅ `agent-state.e2e.js` (waiting state class + `⏸` glyph) |
+| Ping/attention indicator + waiting-count pill | ✅ `shouldNotifyTab`/`deriveInboxTabs` | — (reducer-internal `should_notify`/`ping_suppressed`; suppressed under an active solo — covered by C + host-core notify tests, not D) |
 | Unread-dot reconciliation (focus/transition) | ✅ `deriveInboxTabs`/`reconcileUnread` | — (reducer-internal; covered by C + host-core reducer tests, not D) |
 
 ## Outstanding work (drives the goal)
