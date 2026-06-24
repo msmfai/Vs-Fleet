@@ -271,6 +271,19 @@ mod tests {
         script().generate(TS)
     }
 
+    #[test]
+    fn make_run_non_working_non_dead_has_no_last_message() {
+        // The scripted lifecycle only ever feeds make_run Working/Dead, but the
+        // helper is total over State: any other state (e.g. Idle) carries no
+        // synthetic last_message. Exercise that fall-through branch directly.
+        let run = script().make_run(State::Idle, None, TS);
+        assert_eq!(run.state, State::Idle);
+        assert!(
+            run.last_message.is_none(),
+            "non-working/dead states carry no fake last_message"
+        );
+    }
+
     // ── structural / count ──────────────────────────────────────────────────
 
     #[test]
@@ -614,30 +627,15 @@ mod tests {
                 sb.wire_type(),
                 "wire_type mismatch at step {i}"
             );
-            // Compare JSON-serialized payloads.
-            match (sa, sb) {
-                (
-                    ScriptedStep::RegisterSession { session: sa, .. },
-                    ScriptedStep::RegisterSession { session: sb, .. },
-                ) => assert_eq!(
-                    serde_json::to_value(sa).unwrap(),
-                    serde_json::to_value(sb).unwrap(),
-                    "step {i} session must match"
-                ),
-                (
-                    ScriptedStep::UpsertRun { run: ra, .. },
-                    ScriptedStep::UpsertRun { run: rb, .. },
-                ) => assert_eq!(
-                    serde_json::to_value(ra).unwrap(),
-                    serde_json::to_value(rb).unwrap(),
-                    "step {i} run must match"
-                ),
-                (
-                    ScriptedStep::RemoveSession { session_id: a, .. },
-                    ScriptedStep::RemoveSession { session_id: b, .. },
-                ) => assert_eq!(a, b, "step {i} remove session_id must match"),
-                _ => panic!("step {i} variant mismatch"),
-            }
+            // Compare the full step payloads. Both come from the same script and
+            // must be byte-for-byte identical (same variant, same fields); the
+            // Debug rendering captures every field including the embedded
+            // session/run, so it fails loudly on any divergence.
+            assert_eq!(
+                format!("{sa:?}"),
+                format!("{sb:?}"),
+                "step {i} payload must match"
+            );
         }
     }
 

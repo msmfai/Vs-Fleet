@@ -260,6 +260,20 @@ mod tests {
         assert!(led.is_empty());
     }
 
+    #[test]
+    fn run_identity_accessors_reflect_state() {
+        // Directly exercise the RunIdentity getters and the per-run seq series.
+        let mut ri = RunIdentity::new("d1", 7);
+        assert_eq!(ri.durable_id(), &id("d1"));
+        assert_eq!(ri.epoch(), 7);
+        assert_eq!(ri.last_seq(), 0);
+        assert_eq!(ri.next_seq(), 1);
+        assert_eq!(ri.next_seq(), 2);
+        assert_eq!(ri.last_seq(), 2);
+        // Epoch is fixed for the identity's lifetime.
+        assert_eq!(ri.epoch(), 7);
+    }
+
     // ── reconnect (reclaim) vs fresh-start (wipe) ─────────────────────────────
 
     #[test]

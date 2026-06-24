@@ -656,7 +656,8 @@ mod tests {
                 );
                 let ko = sort_key(&older, Some(NOW));
                 let kn = sort_key(&newer, Some(NOW));
-                assert!(ko > kn, "{} (older) must beat {} (newer)", ages[i], ages[j]);
+                // Older (earlier stamp) sorts strictly ahead at equal urgency/unread.
+                assert!(ko > kn);
             }
         }
     }
@@ -669,6 +670,39 @@ mod tests {
         assert_eq!(waiting_age_secs(Some("not-a-date"), Some(NOW)), 0);
         assert_eq!(waiting_age_secs(Some(""), Some(NOW)), 0);
         assert_eq!(waiting_age_secs(Some(NOW), Some("bad")), 0);
+    }
+
+    #[test]
+    fn wrong_separator_byte_returns_zero_age() {
+        // A stamp long enough to pass the length check but with a bad separator
+        // byte (here 'X' where 'T' must be, index 10) must hit the separator
+        // validation `return None` path and degrade to 0 age.
+        assert_eq!(waiting_age_secs(Some("2026-06-08X10:00:00Z"), Some(NOW)), 0);
+        // 'T' present but ':' separators wrong (index 13 is '-' not ':').
+        assert_eq!(waiting_age_secs(Some("2026-06-08T10-00:00Z"), Some(NOW)), 0);
+    }
+
+    #[test]
+    fn non_digit_in_digit_field_returns_zero_age() {
+        // Correct separators but a non-digit in a numeric field must hit the
+        // `parse_digits_opt` non-digit `return None` path → 0 age. Exercise the
+        // bad-byte `?` short-circuit in EVERY field (year..second) so each
+        // `parse_digits_opt(...)?` None-continuation is covered.
+        let bad = [
+            "X026-06-08T10:00:00Z", // year
+            "2026-X6-08T10:00:00Z", // month
+            "2026-06-X8T10:00:00Z", // day
+            "2026-06-08T1X:00:00Z", // hour
+            "2026-06-08T10:X0:00Z", // minute
+            "2026-06-08T10:00:X0Z", // second
+        ];
+        for s in bad {
+            assert_eq!(
+                waiting_age_secs(Some(s), Some(NOW)),
+                0,
+                "non-digit field in {s:?} must degrade to 0 age"
+            );
+        }
     }
 
     #[test]

@@ -51,6 +51,10 @@ pub fn command_channel() -> (HubCommandSender, mpsc::UnboundedReceiver<Command>)
 }
 
 /// Run the Hub link forever: connect, subscribe, fold, push; reconnect on drop.
+// Glue: the forever connect/reconnect loop, driving the Tauri `AppHandle` (window
+// emits/notifications via `connect_once`/`mark_disconnected`). No headless exit;
+// the pure folding decisions it delegates to are unit-tested.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub async fn run(
     app: AppHandle,
     shared: Shared,
@@ -78,6 +82,12 @@ pub async fn run(
     }
 }
 
+// Glue: opens the real Hub WebSocket, subscribes, and folds the snapshot/delta
+// stream into the reducer, pushing each rendered view through the `AppHandle`.
+// Needs a live webview + a Hub socket; the pure pieces it composes
+// (`event_derives_notifications`, `command_frame_text`, `render_at`, the reducer)
+// are unit-tested in their own crates / here.
+#[cfg_attr(coverage_nightly, coverage(off))]
 async fn connect_once(
     app: &AppHandle,
     shared: &Shared,
@@ -143,6 +153,30 @@ fn command_frame_text(command: Command) -> Result<String> {
     Ok(serde_json::to_string(&ClientMessage::Command { command })?)
 }
 
+/// The mute/unmute command for a (un)mute toggle. Pure.
+fn mute_toggle_command(session_id: String, muted: bool) -> Command {
+    if muted {
+        Command::mute(session_id)
+    } else {
+        Command::unmute(session_id)
+    }
+}
+
+/// The command for a solo toggle. Pure. The protocol has no separate unsolo
+/// command — per the S25 model, unmute on a soloed session clears solo mode and
+/// restores normal pings.
+fn solo_toggle_command(session_id: String, soloed: bool) -> Command {
+    if soloed {
+        Command::solo(session_id)
+    } else {
+        Command::unmute(session_id)
+    }
+}
+
+// Thin Tauri command wrapper: gate on connection, then send the pure command on
+// the live Hub socket. The State plumbing needs a running app; the command
+// selection (`mute_toggle_command`) and the gate (`ensure_connected`) are tested.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
 pub fn set_session_muted(
     commands: tauri::State<'_, HubCommandSender>,
@@ -151,14 +185,10 @@ pub fn set_session_muted(
     muted: bool,
 ) -> Result<(), String> {
     ensure_connected(&shared)?;
-    let command = if muted {
-        Command::mute(session_id)
-    } else {
-        Command::unmute(session_id)
-    };
-    commands.send(command)
+    commands.send(mute_toggle_command(session_id, muted))
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
 pub fn set_session_soloed(
     commands: tauri::State<'_, HubCommandSender>,
@@ -167,16 +197,10 @@ pub fn set_session_soloed(
     soloed: bool,
 ) -> Result<(), String> {
     ensure_connected(&shared)?;
-    let command = if soloed {
-        Command::solo(session_id)
-    } else {
-        // The protocol has no separate unsolo command. Per the S25 model,
-        // unmute on a soloed session clears solo mode and restores normal pings.
-        Command::unmute(session_id)
-    };
-    commands.send(command)
+    commands.send(solo_toggle_command(session_id, soloed))
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
 pub fn dismiss_session(
     commands: tauri::State<'_, HubCommandSender>,
@@ -187,6 +211,7 @@ pub fn dismiss_session(
     commands.send(Command::dismiss(Target::session(session_id)))
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
 pub fn focus_session(
     commands: tauri::State<'_, HubCommandSender>,
@@ -211,6 +236,11 @@ fn ensure_connected(shared: &Shared) -> Result<(), String> {
 }
 
 /// Store the rendered inbox in shared state and emit it to the webview.
+// Glue: writes shared state and `emit`s the `inbox` event + native window
+// indicators/notifications through the `AppHandle`. The decision of whether to
+// emit (`should_emit_inbox_update`) and what indicators to set
+// (`window_indicator_update`) are unit-tested.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn push(
     app: &AppHandle,
     shared: &Shared,
@@ -264,6 +294,10 @@ fn should_emit_inbox_update(
         .any(|outcome| !matches!(outcome, NotificationOutcome::Noop))
 }
 
+// Glue: applies the computed indicator update to the native window (title /
+// badge / dock attention) via the `AppHandle`. The computation
+// (`window_indicator_update`) is unit-tested; this only pushes it to AppKit/Win32.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn update_window_indicators(
     app: &AppHandle,
     previous: Option<&RenderedInbox>,
@@ -357,6 +391,9 @@ fn has_notification_fire(outcomes: &[NotificationOutcome]) -> bool {
         .any(|outcome| matches!(outcome, NotificationOutcome::Fire(_)))
 }
 
+// Observability glue: emits tracing lines whose fields are level-gated (and so
+// not exercised at the default level). No return value / behavior to assert.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn log_notification_outcomes(outcomes: &[NotificationOutcome]) {
     for outcome in outcomes {
         match outcome {
@@ -375,6 +412,10 @@ fn log_notification_outcomes(outcomes: &[NotificationOutcome]) {
     }
 }
 
+// Glue: fires each Fire(intent) as a real desktop notification via the Tauri
+// notification plugin (`AppHandle`). The decision of which outcomes fire
+// (`has_notification_fire`) is unit-tested.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn deliver_notification_outcomes(app: &AppHandle, outcomes: &[NotificationOutcome]) {
     for outcome in outcomes {
         let NotificationOutcome::Fire(intent) = outcome else {
@@ -390,6 +431,9 @@ fn deliver_notification_outcomes(app: &AppHandle, outcomes: &[NotificationOutcom
     }
 }
 
+// Glue: builds and shows a Tauri desktop notification (`AppHandle` + the
+// notification plugin). The stable id derivation (`notification_id`) is tested.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn send_notification(
     app: &AppHandle,
     intent: &NotificationIntent,
@@ -443,6 +487,9 @@ fn waiting_badge_label(waiting_count: usize) -> Option<String> {
 }
 
 /// Flip the last-known inbox to `connected:false` (keep the tabs visible).
+// Glue: mutates shared state and re-`push`es through the `AppHandle` so the
+// window shows the disconnected banner. Reached only from the reconnect loop.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn mark_disconnected(app: &AppHandle, shared: &Shared) {
     let mut snapshot = shared.lock().ok().map(|g| g.clone()).unwrap_or_default();
     if snapshot.connected {
@@ -461,6 +508,46 @@ mod tests {
             connected,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn command_channel_delivers_then_reports_closed() {
+        let (sender, mut rx) = command_channel();
+        sender.send(Command::mute("s1")).unwrap();
+        let received = rx.try_recv().unwrap();
+        assert_eq!(command_frame_text(received).unwrap(), command_frame_text(Command::mute("s1")).unwrap());
+
+        // Dropping the receiver closes the channel; send then reports the error.
+        drop(rx);
+        assert_eq!(
+            sender.send(Command::mute("s1")),
+            Err("hub command channel closed".to_string())
+        );
+    }
+
+    #[test]
+    fn mute_toggle_selects_mute_or_unmute() {
+        assert_eq!(
+            command_frame_text(mute_toggle_command("s1".into(), true)).unwrap(),
+            command_frame_text(Command::mute("s1")).unwrap()
+        );
+        assert_eq!(
+            command_frame_text(mute_toggle_command("s1".into(), false)).unwrap(),
+            command_frame_text(Command::unmute("s1")).unwrap()
+        );
+    }
+
+    #[test]
+    fn solo_toggle_selects_solo_or_unmute() {
+        assert_eq!(
+            command_frame_text(solo_toggle_command("s1".into(), true)).unwrap(),
+            command_frame_text(Command::solo("s1")).unwrap()
+        );
+        // No unsolo command — clearing solo sends unmute.
+        assert_eq!(
+            command_frame_text(solo_toggle_command("s1".into(), false)).unwrap(),
+            command_frame_text(Command::unmute("s1")).unwrap()
+        );
     }
 
     #[test]
@@ -528,6 +615,11 @@ mod tests {
         assert_eq!(fleet_window_title(&inbox(0, true)), "Fleet");
         assert_eq!(fleet_window_title(&inbox(0, false)), "Fleet (Disconnected)");
         assert_eq!(fleet_window_title(&inbox(1, true)), "Fleet (1 waiting)");
+        assert_eq!(
+            fleet_window_title(&inbox(1, false)),
+            "Fleet (1 waiting, disconnected)"
+        );
+        assert_eq!(fleet_window_title(&inbox(3, true)), "Fleet (3 waiting)");
         assert_eq!(
             fleet_window_title(&inbox(2, false)),
             "Fleet (2 waiting, disconnected)"

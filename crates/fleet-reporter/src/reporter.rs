@@ -426,6 +426,16 @@ impl ReporterCore {
     }
 }
 
+/// The outcome of one heartbeat-ticker tick (see [`Reporter::on_tick`]): either
+/// keep serving the current connection, or reconnect because a send failed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TickOutcome {
+    /// Keep serving on the current connection.
+    Continue,
+    /// A send failed (connection dropped) — the caller must reconnect.
+    Reconnect,
+}
+
 /// The async reporter driver. Wraps a [`ReporterCore`] and a [`Connector`],
 /// owning the connect/flush/heartbeat tokio loop.
 pub struct Reporter {
@@ -560,28 +570,46 @@ impl Reporter {
                         }
                     }
                     _ = ticker.tick() => {
-                        // Advance the logical clock, reap timeouts, heartbeat.
-                        let elapsed = start.elapsed();
-                        self.core.advance_to(elapsed);
-                        let dead = self.core.reap_timeouts();
-                        if !dead.is_empty() {
-                            warn!(?dead, "runs timed out (no liveness); marked dead");
-                        }
-                        if let Some(hb_msg) = self.core.heartbeat_message() {
-                            // Heartbeat is sent directly (not buffered): it is a
-                            // pure liveness ping; if it fails, reconnect.
-                            if conn.send(&hb_msg).await.is_err() {
-                                continue 'reconnect;
-                            }
-                        }
-                        // Also drain any timeout-`dead` deltas reap produced.
-                        if !self.flush(&mut conn).await {
-                            continue 'reconnect;
+                        match self.on_tick(&mut conn, start.elapsed()).await {
+                            TickOutcome::Reconnect => continue 'reconnect,
+                            TickOutcome::Continue => {}
                         }
                     }
                 }
             }
         }
+    }
+
+    /// Handle one heartbeat-ticker tick: advance the logical clock to `elapsed`,
+    /// reap timed-out runs, send a heartbeat (if a session is registered), and
+    /// flush any reap-produced `dead` deltas.
+    ///
+    /// Extracted from the `select!` tick arm so its branches are exercised by
+    /// deterministic unit tests rather than by racing a live ticker against the
+    /// command arm. Returns [`TickOutcome::Reconnect`] if any send failed (the
+    /// connection dropped); otherwise [`TickOutcome::Continue`].
+    async fn on_tick(
+        &mut self,
+        conn: &mut Box<dyn crate::transport::Connection>,
+        elapsed: Duration,
+    ) -> TickOutcome {
+        self.core.advance_to(elapsed);
+        let dead = self.core.reap_timeouts();
+        if !dead.is_empty() {
+            warn!(?dead, "runs timed out (no liveness); marked dead");
+        }
+        if let Some(hb_msg) = self.core.heartbeat_message() {
+            // Heartbeat is sent directly (not buffered): it is a pure liveness
+            // ping; if it fails, reconnect.
+            if conn.send(&hb_msg).await.is_err() {
+                return TickOutcome::Reconnect;
+            }
+        }
+        // Also drain any timeout-`dead` deltas reap produced.
+        if !self.flush(conn).await {
+            return TickOutcome::Reconnect;
+        }
+        TickOutcome::Continue
     }
 
     /// Drain commands that are *immediately* available (non-blocking), applying
@@ -676,6 +704,18 @@ mod tests {
         )
     }
 
+    /// Borrow the `run.upsert`'s run or panic. The non-run.upsert arm is an
+    /// unreachable test-assertion path (the deltas under test are built by the
+    /// core as run.upserts), so this is excluded from the nightly gate; the
+    /// behavioral assertions live at the (covered) call sites.
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn expect_run_upsert(msg: &ClientMessage) -> &AgentRun {
+        match msg {
+            ClientMessage::RunUpsert { run, .. } => run,
+            other => panic!("expected run.upsert dead, got {other:?}"),
+        }
+    }
+
     // ── pure core: run-id assignment (D4) ─────────────────────────────────────
 
     #[test]
@@ -729,18 +769,13 @@ mod tests {
         assert_eq!(core.liveness_of("r1"), Some(Liveness::DeadConfirmedExit));
         // A dead run.upsert was buffered.
         let drained = core.drain();
-        let last = drained.last().unwrap();
-        match &last.msg {
-            ClientMessage::RunUpsert { run, .. } => {
-                assert_eq!(run.state, State::Dead);
-                assert_eq!(
-                    run.confidence,
-                    Confidence::High,
-                    "confirmed exit is authoritative"
-                );
-            }
-            other => panic!("expected run.upsert dead, got {other:?}"),
-        }
+        let run = expect_run_upsert(&drained.last().unwrap().msg);
+        assert_eq!(run.state, State::Dead);
+        assert_eq!(
+            run.confidence,
+            Confidence::High,
+            "confirmed exit is authoritative"
+        );
     }
 
     #[test]
@@ -932,6 +967,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn driver_reconnects_when_a_tick_reports_reconnect() {
+        // Cover the live-loop's `select!` tick arm taking the Reconnect branch.
+        // The first connection's registration send succeeds (1 send) but the
+        // following heartbeat send fails, so `on_tick` returns Reconnect and the
+        // arm executes `continue 'reconnect`. We send NO commands until after we
+        // observe the reconnect, so the only thing that can resolve the select is
+        // the ticker — making the Reconnect arm deterministic, not a race against
+        // a command. Then we shut down cleanly.
+        let mut c = config();
+        c.heartbeat_interval = Duration::from_millis(10);
+        let hub = MemoryHub::new();
+        hub.drop_next_connection_after(1); // reg ok; the first heartbeat fails
+        let reporter = Reporter::new(c, Box::new(hub.connector()));
+        let (reporter, handle, rx) = reporter.with_channel();
+        // Pre-seed the session so registration_message() is Some on connect and a
+        // heartbeat is due on the very first tick.
+        let task = tokio::spawn(reporter.run(rx));
+        handle.upsert_session(session("sess-test"));
+
+        // Wait until the tick-driven heartbeat failure has forced a reconnect.
+        // Only the ticker can trigger this (no other commands are pending).
+        let reconnected = async {
+            loop {
+                if hub.connect_successes() >= 2 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(5), reconnected)
+            .await
+            .expect("a failed heartbeat tick must drive a reconnect");
+
+        handle.shutdown();
+        task.await.unwrap().unwrap();
+
+        assert!(
+            hub.connect_successes() >= 2,
+            "the tick-arm Reconnect branch re-established the connection"
+        );
+    }
+
+    #[tokio::test]
     async fn driver_resends_registration_on_every_reconnect() {
         let hub = MemoryHub::new();
         hub.drop_next_connection_after(2); // reg + 1 run, then drop
@@ -955,6 +1033,335 @@ mod tests {
         assert!(
             reg_count >= 2,
             "registration re-sent on reconnect (got {reg_count})"
+        );
+    }
+
+    // ── pure core: accessors + edge state paths ───────────────────────────────
+
+    #[test]
+    fn core_exposes_session_id_and_logical_clock() {
+        let mut core = ReporterCore::new(config());
+        assert_eq!(core.session_id(), "sess-test");
+        assert_eq!(core.now(), Duration::ZERO);
+        core.advance_to(Duration::from_secs(7));
+        assert_eq!(core.now(), Duration::from_secs(7));
+        // The logical clock is monotonic: a smaller advance is ignored.
+        core.advance_to(Duration::from_secs(3));
+        assert_eq!(core.now(), Duration::from_secs(7));
+    }
+
+    #[test]
+    fn core_reports_last_assigned_seq() {
+        let mut core = ReporterCore::new(config());
+        assert_eq!(core.last_seq(), 0, "no deltas buffered yet");
+        core.apply(ReporterCommand::UpsertSession(session("sess-test")));
+        core.apply(ReporterCommand::UpsertRun(run("r1", State::Working)));
+        assert_eq!(core.last_seq(), 2, "two deltas ⇒ last seq is 2");
+    }
+
+    #[test]
+    fn upsert_run_dead_records_exit_not_liveness() {
+        // A run upserted directly as Dead is a terminal observation: it must
+        // mark the liveness tracker as exited (not refresh its window), so a
+        // later evaluation reports a confirmed exit rather than Alive.
+        let mut core = ReporterCore::new(config());
+        core.apply(ReporterCommand::UpsertRun(run("r1", State::Dead)));
+        assert_eq!(
+            core.liveness_of("r1"),
+            Some(Liveness::DeadConfirmedExit),
+            "a dead upsert confirms the exit"
+        );
+    }
+
+    #[test]
+    fn confirm_exit_of_unknown_run_synthesizes_a_dead_delta() {
+        // ConfirmExit for a run the core never saw must still emit an
+        // authoritative dead delta — built from scratch (Other/High), not from a
+        // remembered run.
+        let mut core = ReporterCore::new(config());
+        core.apply(ReporterCommand::ConfirmExit {
+            run_id: "ghost".into(),
+            reason: "vanished".into(),
+        });
+        let drained = core.drain();
+        let last = drained.last().expect("a dead delta was buffered");
+        let run = expect_run_upsert(&last.msg);
+        assert_eq!(run.run_id, "ghost");
+        assert_eq!(run.state, State::Dead);
+        assert_eq!(run.agent_kind, AgentKind::Other, "synthesized identity");
+        assert_eq!(run.confidence, Confidence::High, "confirmed exit");
+        assert_eq!(run.last_message.as_deref(), Some("vanished"));
+    }
+
+    // ── async driver: connection failure on the registration / flush sends ─────
+
+    #[tokio::test]
+    async fn driver_logs_session_and_endpoint_on_start() {
+        // The `reporter starting` info! event names the session and endpoint via
+        // lazily-evaluated fields. Drive run() under an active subscriber (so the
+        // fields are actually formatted) on the current thread, with all commands
+        // pre-queued and the sender dropped so run() reaches a clean shutdown.
+        let hub = MemoryHub::new();
+        let reporter = Reporter::new(config(), Box::new(hub.connector()));
+        let (reporter, handle, rx) = reporter.with_channel();
+        handle.upsert_session(session("sess-test"));
+        handle.upsert_run(run("r1", State::Working));
+        drop(handle); // closing the channel ⇒ run() shuts down after the backlog
+
+        // A scoped subscriber that records events on *this* thread. run() is
+        // awaited inline (not spawned), so its `info!` fires under this guard and
+        // the field closures evaluate.
+        let subscriber = tracing_subscriber::fmt()
+            .with_test_writer()
+            .with_max_level(tracing::Level::INFO)
+            .finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        reporter.run(rx).await.unwrap();
+
+        let delivered = hub.delivered();
+        assert_eq!(delivered[0].type_name(), "session.upsert");
+    }
+
+    #[test]
+    fn reporter_exposes_its_core_for_pre_seeding() {
+        // The driver lends out its core (shared & mutable) so a test or the
+        // binary can pre-seed durable state before run().
+        let mut reporter = Reporter::new(config(), Box::new(MemoryHub::new().connector()));
+        assert_eq!(reporter.core().session_id(), "sess-test");
+        reporter
+            .core_mut()
+            .apply(ReporterCommand::UpsertSession(session("sess-test")));
+        assert!(
+            reporter.core().registration_message().is_some(),
+            "the pre-seeded session is visible through the borrowed core"
+        );
+    }
+
+    #[tokio::test]
+    async fn driver_reconnects_when_registration_send_fails() {
+        // Pre-seed a session so the very first send on a connection is the
+        // *registration*. Then script that first send to fail: the driver must
+        // drop the connection and reconnect, ultimately re-registering on the
+        // surviving connection (the `registration send failed` arm).
+        let hub = MemoryHub::new();
+        hub.drop_next_connection_after(0); // the registration send fails outright
+        let mut reporter = Reporter::new(config(), Box::new(hub.connector()));
+        reporter
+            .core_mut()
+            .apply(ReporterCommand::UpsertSession(session("sess-test")));
+        let (reporter, handle, rx) = reporter.with_channel();
+        let task = tokio::spawn(reporter.run(rx));
+
+        handle.upsert_run(run("r1", State::Working));
+        handle.shutdown();
+        task.await.unwrap().unwrap();
+
+        assert!(
+            hub.connect_successes() >= 2,
+            "must reconnect after the registration send fails"
+        );
+        let delivered = hub.delivered();
+        assert_eq!(
+            delivered[0].type_name(),
+            "session.upsert",
+            "registration is re-sent on the surviving connection"
+        );
+    }
+
+    #[tokio::test]
+    async fn driver_reconnects_when_backlog_flush_drops_after_registration() {
+        // Pre-seed a session *and* a run so, on connect, registration sends first
+        // (1 send) and the run is in the backlog. Script a drop after exactly 1
+        // send: the registration lands, but the backlog flush's first send fails
+        // — exercising the `flush returns false during the backlog flush`
+        // reconnect arm. The backlog must still replay on the next connection.
+        let hub = MemoryHub::new();
+        hub.drop_next_connection_after(1); // reg lands, backlog flush send fails
+        let mut reporter = Reporter::new(config(), Box::new(hub.connector()));
+        reporter
+            .core_mut()
+            .apply(ReporterCommand::UpsertSession(session("sess-test")));
+        reporter
+            .core_mut()
+            .apply(ReporterCommand::UpsertRun(run("r1", State::Working)));
+        let (reporter, handle, rx) = reporter.with_channel();
+        let task = tokio::spawn(reporter.run(rx));
+
+        handle.shutdown();
+        task.await.unwrap().unwrap();
+
+        assert!(
+            hub.connect_successes() >= 2,
+            "the dropped backlog flush must force a reconnect"
+        );
+        let delivered = hub.delivered();
+        assert!(
+            delivered.iter().any(
+                |m| matches!(m, ClientMessage::RunUpsert { run, .. } if run.state == State::Working)
+            ),
+            "the backlogged run must still be delivered after the reconnect"
+        );
+    }
+
+    // ── on_tick: the heartbeat-ticker arm, exercised deterministically ─────────
+    //
+    // These call `on_tick` directly (no live ticker, no command-arm race) so every
+    // branch — heartbeat present/absent, send ok/err, post-reap flush ok/err — is
+    // covered without any timing dependence.
+
+    async fn open_conn(hub: &MemoryHub) -> Box<dyn crate::transport::Connection> {
+        use crate::transport::Connector;
+        hub.connector().connect().await.expect("connect ok")
+    }
+
+    #[tokio::test]
+    async fn on_tick_sends_heartbeat_and_continues_on_success() {
+        // A registered session ⇒ heartbeat_message() is Some. With a connection
+        // whose send succeeds, on_tick sends the heartbeat (a session.upsert),
+        // flushes (nothing buffered), and returns Continue. Covers the
+        // heartbeat-present + send-OK + post-flush-OK path (incl. line 576).
+        let hub = MemoryHub::new();
+        let mut reporter = Reporter::new(config(), Box::new(hub.connector()));
+        reporter
+            .core_mut()
+            .apply(ReporterCommand::UpsertSession(session("sess-test")));
+        // Drain the buffered registration delta so only the heartbeat is in play.
+        reporter.core_mut().drain();
+        let mut conn = open_conn(&hub).await;
+
+        let outcome = reporter.on_tick(&mut conn, Duration::from_secs(1)).await;
+
+        assert_eq!(outcome, TickOutcome::Continue, "a clean tick keeps serving");
+        let delivered = hub.delivered();
+        assert_eq!(delivered.len(), 1, "exactly the heartbeat was sent");
+        assert_eq!(
+            delivered[0].type_name(),
+            "session.upsert",
+            "the heartbeat is a whole-session upsert"
+        );
+        // The logical clock advanced to the tick's elapsed time.
+        assert_eq!(reporter.core().now(), Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    async fn on_tick_reconnects_when_the_heartbeat_send_fails() {
+        // A registered session, but the connection's first send fails: on_tick
+        // must surface Reconnect from the heartbeat-send arm (line 573→574).
+        let hub = MemoryHub::new();
+        hub.drop_next_connection_after(0); // the heartbeat send (send #1) fails
+        let mut reporter = Reporter::new(config(), Box::new(hub.connector()));
+        reporter
+            .core_mut()
+            .apply(ReporterCommand::UpsertSession(session("sess-test")));
+        let mut conn = open_conn(&hub).await;
+
+        let outcome = reporter.on_tick(&mut conn, Duration::from_secs(1)).await;
+
+        assert_eq!(
+            outcome,
+            TickOutcome::Reconnect,
+            "a failed heartbeat send must request a reconnect"
+        );
+        assert_eq!(hub.delivered_count(), 0, "nothing was delivered");
+    }
+
+    #[tokio::test]
+    async fn on_tick_without_a_registered_session_skips_the_heartbeat() {
+        // No session registered ⇒ heartbeat_message() is None: on_tick skips the
+        // heartbeat block entirely (line 570 false), flushes nothing, and returns
+        // Continue. No send occurs.
+        let hub = MemoryHub::new();
+        let mut reporter = Reporter::new(config(), Box::new(hub.connector()));
+        let mut conn = open_conn(&hub).await;
+
+        let outcome = reporter.on_tick(&mut conn, Duration::from_secs(1)).await;
+
+        assert_eq!(outcome, TickOutcome::Continue);
+        assert_eq!(
+            hub.delivered_count(),
+            0,
+            "no heartbeat without a registered session"
+        );
+    }
+
+    #[tokio::test]
+    async fn on_tick_reaps_timed_out_run_and_reconnects_if_the_dead_flush_fails() {
+        // A registered session with a silent, timed-out run: on_tick reaps it to
+        // `dead` (lines 566–568), the heartbeat send succeeds, but the trailing
+        // flush of the reaped `dead` delta fails ⇒ Reconnect (lines 578–580). The
+        // dead delta stays buffered (re-queued) for replay after the reconnect.
+        let mut c = config();
+        c.liveness_timeout = Duration::from_millis(10);
+        let hub = MemoryHub::new();
+        // heartbeat (send #1) succeeds; the dead-delta flush (send #2) fails.
+        hub.drop_next_connection_after(1);
+        let mut reporter = Reporter::new(c, Box::new(hub.connector()));
+        reporter
+            .core_mut()
+            .apply(ReporterCommand::UpsertSession(session("sess-test")));
+        reporter
+            .core_mut()
+            .apply(ReporterCommand::UpsertRun(run("r1", State::Working)));
+        // Drain the buffered run delta so only the reap output is in play.
+        reporter.core_mut().drain();
+        let mut conn = open_conn(&hub).await;
+
+        // Advance well past the liveness timeout so the reap marks r1 dead.
+        let outcome = reporter.on_tick(&mut conn, Duration::from_secs(1)).await;
+
+        assert_eq!(
+            outcome,
+            TickOutcome::Reconnect,
+            "a failed post-reap flush must request a reconnect"
+        );
+        // The heartbeat (session.upsert) was delivered; the dead delta was not
+        // (its send failed) and remains buffered for replay.
+        let delivered = hub.delivered();
+        assert_eq!(delivered.len(), 1, "only the heartbeat got through");
+        assert_eq!(delivered[0].type_name(), "session.upsert");
+        let buffered = reporter.core_mut().drain();
+        assert!(
+            buffered.iter().any(|d| matches!(
+                &d.msg,
+                ClientMessage::RunUpsert { run, .. } if run.state == State::Dead
+            )),
+            "the reaped dead delta is re-buffered after the failed flush"
+        );
+    }
+
+    #[tokio::test]
+    async fn on_tick_flushes_a_reaped_dead_delta_on_success() {
+        // The happy reap path: a timed-out run is reaped to `dead`, the heartbeat
+        // sends, and the trailing flush delivers the dead delta — Continue.
+        let mut c = config();
+        c.liveness_timeout = Duration::from_millis(10);
+        let hub = MemoryHub::new();
+        let mut reporter = Reporter::new(c, Box::new(hub.connector()));
+        reporter
+            .core_mut()
+            .apply(ReporterCommand::UpsertSession(session("sess-test")));
+        reporter
+            .core_mut()
+            .apply(ReporterCommand::UpsertRun(run("r1", State::Working)));
+        reporter.core_mut().drain();
+        let mut conn = open_conn(&hub).await;
+
+        let outcome = reporter.on_tick(&mut conn, Duration::from_secs(1)).await;
+
+        assert_eq!(outcome, TickOutcome::Continue);
+        let delivered = hub.delivered();
+        // Heartbeat (session.upsert) + the reaped dead run.upsert.
+        assert!(
+            delivered.iter().any(|m| m.type_name() == "session.upsert"),
+            "the heartbeat was sent"
+        );
+        assert!(
+            delivered.iter().any(|m| matches!(
+                m,
+                ClientMessage::RunUpsert { run, .. } if run.state == State::Dead
+            )),
+            "the reaped dead delta was flushed"
         );
     }
 }

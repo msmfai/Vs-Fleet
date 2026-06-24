@@ -168,6 +168,7 @@ mod tests {
     async fn delivers_in_order() {
         let hub = MemoryHub::new();
         let conn_factory = hub.connector();
+        assert_eq!(conn_factory.endpoint(), "memory://hub");
         let mut c = conn_factory.connect().await.unwrap();
         c.send(&msg("a")).await.unwrap();
         c.send(&msg("b")).await.unwrap();

@@ -8,6 +8,11 @@ license.workspace = true
 description = "Fleet host core — pure-Rust inbox view-model (snapshot+delta → InboxView) for the Tauri host face"
 publish = false
 
+[lints.rust]
+# `coverage_nightly` is set by cargo-llvm-cov's nightly coverage gate; register
+# it so the `#[cfg_attr(coverage_nightly, ...)]` exclusions don't warn on stable.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
+
 [lib]
 name = "fleet_host_core"
 

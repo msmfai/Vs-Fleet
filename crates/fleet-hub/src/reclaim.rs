@@ -400,4 +400,16 @@ mod tests {
         let _ = t.classify(&id("d1"), 0, 9);
         assert_eq!(t.high_seq(&id("d1")), Some(3), "classify must not commit");
     }
+
+    #[test]
+    fn durable_id_from_str_and_string_are_equivalent() {
+        let from_str: DurableId = "abc".into();
+        let from_string: DurableId = String::from("abc").into();
+        assert_eq!(from_str, from_string);
+        assert_eq!(from_str.as_str(), "abc");
+        // The newtype key works through either conversion in the table.
+        let mut t = ReclaimTable::new();
+        t.admit(&from_str, 0, 1);
+        assert!(t.contains(&from_string), "both conversions key identically");
+    }
 }

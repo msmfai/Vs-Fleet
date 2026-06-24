@@ -150,6 +150,53 @@ try {
   await probe(`/select/${SERVER_ID}`);
   await poll("tab-selected", 15_000, async () => (await probe("/selected")).selected === SERVER_ID);
 
+  // ── 6. rename the session over the probe, then assert it sticks ────────────
+  // Drive the State-mutating rename command and assert the rail tab shows the new
+  // label — the live-window analogue of `apply_state_probe_command` (Layer E).
+  const RENAMED_LABEL = "Renamed Session";
+  const renameRes = await probe(`/rename/${SERVER_ID}?label=${encodeURIComponent(RENAMED_LABEL)}`);
+  if (renameRes.renamed !== true) {
+    throw new Error(`rename did not take: ${JSON.stringify(renameRes)}`);
+  }
+  await poll("tab-renamed", 15_000, async () => {
+    const { servers } = await probe("/servers");
+    return (
+      Array.isArray(servers) &&
+      servers.some((s) => s.id === SERVER_ID && s.label === RENAMED_LABEL)
+    );
+  });
+
+  // Regression-lock: a reporter re-register (a FRESH phone-home, with the AUTO
+  // label) must NOT clobber the user rename. The bridge only reads the first
+  // hello per connection, so this opens a NEW socket — exactly how a reconnecting
+  // reporter re-registers the same id — then asserts the renamed label still wins.
+  const ws2 = await poll("bridge-reconnect", 30_000, async () => {
+    const candidate = new WebSocket(`ws://127.0.0.1:${BRIDGE_PORT}`);
+    return new Promise((resolve, reject) => {
+      candidate.addEventListener("open", () => resolve(candidate), { once: true });
+      candidate.addEventListener("error", (e) => reject(new Error(`bridge ws: ${e.message ?? e}`)), { once: true });
+    });
+  });
+  ws2.send(
+    JSON.stringify({
+      type: "hello",
+      server_id: SERVER_ID,
+      url: editorUrl,
+      label: SERVER_LABEL,
+      token,
+    })
+  );
+  await poll("rename-survives-reregister", 15_000, async () => {
+    const { servers } = await probe("/servers");
+    return (
+      Array.isArray(servers) &&
+      servers.some((s) => s.id === SERVER_ID && s.label === RENAMED_LABEL)
+    );
+  });
+  try {
+    ws2.close();
+  } catch {}
+
   // Give the child webview a moment to load the stand-in page, then screenshot.
   await sleep(5_000);
   screenshot(path.join(outDir, `smoke-${process.platform}-${process.arch}.png`));

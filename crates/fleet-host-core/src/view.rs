@@ -651,6 +651,55 @@ mod tests {
     }
 
     #[test]
+    fn every_tabstate_glyph_is_its_documented_symbol() {
+        // Pin each arm of TabState::glyph so all six branches are exercised and
+        // the GUI vocabulary stays the contract.
+        assert_eq!(TabState::Working.glyph(), "▶");
+        assert_eq!(TabState::Waiting.glyph(), "⏸");
+        assert_eq!(TabState::Idle.glyph(), "·");
+        assert_eq!(TabState::Done.glyph(), "✓");
+        assert_eq!(TabState::Error.glyph(), "✕");
+        assert_eq!(TabState::Dead.glyph(), "☠");
+        // All six glyphs are distinct so the window can render them apart.
+        let mut seen = std::collections::HashSet::new();
+        for s in TabState::ALL {
+            assert!(seen.insert(s.glyph()), "glyph for {s:?} collides");
+        }
+        assert_eq!(seen.len(), 6);
+    }
+
+    #[test]
+    fn every_agenticon_label_is_its_asset_key() {
+        // Pin each arm of AgentIcon::label (the GUI's icon-asset key).
+        assert_eq!(AgentIcon::Claude.label(), "claude");
+        assert_eq!(AgentIcon::Codex.label(), "codex");
+        assert_eq!(AgentIcon::Other.label(), "agent");
+        assert_eq!(AgentIcon::None.label(), "");
+    }
+
+    #[test]
+    fn agenticon_from_kind_maps_each_agent_kind() {
+        assert_eq!(AgentIcon::from_kind(&AgentKind::ClaudeCode), AgentIcon::Claude);
+        assert_eq!(AgentIcon::from_kind(&AgentKind::Codex), AgentIcon::Codex);
+        assert_eq!(AgentIcon::from_kind(&AgentKind::Other), AgentIcon::Other);
+    }
+
+    #[test]
+    fn model_len_tracks_session_count() {
+        // InboxModel::len counts tracked sessions (distinct from InboxView::len).
+        let mut m = InboxModel::new();
+        assert_eq!(m.len(), 0);
+        assert!(m.is_empty());
+        m.apply(Event::session_added(session("s1", "p", State::Idle)));
+        assert_eq!(m.len(), 1);
+        m.apply(Event::session_added(session("s2", "p", State::Idle)));
+        assert_eq!(m.len(), 2);
+        assert!(!m.is_empty());
+        m.apply(Event::session_removed("s1"));
+        assert_eq!(m.len(), 1);
+    }
+
+    #[test]
     fn tabstate_projection_is_total_and_lossless() {
         for s in State::ALL {
             let t = TabState::from_state(s);
@@ -698,6 +747,61 @@ mod tests {
         m.apply(Event::run_added("s1", inf));
         // The tab must report the WEAKER (inferred) signal — never overstate.
         assert_eq!(m.view().tabs[0].confidence, Some(Confidence::Inferred));
+    }
+
+    #[test]
+    fn waiting_since_rollup_keeps_earliest_stamp() {
+        // Two waiting runs: the first carries an EARLIER waiting_since, the
+        // second a LATER one. The rollup must keep the earliest stamp (drives the
+        // `Some(prev) if prev <= *w => Some(prev)` retain branch).
+        let mut m = InboxModel::new();
+        m.apply(Event::session_added(session("s1", "p", State::Idle)));
+        let mut early = run("r-early", AgentKind::Codex, State::Waiting, Some(Urgency::Approval));
+        early.waiting_since = Some("2026-06-08T10:00:00Z".into());
+        let mut late = run("r-late", AgentKind::ClaudeCode, State::Waiting, Some(Urgency::Approval));
+        late.waiting_since = Some("2026-06-08T11:00:00Z".into());
+        m.apply(Event::run_added("s1", early));
+        m.apply(Event::run_added("s1", late));
+        assert_eq!(
+            m.view().tabs[0].waiting_since.as_deref(),
+            Some("2026-06-08T10:00:00Z"),
+            "rollup keeps the earliest waiting_since"
+        );
+    }
+
+    #[test]
+    fn waiting_since_rollup_takes_earlier_later_run() {
+        // Reverse arrival order: the later-arriving run has the EARLIER stamp, so
+        // the `_ => Some(w.clone())` replace branch must adopt it.
+        let mut m = InboxModel::new();
+        m.apply(Event::session_added(session("s1", "p", State::Idle)));
+        let mut late = run("r-late", AgentKind::Codex, State::Waiting, Some(Urgency::Approval));
+        late.waiting_since = Some("2026-06-08T11:00:00Z".into());
+        let mut early = run("r-early", AgentKind::ClaudeCode, State::Waiting, Some(Urgency::Approval));
+        early.waiting_since = Some("2026-06-08T10:00:00Z".into());
+        m.apply(Event::run_added("s1", late));
+        m.apply(Event::run_added("s1", early));
+        assert_eq!(
+            m.view().tabs[0].waiting_since.as_deref(),
+            Some("2026-06-08T10:00:00Z"),
+            "rollup adopts the earlier stamp from a later-seen run"
+        );
+    }
+
+    #[test]
+    fn snapshot_with_duplicate_session_id_keeps_one_order_slot() {
+        // A snapshot carrying the same session_id twice must not push the id onto
+        // `order` a second time (the `contains_key` true / no-push branch). The
+        // later occurrence wins on insert.
+        let mut m = InboxModel::new();
+        m.apply(Event::snapshot(vec![
+            session("dup", "first", State::Idle),
+            session("dup", "second", State::Working),
+        ]));
+        let v = m.view();
+        assert_eq!(v.tabs.len(), 1, "duplicate id collapses to one tab");
+        assert_eq!(v.tabs[0].title, "second", "the later occurrence wins");
+        assert_eq!(m.len(), 1);
     }
 
     #[test]

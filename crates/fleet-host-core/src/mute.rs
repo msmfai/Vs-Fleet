@@ -376,8 +376,14 @@ mod tests {
     #[test]
     fn mute_command_round_trip() {
         let cmd = mute_command("my-session");
-        // It is the right variant.
-        assert!(matches!(cmd, Command::Mute { .. }));
+        // It is exactly the right variant, with the right id and schema version.
+        assert_eq!(
+            cmd,
+            Command::Mute {
+                schema_version: SCHEMA_VERSION,
+                session_id: "my-session".into(),
+            }
+        );
         // The command name matches the wire tag.
         assert_eq!(cmd.command_name(), "mute");
         // Wire serialization is correct.
@@ -394,7 +400,13 @@ mod tests {
     #[test]
     fn unmute_command_round_trip() {
         let cmd = unmute_command("sess-42");
-        assert!(matches!(cmd, Command::Unmute { .. }));
+        assert_eq!(
+            cmd,
+            Command::Unmute {
+                schema_version: SCHEMA_VERSION,
+                session_id: "sess-42".into(),
+            }
+        );
         assert_eq!(cmd.command_name(), "unmute");
         let v = serde_json::to_value(&cmd).unwrap();
         assert_eq!(v["command"], "unmute");
@@ -408,7 +420,13 @@ mod tests {
     #[test]
     fn solo_command_round_trip() {
         let cmd = solo_command("focus-this");
-        assert!(matches!(cmd, Command::Solo { .. }));
+        assert_eq!(
+            cmd,
+            Command::Solo {
+                schema_version: SCHEMA_VERSION,
+                session_id: "focus-this".into(),
+            }
+        );
         assert_eq!(cmd.command_name(), "solo");
         let v = serde_json::to_value(&cmd).unwrap();
         assert_eq!(v["command"], "solo");

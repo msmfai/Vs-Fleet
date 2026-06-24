@@ -23,6 +23,8 @@
 //!   `--fake [--ws <url>] [--delay-ms <ms>]` — scripted fake lifecycle
 //!   `--fake --unix <path>` — unix fast path (`cfg(unix)` only)
 
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+
 #[cfg(unix)]
 use std::sync::Arc;
 use std::time::Duration;
@@ -42,6 +44,8 @@ use tokio::sync::Mutex;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+// Thin binary entrypoint: arg routing + tracing init. Daemon dispatch only.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -65,6 +69,7 @@ async fn main() -> Result<()> {
 /// SERVE mode on non-unix platforms: the hook-receiver needs a unix domain
 /// socket, which Windows does not have yet. Refuse loudly instead of binding
 /// nothing — Fleet degrades to "no agent state" on these platforms.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(not(unix))]
 async fn run_serve(_args: &[String], _ws_url: String) -> Result<()> {
     anyhow::bail!(
@@ -74,6 +79,9 @@ async fn run_serve(_args: &[String], _ws_url: String) -> Result<()> {
 
 /// SERVE mode: connect to the Hub, register the window session, then bind the
 /// reporter socket and feed every hook payload through the detection adapters.
+// Hub-connect + bind + accept-loop daemon; raced against Ctrl-C. Not unit-tested
+// (binds a real socket and runs until interrupted).
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(unix)]
 async fn run_serve(args: &[String], ws_url: String) -> Result<()> {
     // The window session id is injected by the VS Code extension as
@@ -195,6 +203,8 @@ fn window_session_base(id: &str) -> Session {
 }
 
 /// REPCORE real mode: register a session + working run, then run the framework.
+// Spawns the reporter task and blocks on Ctrl-C; a daemon loop, not unit-tested.
+#[cfg_attr(coverage_nightly, coverage(off))]
 async fn run_real(args: &[String], ws_url: String) -> Result<()> {
     let session_id = flag_value(args, "--session-id").unwrap_or_else(|| "sess-local-0001".into());
 
@@ -283,6 +293,9 @@ fn local_run(run_id: &str, state: State) -> AgentRun {
 }
 
 /// S4 fake mode: drive the scripted lifecycle.
+// Opens a real transport and runs the scripted reporter to completion; the fake
+// driver itself is exhaustively tested in `fake.rs`. Not unit-tested here.
+#[cfg_attr(coverage_nightly, coverage(off))]
 async fn run_fake(args: &[String], ws_url: &str) -> Result<()> {
     let delay_ms: u64 = flag_value(args, "--delay-ms")
         .and_then(|v| v.parse().ok())
@@ -309,4 +322,107 @@ async fn run_fake(args: &[String], ws_url: &str) -> Result<()> {
 /// Return the value of `--flag <value>` from an args slice.
 fn flag_value(args: &[String], flag: &str) -> Option<String> {
     args.windows(2).find(|w| w[0] == flag).map(|w| w[1].clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn argv(parts: &[&str]) -> Vec<String> {
+        parts.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn flag_value_finds_present_flag() {
+        let args = argv(&["--ws", "ws://x", "--session-id", "sess-7"]);
+        assert_eq!(flag_value(&args, "--ws"), Some("ws://x".into()));
+        assert_eq!(flag_value(&args, "--session-id"), Some("sess-7".into()));
+    }
+
+    #[test]
+    fn flag_value_missing_flag_is_none() {
+        let args = argv(&["--fake"]);
+        assert_eq!(flag_value(&args, "--ws"), None);
+        // A flag with no following value is also None (no 2-window match).
+        let trailing = argv(&["--ws"]);
+        assert_eq!(flag_value(&trailing, "--ws"), None);
+    }
+
+    #[test]
+    fn local_session_has_window_shape() {
+        let s = local_session("sess-abc");
+        assert_eq!(s.session_id, "sess-abc");
+        assert_eq!(s.title, "local reporter");
+        assert_eq!(s.location.kind, LocationKind::Local);
+        assert!(s.editor.is_none());
+        assert_eq!(s.rollup_state, State::Idle);
+    }
+
+    #[test]
+    fn local_run_uses_run_id_and_state() {
+        let r = local_run("run-xyz", State::Working);
+        assert_eq!(r.run_id, "run-xyz");
+        assert_eq!(r.agent_kind, AgentKind::Other);
+        assert_eq!(r.state, State::Working);
+        assert_eq!(r.confidence, Confidence::Inferred);
+        // cwd is the process working dir (or "/" fallback) — always non-empty.
+        assert!(!r.cwd.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn window_session_sets_vscode_editor() {
+        // window_session wraps the base and attaches a VS Code editor focus hint.
+        let s = window_session("sess-win");
+        assert_eq!(s.session_id, "sess-win");
+        let editor = s.editor.expect("window session must carry an editor");
+        assert_eq!(editor.kind, Some(fleet_protocol::EditorKind::Vscode));
+        assert_eq!(editor.focus_hint.as_deref(), Some("sess-win"));
+    }
+
+    // The window-session title resolution reads two env vars; serialize the
+    // mutations in one test and restore unconditionally so other tests are
+    // unaffected and every title branch is exercised deterministically.
+    #[cfg(unix)]
+    #[test]
+    fn window_session_base_title_branches() {
+        use std::env;
+
+        let prev_title = env::var("FLEET_SESSION_TITLE").ok();
+
+        // (1) Explicit FLEET_SESSION_TITLE wins.
+        env::set_var("FLEET_SESSION_TITLE", "container-42");
+        let s = window_session_base("sess-1");
+        assert_eq!(s.title, "container-42");
+
+        // (2) Empty title is ignored → falls back to the cwd basename, which is
+        // always a non-empty string for a real working directory.
+        env::set_var("FLEET_SESSION_TITLE", "");
+        let s = window_session_base("sess-2");
+        assert!(!s.title.is_empty(), "fallback title must be non-empty");
+        assert_ne!(s.title, "");
+
+        // (3) Unset → same cwd-basename fallback path.
+        env::remove_var("FLEET_SESSION_TITLE");
+        let s = window_session_base("sess-3");
+        assert!(!s.title.is_empty());
+
+        // Exercise both arms of the save/restore helper deterministically: a set
+        // value is restored verbatim; an unset value is removed.
+        restore_env("FLEET_SESSION_TITLE", Some("restored".into()));
+        assert_eq!(env::var("FLEET_SESSION_TITLE").unwrap(), "restored");
+        restore_env("FLEET_SESSION_TITLE", None);
+        assert!(env::var("FLEET_SESSION_TITLE").is_err());
+
+        // Restore the original environment unconditionally.
+        restore_env("FLEET_SESSION_TITLE", prev_title);
+    }
+
+    #[cfg(unix)]
+    fn restore_env(key: &str, prev: Option<String>) {
+        match prev {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+    }
 }

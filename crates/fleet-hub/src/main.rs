@@ -5,8 +5,18 @@
 //! serves subscribe→snapshot + delta broadcast until killed. The Hub never
 //! auto-exits (D2).
 
+// Enable `#[coverage(off)]` under cargo-llvm-cov's nightly gate (a no-op on
+// stable). main.rs is a separate compilation unit from the lib crate, so it
+// needs its own feature gate.
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+
 use fleet_hub::{HubConfig, LockError};
 
+// The binary entrypoint: parse the trivial --help/--version CLI, install logging,
+// and hand off to `fleet_hub::run` (itself excluded as the daemon-forever loop).
+// This thin arg→lib→run wiring has no logic worth a bounded test (it would have
+// to fork a process and signal it); excluded from the nightly coverage gate.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
     // Minimal CLI: the Hub takes no runtime args, but must answer --help/--version

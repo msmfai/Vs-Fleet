@@ -40,6 +40,7 @@
 //!   confidence verbatim and never upgrades `inferred` to `high`.
 
 #![forbid(unsafe_code)]
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 pub mod backoff;
 pub mod buffer;

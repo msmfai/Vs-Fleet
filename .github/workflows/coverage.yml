@@ -1,0 +1,88 @@
+name: Coverage
+
+# 100% test-coverage gate for VS Fleet — PR-BLOCKING.
+#
+# The bar is "zero UNCOVERED source lines" (artifact-immune), enforced by
+# `scripts/coverage.sh --fail-under 100`: every source line is either exercised
+# by a real test or sits inside a reviewed `#[cfg_attr(coverage_nightly,
+# coverage(off))]` function. We do NOT gate on llvm-cov's line/region PERCENTAGE
+# — it double-counts generic/async monomorphizations + zero-width regions and
+# reads <100% even at true-100% source coverage. A PR that introduces an
+# uncovered, non-excluded line fails this gate (no ratchet-down).
+#
+# Runs on nightly because the per-line `#[coverage(off)]` exclusions require
+# cfg(coverage_nightly) + the unstable coverage_attribute feature.
+on:
+  pull_request:
+    branches: ["**"]
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  rust-coverage:
+    name: Rust coverage (100% gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # fleet-host is a Tauri crate; its lane needs the Linux webview stack.
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb
+
+      - name: Install Rust nightly + llvm-tools
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Cache Cargo registry + build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            crates/fleet-host/target
+          key: coverage-cargo-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
+          restore-keys: coverage-cargo-
+
+      # On Linux the toolchain shims in scripts/coverage.sh are a no-op (they
+      # only fire on Darwin); the nightly llvm-tools-preview ships llvm-cov.
+      - name: Coverage gate (zero uncovered source lines, both workspaces)
+        run: xvfb-run -a ./scripts/coverage.sh --host --lcov coverage/fleet.lcov --fail-under 100
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-lcov
+          path: coverage/fleet.lcov
+          if-no-files-found: warn
+
+  bridge-coverage:
+    name: fleet-bridge coverage (100% gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Install + run V8 coverage (fails under 100/100/100/100)
+        working-directory: packages/fleet-bridge
+        run: |
+          npm install
+          npm run coverage

@@ -471,6 +471,203 @@ fn machine_pins_the_armed_tool_use_id_from_pre_tool_use() {
     assert_eq!(m.armed_tool_use_id(), None);
 }
 
+// ── coverage gap-closing: drift-guard skip arms, accessors, Display/Default ──
+
+#[test]
+fn corroborate_jsonl_skips_blocks_without_type() {
+    // A block with no `type` key must be skipped (the `continue` at the block
+    // level), but a later well-formed tool_use still yields a real verdict.
+    let body = concat!(
+        r#"{"message":{"content":[{"id":"no_type_here","name":"Bash"}]}}"#,
+        "\n",
+        r#"{"message":{"content":[{"type":"tool_use","id":"toolu_after"}]}}"#,
+    );
+    assert_eq!(corroborate_jsonl(body), Corroboration::Stuck);
+}
+
+#[test]
+fn corroborate_jsonl_unknown_when_only_tool_result_seen() {
+    // A bare `tool_result` with no preceding `tool_use`: we *saw a tool* (so we
+    // don't bail early) but `dispatched` is empty → the `None` arm → Unknown.
+    let body = r#"{"message":{"content":[{"type":"tool_result","tool_use_id":"orphan_result"}]}}"#;
+    assert_eq!(corroborate_jsonl(body), Corroboration::Unknown);
+}
+
+#[test]
+fn corroborate_jsonl_for_drift_guard_skips_all_bad_lines() {
+    // Exercise every skip arm of corroborate_jsonl_for: blank line, unparseable
+    // JSON, a non-array `content`, and a block with no `type`. Then a real
+    // tool_use anchored on our id so the verdict is positively Stuck.
+    let body = concat!(
+        "   \n",                                              // blank → skip
+        "{ not valid json at all\n",                          // parse err → skip
+        r#"{"message":{"content":"not-an-array"}}"#,          // non-array → skip
+        "\n",
+        r#"{"message":{"content":[{"id":"x","name":"Bash"}]}}"#, // no type → skip
+        "\n",
+        r#"{"message":{"content":[{"type":"tool_use","id":"toolu_keyed"}]}}"#,
+    );
+    assert_eq!(corroborate_jsonl_for(body, "toolu_keyed"), Corroboration::Stuck);
+    // And the keyed lookup degrades to Unknown when the id is never dispatched.
+    assert_eq!(corroborate_jsonl_for(body, "toolu_missing"), Corroboration::Unknown);
+}
+
+#[test]
+fn machine_accessors_reflect_state() {
+    // Cover session_id(), urgency(), cwd(), debounce_ms() accessors with real
+    // values driven through the machine.
+    let mut m = ClaudeInferMachine::with_debounce_ms("sess-accessor", 777);
+    assert_eq!(m.session_id(), "sess-accessor");
+    assert_eq!(m.debounce_ms(), 777);
+    assert_eq!(m.cwd(), "/", "default cwd before any cwd-bearing event");
+    assert_eq!(m.urgency(), None);
+
+    // A PreToolUse carrying cwd updates cwd; firing the debounce sets urgency.
+    m.apply(
+        &ev(
+            r#"{"session_id":"sess-accessor","cwd":"/work/here","hook_event_name":"PreToolUse","tool_name":"Bash"}"#,
+        ),
+        0,
+    );
+    assert_eq!(m.cwd(), "/work/here");
+    m.tick(777);
+    assert_eq!(m.urgency(), Some(Urgency::Approval));
+    assert_eq!(m.state(), State::Waiting);
+}
+
+#[test]
+fn stop_with_completion_marker_goes_done() {
+    // Stop carrying a completion reason (turn_complete_done && !stop_hook_active)
+    // → State::Done (line 338) and the Done last_message.
+    let mut m = machine();
+    m.apply(&ev(&pre_tool_json()), 0);
+    let done = format!(
+        r#"{{"session_id":"{SID}","hook_event_name":"Stop","reason":"completed","stop_hook_active":false}}"#
+    );
+    let t = m.apply(&ev(&done), 100);
+    assert_eq!(t.state, State::Done);
+    assert!(t.changed);
+    let run = m.to_run("run-done", "2026-06-24T00:00:00Z");
+    assert_eq!(run.state, State::Done);
+    assert_eq!(run.last_message.as_deref(), Some("Task complete."));
+}
+
+#[test]
+fn waiting_last_message_without_tool_is_generic() {
+    // Waiting state with no last_tool → the `None` arm of last_message (line 516).
+    // Arm without a tool_name so last_tool stays None, then fire the debounce.
+    let mut m = machine();
+    let pre_no_tool = format!(r#"{{"session_id":"{SID}","hook_event_name":"PreToolUse"}}"#);
+    m.apply(&ev(&pre_no_tool), 0);
+    m.tick(WINDOW);
+    assert_eq!(m.state(), State::Waiting);
+    let run = m.to_run("run-w", "2026-06-24T00:00:00Z");
+    assert_eq!(run.last_message.as_deref(), Some("Possibly waiting (inferred)"));
+}
+
+#[test]
+fn waiting_last_message_with_tool_names_it() {
+    // Waiting WITH a last_tool → the Some arm of the Waiting last_message branch.
+    let mut m = machine();
+    m.apply(&ev(&pre_tool_json()), 0);
+    m.tick(WINDOW);
+    let run = m.to_run("run-wt", "2026-06-24T00:00:00Z");
+    assert_eq!(
+        run.last_message.as_deref(),
+        Some("Possibly waiting on Bash (inferred)")
+    );
+}
+
+#[test]
+fn dead_last_message_on_session_end() {
+    // SessionEnd → Dead → the Dead arm of last_message (line 520).
+    let mut m = machine();
+    m.apply(&ev(&session_end_json()), 0);
+    assert_eq!(m.state(), State::Dead);
+    let run = m.to_run("run-dead", "2026-06-24T00:00:00Z");
+    assert_eq!(run.last_message.as_deref(), Some("Session closed."));
+    assert_eq!(run.confidence, Confidence::High);
+}
+
+#[test]
+fn adapter_default_matches_new() {
+    // Default impl (lines 544-546) must equal ::new() behavior.
+    let a = ClaudeInferAdapter::default();
+    assert_eq!(a.session_count(), 0);
+    // And it actually tracks sessions like a fresh adapter.
+    let mut a = ClaudeInferAdapter::default();
+    a.ingest_json(&pre_tool_json(), 0);
+    assert_eq!(a.session_count(), 1);
+    assert_eq!(a.state_of(SID), Some(State::Working));
+}
+
+#[test]
+fn adapter_run_id_and_machine_accessors() {
+    // run_id_of (588-590) and machine_of (593-595) for tracked + untracked ids.
+    let mut a = ClaudeInferAdapter::with_debounce_ms(WINDOW);
+    assert_eq!(a.run_id_of(SID), None, "untracked → None");
+    assert!(a.machine_of(SID).is_none(), "untracked → None");
+
+    a.ingest_json(&pre_tool_json(), 0);
+    let run_id = a.run_id_of(SID).expect("tracked run id");
+    assert!(run_id.starts_with("claude:"), "minted run id: {run_id}");
+    assert!(run_id.contains(SID));
+    let machine = a.machine_of(SID).expect("tracked machine");
+    assert_eq!(machine.state(), State::Working);
+    assert_eq!(machine.session_id(), SID);
+}
+
+#[test]
+fn adapter_corroborate_unknown_session_is_empty() {
+    // corroborate on an unknown session → the None arm returns no commands (648).
+    let mut a = ClaudeInferAdapter::with_debounce_ms(WINDOW);
+    let cmds = a.corroborate("nope-not-here", Corroboration::Resolved);
+    assert!(cmds.is_empty());
+}
+
+#[test]
+fn adapter_corroborate_blob_unknown_session_is_empty() {
+    // corroborate_blob on an unknown session → the None arm (664).
+    let mut a = ClaudeInferAdapter::with_debounce_ms(WINDOW);
+    let blob = r#"{"message":{"content":[{"type":"tool_use","id":"t1"}]}}"#;
+    let cmds = a.corroborate_blob("ghost-session", blob);
+    assert!(cmds.is_empty());
+}
+
+#[test]
+fn adapter_corroborate_blob_falls_back_to_last_dispatched() {
+    // When the armed PreToolUse carried NO tool_use_id, corroborate_blob falls
+    // back to corroborate_jsonl (line 662, the None arm of armed_tool_use_id).
+    // A Resolved transcript then auto-resolves the raised waiting.
+    let mut a = ClaudeInferAdapter::with_debounce_ms(WINDOW);
+    a.ingest_json(&pre_tool_json(), 0); // pre_tool_json has NO tool_use_id
+    a.tick(WINDOW);
+    assert_eq!(a.state_of(SID), Some(State::Waiting));
+    assert!(
+        a.machine_of(SID).unwrap().armed_tool_use_id().is_none(),
+        "no anchor pinned, so the last-dispatched heuristic is used"
+    );
+    let blob = concat!(
+        r#"{"message":{"content":[{"type":"tool_use","id":"t1"}]}}"#,
+        "\n",
+        r#"{"message":{"content":[{"type":"tool_result","tool_use_id":"t1"}]}}"#,
+    );
+    let cmds = a.corroborate_blob(SID, blob);
+    assert_eq!(a.state_of(SID), Some(State::Working), "last-dispatched resolved → veto");
+    assert!(cmds.iter().any(|c| matches!(c, ReporterCommand::UpsertRun(_))));
+}
+
+#[test]
+fn adapter_forget_removes_session() {
+    // forget (670-672): removes a tracked session, returns false for unknown.
+    let mut a = ClaudeInferAdapter::with_debounce_ms(WINDOW);
+    a.ingest_json(&pre_tool_json(), 0);
+    assert_eq!(a.session_count(), 1);
+    assert!(a.forget(SID), "forgetting a tracked session returns true");
+    assert_eq!(a.session_count(), 0);
+    assert!(!a.forget(SID), "forgetting an unknown session returns false");
+}
+
 #[test]
 fn adapter_corroborate_blob_auto_resolves_via_precise_anchor() {
     let mut a = ClaudeInferAdapter::new();

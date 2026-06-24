@@ -237,6 +237,27 @@ mod tests {
     }
 
     #[test]
+    fn days_to_ymd_in_a_leap_year_uses_29_day_february() {
+        // 2024 is a leap year. 2024-02-29 = 19782 days since epoch. Landing on
+        // Feb 29 exercises the leap-year `month_days` table (the 29-day branch).
+        let (y, mo, d) = days_to_ymd(19782);
+        assert_eq!((y, mo, d), (2024, 2, 29), "leap-year Feb has a 29th");
+        // And the day after rolls into March, confirming February held 29 days.
+        assert_eq!(days_to_ymd(19783), (2024, 3, 1));
+    }
+
+    #[test]
+    fn default_config_has_the_binary_defaults() {
+        // The binary constructs a FakeReporterConfig via Default (200ms cadence);
+        // exercise it so the production default path is covered, not just the
+        // test helper that uses Duration::ZERO.
+        let cfg = FakeReporterConfig::default();
+        assert_eq!(cfg.session_id, "sess-fake-0001");
+        assert_eq!(cfg.run_id, "run-fake-0001");
+        assert_eq!(cfg.step_delay, Duration::from_millis(200));
+    }
+
+    #[test]
     fn is_leap_known_values() {
         assert!(is_leap(2000));
         assert!(is_leap(2024));
@@ -246,6 +267,37 @@ mod tests {
     }
 
     // ── step_to_message mapping ──────────────────────────────────────────────
+    //
+    // Variant extractors: each destructures the expected wire variant or panics.
+    // The panic arm is an unreachable test-assertion path (the message under test
+    // is constructed by `step_to_message`), so these are excluded from the nightly
+    // gate — the *behavioral* assertions live at the (covered) call sites.
+
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn expect_session_upsert(msg: ClientMessage) -> fleet_protocol::Session {
+        match msg {
+            ClientMessage::SessionUpsert { session } => session,
+            other => panic!("expected session.upsert, got {other:?}"),
+        }
+    }
+
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn expect_run_upsert(msg: ClientMessage) -> (String, fleet_protocol::AgentRun) {
+        match msg {
+            ClientMessage::RunUpsert {
+                session_id, run, ..
+            } => (session_id, run),
+            other => panic!("expected run.upsert, got {other:?}"),
+        }
+    }
+
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn expect_session_remove(msg: ClientMessage) -> String {
+        match msg {
+            ClientMessage::SessionRemove { session_id } => session_id,
+            other => panic!("expected session.remove, got {other:?}"),
+        }
+    }
 
     #[test]
     fn register_session_maps_to_session_upsert() {
@@ -285,10 +337,8 @@ mod tests {
             label: "test",
         };
         let msg = FakeReporter::step_to_message(&step);
-        match msg {
-            ClientMessage::SessionUpsert { session } => assert_eq!(session.session_id, "s1"),
-            other => panic!("wrong message type: {other:?}"),
-        }
+        let session = expect_session_upsert(msg);
+        assert_eq!(session.session_id, "s1");
     }
 
     #[test]
@@ -315,15 +365,9 @@ mod tests {
             label: "test",
         };
         let msg = FakeReporter::step_to_message(&step);
-        match msg {
-            ClientMessage::RunUpsert {
-                session_id, run: r, ..
-            } => {
-                assert_eq!(session_id, "s1");
-                assert_eq!(r.run_id, "r1");
-            }
-            other => panic!("wrong message type: {other:?}"),
-        }
+        let (session_id, r) = expect_run_upsert(msg);
+        assert_eq!(session_id, "s1");
+        assert_eq!(r.run_id, "r1");
     }
 
     #[test]
@@ -333,10 +377,7 @@ mod tests {
             label: "test",
         };
         let msg = FakeReporter::step_to_message(&step);
-        match msg {
-            ClientMessage::SessionRemove { session_id } => assert_eq!(session_id, "s1"),
-            other => panic!("wrong message type: {other:?}"),
-        }
+        assert_eq!(expect_session_remove(msg), "s1");
     }
 
     // ── FakeReporter integration tests ───────────────────────────────────────
@@ -353,6 +394,10 @@ mod tests {
     use std::net::SocketAddr;
     use tokio_tungstenite::tungstenite::Message as WsMsg;
 
+    // Defensive test helper: its non-Text / error / closed arms are unreachable
+    // in the happy-path flows that use it, so it is excluded from the nightly
+    // coverage gate (its real arm — decode a Text frame — is exercised).
+    #[cfg_attr(coverage_nightly, coverage(off))]
     async fn next_event<S>(ws: &mut tokio_tungstenite::WebSocketStream<S>) -> Event
     where
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
@@ -367,6 +412,68 @@ mod tests {
                 None => panic!("ws stream closed unexpectedly"),
             }
         }
+    }
+
+    /// Extract the sessions from a `Snapshot` event or panic. The non-snapshot
+    /// arm is an unreachable test assertion path, so this is excluded from the
+    /// nightly gate.
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn expect_snapshot_sessions(ev: Event) -> Vec<fleet_protocol::Session> {
+        match ev {
+            Event::Snapshot { sessions, .. } => sessions,
+            other => panic!("expected snapshot: {other:?}"),
+        }
+    }
+
+    /// Read the events a subscribed face sees for one scripted step, appending
+    /// them to `out`. Excluded from the nightly gate: the per-wire-type count map
+    /// has a defensive `_ => 0` arm and the read uses a defensive timeout panic,
+    /// neither of which is a behavioral assertion (the behavior asserted is the
+    /// *content* of the collected events, in the calling test).
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    async fn collect_events_for_step<S>(
+        face: &mut tokio_tungstenite::WebSocketStream<S>,
+        step: &ScriptedStep,
+        out: &mut Vec<Event>,
+    ) where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
+        // A session.upsert → session.added (1 event).
+        // A run.upsert → run.added/updated + session.updated (2 events).
+        // A session.remove → session.removed (1 event).
+        let expected_count = match step.wire_type() {
+            "session.upsert" => 1,
+            "run.upsert" => 2,
+            "session.remove" => 1,
+            _ => 0,
+        };
+        for _ in 0..expected_count {
+            let ev = tokio::time::timeout(Duration::from_secs(2), next_event(face))
+                .await
+                .unwrap_or_else(|_| panic!("timeout reading event for step '{}'", step.label()));
+            out.push(ev);
+        }
+    }
+
+    /// Poll the hub's merge-engine snapshot until it has no sessions (the final
+    /// scripted step is a session.remove). Excluded from the nightly gate: the
+    /// number of poll iterations — hence which branch/yield lines execute — is
+    /// timing-dependent, not a behavioral assertion.
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    async fn wait_until_sessions_empty(state: &HubState) {
+        let check = async {
+            loop {
+                if let Event::Snapshot { sessions, .. } = state.snapshot_event().await {
+                    if sessions.is_empty() {
+                        break;
+                    }
+                }
+                tokio::task::yield_now().await;
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(5), check)
+            .await
+            .expect("session must be removed within 5s");
     }
 
     fn test_config(session_id: &str, run_id: &str) -> FakeReporterConfig {
@@ -410,21 +517,7 @@ mod tests {
         }
 
         // After all steps, verify final state: session removed.
-        // Poll until the hub processes the remove (may need a few yields).
-        let check = async {
-            loop {
-                let snap = state.snapshot_event().await;
-                if let Event::Snapshot { sessions, .. } = snap {
-                    if sessions.is_empty() {
-                        break;
-                    }
-                }
-                tokio::task::yield_now().await;
-            }
-        };
-        tokio::time::timeout(Duration::from_secs(2), check)
-            .await
-            .expect("session must be removed within 2s");
+        wait_until_sessions_empty(&state).await;
     }
 
     /// Verify the fake reporter drives the full event sequence over WS.
@@ -447,10 +540,10 @@ mod tests {
         let (mut face, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
         let sub = serde_json::to_string(&ClientMessage::Subscribe).unwrap();
         face.send(WsMsg::Text(sub.into())).await.unwrap();
-        match next_event(&mut face).await {
-            Event::Snapshot { sessions, .. } => assert!(sessions.is_empty()),
-            other => panic!("expected snapshot: {other:?}"),
-        }
+        assert!(
+            expect_snapshot_sessions(next_event(&mut face).await).is_empty(),
+            "the initial snapshot is empty"
+        );
 
         // Reporter in the same task: step-by-step send + face reads.
         let (mut rep, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
@@ -464,27 +557,7 @@ mod tests {
             let msg = FakeReporter::step_to_message(step);
             let json = serde_json::to_string(&msg).unwrap();
             rep.send(WsMsg::Text(json.into())).await.unwrap();
-
-            // Read all events the face sees for this step (with a short timeout).
-            // A session.upsert → session.added (1 event).
-            // A run.upsert (new run) → run.added + session.updated (2 events).
-            // A run.upsert (existing run) → run.updated + session.updated (2 events).
-            // A session.remove → session.removed (1 event).
-            let expected_count = match step.wire_type() {
-                "session.upsert" => 1, // session.added
-                "run.upsert" => 2,     // run.added/updated + session.updated
-                "session.remove" => 1, // session.removed
-                _ => 0,
-            };
-
-            for _ in 0..expected_count {
-                let ev = tokio::time::timeout(Duration::from_secs(2), next_event(&mut face))
-                    .await
-                    .unwrap_or_else(|_| {
-                        panic!("timeout reading event for step '{}'", step.label())
-                    });
-                collected_events.push(ev);
-            }
+            collect_events_for_step(&mut face, step, &mut collected_events).await;
         }
 
         let saw_session_added = collected_events
@@ -542,19 +615,7 @@ mod tests {
         rep.close(None).await.ok();
 
         // Poll hub state until the session is removed.
-        let check = async {
-            loop {
-                if let Event::Snapshot { sessions, .. } = state.snapshot_event().await {
-                    if sessions.is_empty() {
-                        break;
-                    }
-                }
-                tokio::task::yield_now().await;
-            }
-        };
-        tokio::time::timeout(Duration::from_secs(2), check)
-            .await
-            .expect("session must be removed");
+        wait_until_sessions_empty(&state).await;
 
         // Now subscribe two faces and verify they both see the same empty snapshot.
         // This is the §4.3 two-face consistency invariant: the Hub's state is a
@@ -575,12 +636,10 @@ mod tests {
             v_a, v_b,
             "both faces must see the identical snapshot (§4.3)"
         );
-        match snap_a {
-            Event::Snapshot { sessions, .. } => {
-                assert!(sessions.is_empty(), "session must be removed from snapshot");
-            }
-            other => panic!("expected snapshot: {other:?}"),
-        }
+        assert!(
+            expect_snapshot_sessions(snap_a).is_empty(),
+            "session must be removed from snapshot"
+        );
 
         // Also verify the scripted sequence was applied: push a new session and
         // verify BOTH faces see the same session.added.
@@ -605,11 +664,12 @@ mod tests {
             serde_json::to_value(&ev_b).unwrap(),
             "both faces must see the same live event (§4.3 live consistency)"
         );
-        match ev_a {
-            Event::SessionAdded { session, .. } => {
-                assert_eq!(session.session_id, "sess-verify");
-            }
-            other => panic!("expected session.added: {other:?}"),
+        assert!(
+            matches!(ev_a, Event::SessionAdded { .. }),
+            "expected session.added"
+        );
+        if let Event::SessionAdded { session, .. } = ev_a {
+            assert_eq!(session.session_id, "sess-verify");
         }
     }
 
@@ -634,24 +694,94 @@ mod tests {
         let run_task = tokio::spawn(async move { reporter.run().await });
 
         // Poll hub state until session is removed (or timeout).
-        let check = async {
-            loop {
-                tokio::task::yield_now().await;
-                let snap = state.snapshot_event().await;
-                match snap {
-                    Event::Snapshot { sessions, .. } if sessions.is_empty() => break,
-                    _ => {}
-                }
-            }
-        };
-        tokio::time::timeout(Duration::from_secs(5), check)
-            .await
-            .expect("session must be removed from hub within 5s");
+        wait_until_sessions_empty(&state).await;
 
         run_task
             .await
             .expect("reporter task must not panic")
             .expect("reporter must succeed");
+    }
+
+    #[tokio::test]
+    async fn fake_reporter_honors_a_nonzero_step_delay() {
+        // With a non-zero step_delay the driver sleeps *between* steps (the
+        // `i > 0 && !is_zero()` arm). A tiny 1ms delay keeps the test fast while
+        // still exercising the inter-step pause, and the full lifecycle must
+        // still complete (session ultimately removed).
+        let state = HubState::new();
+        let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let (local, fut) = run_ws_listener(state.clone(), addr).await.unwrap();
+        tokio::spawn(fut);
+        let url = format!("ws://{local}");
+
+        let reporter = FakeReporter::new(
+            Transport::WebSocket(url.clone()),
+            FakeReporterConfig {
+                session_id: "sess-delay".into(),
+                run_id: "run-delay".into(),
+                step_delay: Duration::from_millis(1),
+            },
+        );
+        reporter.run().await.expect("delayed fake run must succeed");
+
+        // run() returns once bytes are in the local send buffer; poll the hub
+        // state until it has processed the final session.remove (same race the
+        // other integration tests handle).
+        wait_until_sessions_empty(&state).await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn fake_reporter_unix_connect_failure_is_reported() {
+        // Connecting to a path that exists but is a regular file (not a socket)
+        // fails at `UnixStream::connect` — the `failed to connect to unix socket`
+        // context arm. run() must surface that as an error, not panic.
+        let dir = tempfile::tempdir().unwrap();
+        let not_a_socket = dir.path().join("plain-file");
+        std::fs::write(&not_a_socket, b"x").unwrap();
+
+        let reporter = FakeReporter::new(
+            Transport::Unix(not_a_socket.clone()),
+            test_config("sess-unix-fail", "run-unix-fail"),
+        );
+        let err = reporter
+            .run()
+            .await
+            .expect_err("connecting to a non-socket file must fail");
+        assert!(
+            err.to_string().contains("failed to connect to unix socket"),
+            "the unix connect-error context must be attached: {err:#}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn fake_reporter_unix_ws_handshake_failure_is_reported() {
+        // A real unix listener that accepts the byte connection but immediately
+        // closes it (never speaking WS) makes the WS *handshake* fail — the
+        // `WS handshake failed over unix` context arm. run() must surface it.
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("raw.sock");
+        let listener = tokio::net::UnixListener::bind(&sock).unwrap();
+        // Accept one connection and drop it (no WS handshake response).
+        tokio::spawn(async move {
+            if let Ok((stream, _)) = listener.accept().await {
+                drop(stream);
+            }
+        });
+
+        let reporter = FakeReporter::new(
+            Transport::Unix(sock.clone()),
+            test_config("sess-unix-hs", "run-unix-hs"),
+        );
+        let err = reporter
+            .run()
+            .await
+            .expect_err("a non-WS peer must fail the handshake");
+        assert!(
+            err.to_string().contains("WS handshake failed over unix"),
+            "the unix handshake-error context must be attached: {err:#}"
+        );
     }
 
     #[cfg(unix)]
@@ -681,17 +811,8 @@ mod tests {
         reporter.run().await.expect("unix fake run must succeed");
 
         // The session was removed (last scripted step), so the snapshot should
-        // be empty.
-        let snap = state.snapshot_event().await;
-        match snap {
-            Event::Snapshot { sessions, .. } => {
-                assert!(
-                    sessions.is_empty(),
-                    "after full lifecycle via unix socket, session should be removed"
-                );
-            }
-            other => panic!("expected snapshot: {other:?}"),
-        }
+        // become empty (poll to absorb the WS-forwarding race).
+        wait_until_sessions_empty(&state).await;
 
         let _ = std::fs::remove_file(&path);
     }

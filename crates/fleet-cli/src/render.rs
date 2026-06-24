@@ -575,6 +575,17 @@ mod tests {
         assert_eq!(st.rows()[0].runs.len(), 0);
     }
 
+    #[test]
+    fn run_removed_for_unknown_session_is_noop() {
+        // run.removed for a session NOT in the map hits the `if let Some(sess)`
+        // None branch of the RunRemoved arm (a harmless drop — the snapshot is
+        // canonical). Distinct from removing an unknown run from a KNOWN session.
+        let mut st = CliState::new();
+        st.apply(Event::snapshot(vec![]));
+        st.apply(Event::run_removed("no-such-session", "r1"));
+        assert!(st.is_empty());
+    }
+
     // ── Sequence / lifecycle tests ────────────────────────────────────────────
 
     #[test]
@@ -1026,5 +1037,171 @@ mod tests {
             assert!(line.contains(want), "want {want:?} in: {line}");
             assert!(!line.contains("inferredconf") && !line.contains("highconf"));
         }
+    }
+
+    // ── state_label: every state renders its own distinct token ────────────────
+
+    #[test]
+    fn state_label_covers_all_states() {
+        // render_line() routes the rollup_state through state_label; assert each
+        // of the six states yields its own word (covers the Done/Error/Dead arms).
+        let cases = [
+            (RunState::Working, "[working]"),
+            (RunState::Waiting, "[waiting]"),
+            (RunState::Idle, "[idle]"),
+            (RunState::Done, "[done]"),
+            (RunState::Error, "[error]"),
+            (RunState::Dead, "[dead]"),
+        ];
+        for (state, want) in cases {
+            let row = Row {
+                session_id: "s".into(),
+                title: "t".into(),
+                rollup_state: state,
+                rollup_urgency: None,
+                muted: false,
+                unread: false,
+                runs: vec![],
+            };
+            let line = row.render_line();
+            assert!(line.contains(want), "state {state:?} → want {want:?} in: {line}");
+        }
+    }
+
+    // ── urgency_label: every urgency renders its own token (or empty) ──────────
+
+    #[test]
+    fn urgency_label_covers_all_variants() {
+        // render_line() routes rollup_urgency through urgency_label; assert each
+        // variant yields its own marker (covers the Question/IdleDone arms) and
+        // that Urgency::None renders no marker (the empty-string arm).
+        let cases = [
+            (Some(Urgency::Approval), "[approval]"),
+            (Some(Urgency::Question), "[question]"),
+            (Some(Urgency::IdleDone), "[idle-done]"),
+        ];
+        for (urgency, want) in cases {
+            let row = Row {
+                session_id: "s".into(),
+                title: "t".into(),
+                rollup_state: RunState::Waiting,
+                rollup_urgency: urgency,
+                muted: false,
+                unread: false,
+                runs: vec![],
+            };
+            let line = row.render_line();
+            assert!(line.contains(want), "urgency {urgency:?} → want {want:?} in: {line}");
+        }
+        // Some(Urgency::None) renders no urgency marker (the `=> ""` arm).
+        let none_row = Row {
+            session_id: "s".into(),
+            title: "t".into(),
+            rollup_state: RunState::Waiting,
+            rollup_urgency: Some(Urgency::None),
+            muted: false,
+            unread: false,
+            runs: vec![],
+        };
+        let line = none_row.render_line();
+        assert!(
+            !line.contains("[approval]")
+                && !line.contains("[question]")
+                && !line.contains("[idle-done]"),
+            "Urgency::None must render no urgency marker, got: {line}"
+        );
+    }
+
+    // ── sort_key: the IdleDone urgency arm participates in ordering ────────────
+
+    #[test]
+    fn idle_done_urgency_sorts_between_question_and_none() {
+        // Exercises the `Some(Urgency::IdleDone) => 1` arm of sort_key: an
+        // idle-done session must rank below a question one but above a no-urgency
+        // one (all in the same state so urgency is the deciding key).
+        let mut st = CliState::new();
+        let mut s_q = session("s-q", "q", RunState::Waiting);
+        s_q.rollup_urgency = Some(Urgency::Question);
+        let mut s_id = session("s-id", "id", RunState::Waiting);
+        s_id.rollup_urgency = Some(Urgency::IdleDone);
+        let s_none = session("s-none", "none", RunState::Waiting);
+        st.apply(Event::session_added(s_none));
+        st.apply(Event::session_added(s_id));
+        st.apply(Event::session_added(s_q));
+        let rows = st.rows();
+        assert_eq!(rows[0].rollup_urgency, Some(Urgency::Question));
+        assert_eq!(rows[1].rollup_urgency, Some(Urgency::IdleDone));
+        assert_eq!(rows[2].rollup_urgency, None);
+    }
+
+    // ── run.removed leaves an urgent run → rollup_urgency stays Some ───────────
+
+    #[test]
+    fn run_removed_leaving_urgent_run_keeps_some_urgency() {
+        // Remove a NON-urgent run, leaving an urgent one behind: the recomputed
+        // rollup_urgency after removal must be `Some(_)` (covers the `Some(u)`
+        // arm of the RunRemoved rollup recompute, not just the `None` arm).
+        let mut st = CliState::new();
+        st.apply(Event::session_added(session("s1", "proj", RunState::Idle)));
+        st.apply(Event::run_added("s1", run("r-plain", RunState::Working, None)));
+        st.apply(Event::run_added(
+            "s1",
+            run("r-urgent", RunState::Waiting, Some(Urgency::Approval)),
+        ));
+        // Remove the plain (non-urgent) run — the urgent one survives.
+        st.apply(Event::run_removed("s1", "r-plain"));
+        let rows = st.rows();
+        assert_eq!(rows[0].runs.len(), 1);
+        assert_eq!(rows[0].rollup_state, RunState::Waiting);
+        assert_eq!(
+            rows[0].rollup_urgency,
+            Some(Urgency::Approval),
+            "an urgent run surviving a removal keeps the rollup urgency"
+        );
+    }
+
+    // ── format_run_row: every agent kind renders its own label ─────────────────
+
+    #[test]
+    fn format_run_row_covers_all_agent_kinds() {
+        // Exercises the codex + other arms of format_run_row's `kind` match (the
+        // claude arm is already covered by other tests).
+        for (kind, want) in [
+            (AgentKind::ClaudeCode, "[claude]"),
+            (AgentKind::Codex, "[codex]"),
+            (AgentKind::Other, "[other]"),
+        ] {
+            let rr = RunRow {
+                run_id: "r1".into(),
+                agent_kind: kind.clone(),
+                state: RunState::Working,
+                confidence: Confidence::High,
+                cwd: "/x".into(),
+                last_message: None,
+                urgency: None,
+                waiting_since: None,
+            };
+            let line = format_run_row(&rr, "");
+            assert!(line.contains(want), "kind {kind:?} → want {want:?} in: {line}");
+        }
+    }
+
+    // ── format_run_row: waiting_since + last_message branches both render ───────
+
+    #[test]
+    fn format_run_row_renders_waiting_since_and_message() {
+        let rr = RunRow {
+            run_id: "r1".into(),
+            agent_kind: AgentKind::ClaudeCode,
+            state: RunState::Waiting,
+            confidence: Confidence::High,
+            cwd: "/proj".into(),
+            last_message: Some("needs approval".into()),
+            urgency: Some(Urgency::Approval),
+            waiting_since: Some("2026-06-08T10:00:00Z".into()),
+        };
+        let line = format_run_row(&rr, "");
+        assert!(line.contains("waiting since 2026-06-08T10:00:00Z"), "{line}");
+        assert!(line.contains("\"needs approval\""), "{line}");
     }
 }
