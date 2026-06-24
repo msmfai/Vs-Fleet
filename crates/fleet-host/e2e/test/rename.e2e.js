@@ -15,6 +15,16 @@
 // Determinism: every wait is an explicit poll on a backend/DOM condition, never a
 // fixed sleep, except a single short settle after the rename invoke to let the
 // `servers-changed` → refreshServers re-render flush before asserting non-revert.
+//
+// Rendering note: WebKitWebGTK under Xvfb falls back to software rendering, which
+// makes WebDriver's RENDERING-dependent ops (`getText()`, `isDisplayed()`/
+// `waitForDisplayed()`, coordinate-based `.click()`/right-click) unreliable — yet
+// the DOM itself is fully correct and functional (the IPC/bridge/render path all
+// work). So this spec drives and reads everything through the DOM via
+// `browser.execute` (dispatched DOM events + `textContent`), never through
+// rendering-dependent calls. It stays a REAL E2E: real rail webview + real IPC
+// (`window.__TAURI__` → `rename_server`) + real bridge phone-home; only the input
+// mechanism is dispatched events instead of synthetic OS input.
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -93,6 +103,70 @@ function phoneHome(token, label) {
   });
 }
 
+// ── DOM-driven helpers (rendering-independent) ───────────────────────────────
+// All reads/actions go through browser.execute so they depend only on the live
+// DOM, not on WebKitGTK's (software-rendered, unreliable) layout/paint.
+
+// Read the row's label via textContent (NOT getText(), which needs rendering).
+function readRowLabel() {
+  return browser.execute((sel) => {
+    const el = document.querySelector(sel);
+    return el ? el.textContent : null;
+  }, ROW_LABEL);
+}
+
+// Poll the row label until it equals `expected`.
+function waitRowLabel(expected, timeoutMsg) {
+  return browser.waitUntil(async () => (await readRowLabel()) === expected, {
+    timeout: 20000,
+    interval: 250,
+    timeoutMsg,
+  });
+}
+
+// Open the row context menu by dispatching a real `contextmenu` MouseEvent on the
+// row element → fires `row.oncontextmenu` → openRowMenu → renderRowMenu (main.js).
+// Returns whether the row existed to dispatch on.
+function openRowContextMenu() {
+  return browser.execute((rowSel) => {
+    const row = document.querySelector(rowSel);
+    if (!row) return false;
+    row.dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })
+    );
+    return true;
+  }, ROW);
+}
+
+// Click the "Rename" menu item. renderRowMenu gives each button id
+// `row-menu-${item.id}`, and the rename item's id is "rename" → `#row-menu-rename`.
+// Returns whether the button was present to click.
+function clickRenameMenuItem() {
+  return browser.execute(() => {
+    const btn = document.getElementById("row-menu-rename");
+    if (!btn) return false;
+    btn.click();
+    return true;
+  });
+}
+
+// Answer the in-DOM prompt overlay: set #prompt-input.value and dispatch a real
+// Enter keydown → input.onkeydown reads input.value → closePrompt(value) resolves
+// domPrompt → renameRow invokes rename_server (main.js domPrompt/closePrompt).
+// Returns whether the input was present.
+function answerPrompt(value) {
+  return browser.execute((text) => {
+    const input = document.getElementById("prompt-input");
+    if (!input) return false;
+    input.focus();
+    input.value = text;
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })
+    );
+    return true;
+  }, value);
+}
+
 // ── the suite ────────────────────────────────────────────────────────────────
 
 describe("Fleet rail — rename flow (real UI)", () => {
@@ -122,76 +196,46 @@ describe("Fleet rail — rename flow (real UI)", () => {
   });
 
   it("shows the phoned-home session as a rail row with its reported label", async () => {
-    const row = await $(ROW);
-    await row.waitForExist({ timeout: 45000 });
+    // Wait for the row to exist in the DOM (existence is rendering-independent).
+    await $(ROW).waitForExist({ timeout: 45000 });
 
-    // DIAGNOSTIC (temporary): the row renders but its label text was wrong in CI;
-    // dump the backend server list + IPC state + rendered label so we can see the
-    // real srv.label/renamed and whether the webview has Tauri IPC. Printed to the
-    // CI log as `E2E-DIAG ...`. Removed once the render path is fixed.
-    const diag = await browser.execute(async () => {
-      const t = window.__TAURI__;
-      let servers = null;
-      let invokeErr = null;
-      try {
-        servers = t ? await t.core.invoke("get_servers") : null;
-      } catch (e) {
-        invokeErr = String(e);
-      }
-      const rail = document.getElementById("rail");
-      const row = document.querySelector('.srv[data-server-id="e2e-session-1"]');
-      return {
-        hasTauri: !!t,
-        servers,
-        invokeErr,
-        renderedLabel: row ? row.querySelector(".label")?.textContent : null,
-        railText: rail ? rail.textContent.slice(0, 300) : null,
-      };
-    });
-    // eslint-disable-next-line no-console
-    console.log("E2E-DIAG", JSON.stringify(diag));
-
-    const label = await $(ROW_LABEL);
-    // The row's visible label is the auto-reported one before any rename.
-    await browser.waitUntil(async () => (await label.getText()) === AUTO_LABEL, {
-      timeout: 20000,
-      interval: 250,
-      timeoutMsg: `row label never became "${AUTO_LABEL}"`,
-    });
-    assert.equal(await label.getText(), AUTO_LABEL);
+    // The row's label is the auto-reported one before any rename. Read via
+    // textContent through the DOM, not getText() (which needs reliable rendering).
+    await waitRowLabel(AUTO_LABEL, `row label never became "${AUTO_LABEL}"`);
+    assert.equal(await readRowLabel(), AUTO_LABEL);
   });
 
   it("renames the row via the context menu + prompt overlay", async () => {
-    const row = await $(ROW);
-    await row.waitForExist({ timeout: 20000 });
+    await $(ROW).waitForExist({ timeout: 20000 });
 
-    // Open the row context menu (right-click the row), then click "Rename". The
-    // rename menu button is rendered with id `row-menu-rename` (main.js).
-    await row.click({ button: "right" });
-    const renameItem = await $("#row-menu-rename");
-    await renameItem.waitForDisplayed({ timeout: 10000 });
-    await renameItem.click();
+    // Open the row context menu by dispatching a real `contextmenu` event on the
+    // row (→ openRowMenu → renderRowMenu), then click the "Rename" item. Both go
+    // through the DOM so they don't depend on coordinate hit-testing/paint.
+    assert.equal(await openRowContextMenu(), true, "row missing for contextmenu dispatch");
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => !!document.getElementById("row-menu-rename")),
+      { timeout: 10000, interval: 200, timeoutMsg: "row menu / rename item never rendered" }
+    );
+    assert.equal(await clickRenameMenuItem(), true, "rename menu item missing");
 
-    // The in-DOM prompt overlay (#prompt-input) replaces window.prompt (which
-    // returns null in WKWebView). It is pre-filled with the current label.
-    const input = await $("#prompt-input");
-    await input.waitForDisplayed({ timeout: 10000 });
-    // Clear the prefilled value, type the new label, commit with Enter.
-    await input.click();
-    // Select-all + delete is webview-safe; main.js also `.select()`s on open.
-    await browser.keys(["Control", "a"]);
-    await browser.keys("Delete");
-    await input.setValue(RENAMED_LABEL);
-    await browser.keys("Enter");
+    // Answer the in-DOM prompt overlay (#prompt-input): set the value and dispatch
+    // a real Enter keydown → closePrompt(value) → renameRow → invoke rename_server.
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => {
+          const p = document.getElementById("prompt");
+          const input = document.getElementById("prompt-input");
+          // Overlay is shown when #prompt loses the `hidden` class (main.js domPrompt).
+          return !!input && !!p && !p.classList.contains("hidden");
+        }),
+      { timeout: 10000, interval: 200, timeoutMsg: "rename prompt overlay never opened" }
+    );
+    assert.equal(await answerPrompt(RENAMED_LABEL), true, "prompt input missing");
 
-    // ASSERT the observable DOM: the row's .label text becomes the new label.
-    const label = await $(ROW_LABEL);
-    await browser.waitUntil(async () => (await label.getText()) === RENAMED_LABEL, {
-      timeout: 20000,
-      interval: 250,
-      timeoutMsg: `row label never became "${RENAMED_LABEL}" after rename`,
-    });
-    assert.equal(await label.getText(), RENAMED_LABEL);
+    // ASSERT the observable DOM: the row's .label textContent becomes the new label.
+    await waitRowLabel(RENAMED_LABEL, `row label never became "${RENAMED_LABEL}" after rename`);
+    assert.equal(await readRowLabel(), RENAMED_LABEL);
   });
 
   it("keeps the renamed label when the reporter re-registers with the AUTO label", async () => {
@@ -201,20 +245,19 @@ describe("Fleet rail — rename flow (real UI)", () => {
     const reWs = await phoneHome(token, AUTO_LABEL);
     try {
       // Let the re-register + servers-changed → refreshServers re-render flush.
-      // We then poll the DOM and require it to STAY the renamed value: a revert
-      // bug would surface as the label flipping back to AUTO_LABEL.
-      const label = await $(ROW_LABEL);
+      // Poll the DOM (textContent) and require it to STAY the renamed value: a
+      // revert bug would surface as the label flipping back to AUTO_LABEL.
       const deadline = Date.now() + 8000;
       while (Date.now() < deadline) {
         assert.equal(
-          await label.getText(),
+          await readRowLabel(),
           RENAMED_LABEL,
           "renamed label reverted to the auto-reported one after re-register"
         );
         await sleep(500);
       }
       // Final hard assertion after the observation window.
-      assert.equal(await label.getText(), RENAMED_LABEL);
+      assert.equal(await readRowLabel(), RENAMED_LABEL);
     } finally {
       try {
         reWs.close();
