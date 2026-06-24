@@ -46,6 +46,13 @@ pub const RUNTIME_SUBDIR: &str = "fleet";
 /// This is intentionally identical to the rule `fleet init` uses for its
 /// default, so the hook commands it writes always target the socket the
 /// reporter will bind.
+// Excluded from the coverage gate: llvm-cov attributes a phantom uncovered
+// "gap" region to the `#[cfg(unix)]` XDG block's braces, and the exact line it
+// flags differs by platform/toolchain (Linux-nightly vs Apple-LLVM), so no
+// single source shape is clean everywhere. The LOGIC is fully exercised by
+// `resolution_order_is_env_then_xdg_then_temp` (env override, XDG set, XDG
+// empty, XDG unset → temp). No-op on stable.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn default_reporter_socket() -> PathBuf {
     if let Ok(p) = std::env::var(REPORTER_SOCKET_ENV) {
         if !p.is_empty() {
@@ -125,7 +132,11 @@ mod tests {
                 "empty XDG_RUNTIME_DIR falls through to the temp dir, got {temp_fallback:?}"
             );
 
+            // Unset XDG (the `ok()?` None branch of xdg_runtime_socket) also falls
+            // through to temp — assert it deterministically so the branch is
+            // covered regardless of the CI runner's ambient XDG_RUNTIME_DIR.
             std::env::remove_var("XDG_RUNTIME_DIR");
+            assert!(default_reporter_socket().starts_with(std::env::temp_dir()));
         }
     }
 }
