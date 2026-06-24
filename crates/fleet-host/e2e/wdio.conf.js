@@ -13,9 +13,15 @@
 // cannot target. See crates/fleet-host/src/mux.rs::build_window_rail_only.
 //
 // We additionally stand up a tiny "editor stand-in" HTTP server here (the URL the
-// phoned-home session points at), exactly like scripts/release-smoke.mjs, and a
-// fresh isolated runtime dir so the bridge token is sandboxed per run. These are
-// published on `globalThis.__FLEET_E2E__` for the spec.
+// phoned-home session points at), exactly like scripts/release-smoke.mjs, in an
+// isolated runtime dir so the bridge token is sandboxed per run.
+//
+// LAUNCHER → WORKER HANDOFF (important): `onPrepare` runs in the wdio LAUNCHER
+// process, but the spec's `before all` hook runs in a separate WORKER process.
+// Anything stashed on `globalThis`/module state in onPrepare is therefore invisible
+// to the spec. We hand off via a FILE written in onPrepare at a path BOTH processes
+// derive identically; the spec READS it inside its hook (worker-safe). All values
+// are fixed/derivable, so this is deterministic across the process boundary.
 //
 // CI/Linux only. Do not run locally.
 
@@ -43,22 +49,25 @@ const PROBE_PORT = 51776;
 const EDITOR_PORT = 51779;
 const EDITOR_URL = `http://127.0.0.1:${EDITOR_PORT}/`;
 
-// Per-run isolated runtime dir → sandboxes <runtime>/bridge.token + hub state.
-// Derived from an env var so the launcher and worker processes (which load this
-// module separately) resolve the SAME dir; the launcher seeds it if unset.
-if (!process.env.FLEET_E2E_RUNTIME_DIR) {
-  process.env.FLEET_E2E_RUNTIME_DIR = fs.mkdtempSync(
-    path.join(os.tmpdir(), "fleet-e2e-run-")
-  );
-}
-const runtimeDir = process.env.FLEET_E2E_RUNTIME_DIR;
+// Isolated runtime dir → sandboxes <runtime>/bridge.token + hub state. Derived
+// DETERMINISTICALLY (a fixed path under tmp, NOT mkdtemp) so the launcher, the
+// worker, and the app's FLEET_RUNTIME_DIR all resolve the SAME dir without sharing
+// in-memory state. (A per-process mkdtemp would give the worker a different dir
+// than the one the app wrote bridge.token into.) Cleaned fresh in onPrepare.
+const runtimeDir = path.join(os.tmpdir(), "fleet-e2e-run");
 
-// Shared config both processes can rebuild from constants/env alone.
+// The launcher→worker handoff file. Both processes compute this path identically
+// from `runtimeDir`; onPrepare writes it, the spec reads it.
+const configPath = path.join(runtimeDir, "e2e-config.json");
+
+// Shared config both processes derive from the same constants/paths. Written to
+// `configPath` for the worker; the spec reads the file (never module/global state).
 const sharedConfig = {
   bridgePort: BRIDGE_PORT,
   probePort: PROBE_PORT,
   runtimeDir,
   editorUrl: EDITOR_URL,
+  configPath,
 };
 
 let tauriDriver;
@@ -115,9 +124,16 @@ export const config = {
       );
     }
 
+    // Start each run from a clean runtime dir so a stale bridge.token from a
+    // previous run can't be read before the app rewrites it.
+    fs.rmSync(runtimeDir, { recursive: true, force: true });
+    fs.mkdirSync(runtimeDir, { recursive: true });
+
     // The page the phoned-home session URL embeds. Harmless static HTML; in
     // rail-only mode nothing actually navigates to it, but the rail row carries
-    // the URL and the bridge requires a well-formed one.
+    // the URL and the bridge requires a well-formed one. Started in the LAUNCHER
+    // and kept alive for the whole run, on a FIXED loopback port, so the worker
+    // reaches it over 127.0.0.1 without sharing the server handle.
     editorServer = http.createServer((_req, res) => {
       res.setHeader("content-type", "text/html");
       res.end(
@@ -129,8 +145,9 @@ export const config = {
       editorServer.listen(EDITOR_PORT, "127.0.0.1", resolve)
     );
 
-    // Hand shared config to anything sharing this process.
-    globalThis.__FLEET_E2E__ = sharedConfig;
+    // Hand off to the worker via a FILE (worker is a separate process; globalThis
+    // does not cross). The spec reads `configPath`, which it derives identically.
+    fs.writeFileSync(configPath, JSON.stringify(sharedConfig, null, 2));
 
     tauriDriver = spawn(tauriDriverBin(), [], {
       stdio: [null, process.stdout, process.stderr],
@@ -139,14 +156,6 @@ export const config = {
       console.error("tauri-driver failed to start:", e);
       process.exit(1);
     });
-  },
-
-  // Re-publish the shared config into the worker process (onPrepare runs in the
-  // launcher; before/specs run in the worker, a separate process). Both rebuild
-  // `sharedConfig` from the same constants + inherited FLEET_E2E_RUNTIME_DIR, so
-  // the values match across processes.
-  before: () => {
-    globalThis.__FLEET_E2E__ = sharedConfig;
   },
 
   onComplete: () => {

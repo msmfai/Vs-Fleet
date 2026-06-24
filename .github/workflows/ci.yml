@@ -333,5 +333,6 @@ jobs:
           name: host-e2e-logs
           path: |
             crates/fleet-host/e2e/*.log
-            /tmp/fleet-e2e-run-*/fleet-host.log
+            /tmp/fleet-e2e-run/fleet-host.log
+            /tmp/fleet-e2e-run/e2e-config.json
           if-no-files-found: warn
