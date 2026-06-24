@@ -3645,10 +3645,13 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
         let _g = EnvGuard::set("FLEET_BRIDGE_VSIX", vsix.to_str().unwrap());
         assert_eq!(find_fleet_bridge_vsix(), Some(vsix));
 
-        // A non-file override (a directory) is ignored; the bundle search runs and
-        // finds the in-repo packaged VSIX instead.
+        // A non-file override (a directory) is ignored — it must not be returned
+        // verbatim. Whether the subsequent bundle search then finds a staged VSIX
+        // is environment-dependent (present in-repo locally, absent next to the
+        // test binary in CI), so assert only the deterministic contract: the
+        // invalid override is rejected, not used.
         let _g2 = EnvGuard::set("FLEET_BRIDGE_VSIX", dir.to_str().unwrap());
-        assert!(find_fleet_bridge_vsix().is_some());
+        assert_ne!(find_fleet_bridge_vsix(), Some(dir.clone()));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
