@@ -489,6 +489,11 @@ pub fn clear_host_status_if_current(state: State<'_, MuxState>, message: String)
 /// `message` (the auto-clear-only-if-still-current contract). Returns whether it
 /// cleared. Headless and `State`-free so the command + the `/host-status/clear`
 /// probe can be round-tripped without a window.
+// Excluded from the coverage gate: the `if let Ok(..lock())` poison arm is
+// untestable and llvm-cov-nightly attributes a phantom uncovered gap to the
+// block's closing brace (same artifact class as paths.rs). The clear/keep
+// contract is fully exercised by `host_status_set_read_and_conditional_clear_round_trip`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn clear_host_status_if_message(state: &MuxState, message: &str) -> bool {
     if let Ok(mut status) = state.status.lock() {
         if status.as_ref().is_some_and(|s| s.message == message) {

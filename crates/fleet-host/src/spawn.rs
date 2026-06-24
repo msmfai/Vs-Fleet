@@ -173,9 +173,7 @@ impl ServerSupervisor {
                     .map(expand_user_path)
                     .unwrap_or_else(default_spawn_folder),
             )),
-            SpawnRoute::Local => {
-                self.spawn_local(request.folder.as_deref().map(expand_user_path))
-            }
+            SpawnRoute::Local => self.spawn_local(request.folder.as_deref().map(expand_user_path)),
         }
     }
 
@@ -3468,7 +3466,10 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
             SpawnRoute::Container
         );
         assert_eq!(resolve_spawn_route(None, SpawnMode::Ssh), SpawnRoute::Ssh);
-        assert_eq!(resolve_spawn_route(None, SpawnMode::Local), SpawnRoute::Local);
+        assert_eq!(
+            resolve_spawn_route(None, SpawnMode::Local),
+            SpawnRoute::Local
+        );
 
         // An unrecognized request mode falls through to the env knob (not an error).
         assert_eq!(
