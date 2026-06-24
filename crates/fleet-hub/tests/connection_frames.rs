@@ -113,9 +113,7 @@ async fn binary_delta_frame_applies_without_reply() {
 async fn ping_frame_is_answered_with_pong() {
     let (_a, url) = start().await;
     let (mut ws, _r) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    ws.send(Message::Ping(b"hi".to_vec().into()))
-        .await
-        .unwrap();
+    ws.send(Message::Ping(b"hi".to_vec().into())).await.unwrap();
     loop {
         match ws.next().await.unwrap().unwrap() {
             Message::Pong(p) => {
@@ -251,7 +249,9 @@ async fn slow_subscriber_lags_when_backlog_overflows() {
     // The server forwards until its sink (the tiny duplex) backpressures, then
     // blocks — so it stops calling `rx.recv()` and the channel overflows.
     for i in 0..5000 {
-        state.ingest_session_upsert(sample_session(&format!("s{i}"))).await;
+        state
+            .ingest_session_upsert(sample_session(&format!("s{i}")))
+            .await;
     }
     // Give the server task a moment to drain what it can and then block on send.
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -308,7 +308,10 @@ async fn reply_send_failure_after_client_drop_ends_connection() {
 
     // The server task must return (not hang) once its send errors.
     let ended = tokio::time::timeout(std::time::Duration::from_secs(5), server_task).await;
-    assert!(ended.is_ok(), "server connection task must end after the peer drops");
+    assert!(
+        ended.is_ok(),
+        "server connection task must end after the peer drops"
+    );
 }
 
 #[tokio::test]

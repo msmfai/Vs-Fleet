@@ -2076,12 +2076,9 @@ mod tests {
         // PATH search proceeds. An empty component is skipped, a dir WITHOUT a
         // `claude` is passed over (is_file false → continue), then the real one wins.
         let _g = EnvGuard::set("FLEET_CLAUDE_BIN", real_dir.to_str().unwrap());
-        let path = std::env::join_paths([
-            PathBuf::from(""),
-            claudeless_dir.clone(),
-            real_dir.clone(),
-        ])
-        .unwrap();
+        let path =
+            std::env::join_paths([PathBuf::from(""), claudeless_dir.clone(), real_dir.clone()])
+                .unwrap();
         assert_eq!(find_real_claude(&dir.join("shim"), &path), Some(real));
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -2463,10 +2460,7 @@ mod tests {
 
         // No override, no home bundle; the serve-web bootstrap (best-effort, points
         // at a nonexistent editor) can't materialize one either ⇒ None.
-        assert_eq!(
-            local_code_server_bin(Path::new("/nonexistent/code")),
-            None
-        );
+        assert_eq!(local_code_server_bin(Path::new("/nonexistent/code")), None);
 
         let _ = std::fs::remove_dir_all(&home);
     }
@@ -2916,7 +2910,11 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
         let _ = std::fs::remove_dir_all(&home);
         let hm = home.join("Applications").join("Home Manager Apps");
         // One real .app with a resources bin, plus a non-.app entry to be filtered.
-        let app_bin = hm.join("tool.app").join("Contents").join("Resources").join("bin");
+        let app_bin = hm
+            .join("tool.app")
+            .join("Contents")
+            .join("Resources")
+            .join("bin");
         std::fs::create_dir_all(&app_bin).unwrap();
         std::fs::create_dir_all(hm.join("README.txt-dir")).unwrap();
 
@@ -3013,10 +3011,18 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
     #[test]
     fn ssh_tunnel_args_carry_editor_and_reverse_tunnels() {
         let args = ssh_tunnel_args(7000, 18001, 19001, 51777, 20001, 51778);
-        assert!(args.windows(2).any(|w| w[0] == "-L" && w[1] == "7000:127.0.0.1:18001"));
-        assert!(args.windows(2).any(|w| w[0] == "-R" && w[1] == "19001:127.0.0.1:51777"));
-        assert!(args.windows(2).any(|w| w[0] == "-R" && w[1] == "20001:127.0.0.1:51778"));
-        assert!(args.windows(2).any(|w| w[0] == "-o" && w[1] == "ExitOnForwardFailure=yes"));
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "-L" && w[1] == "7000:127.0.0.1:18001"));
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "-R" && w[1] == "19001:127.0.0.1:51777"));
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "-R" && w[1] == "20001:127.0.0.1:51778"));
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "-o" && w[1] == "ExitOnForwardFailure=yes"));
     }
 
     #[test]
@@ -3065,7 +3071,15 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
         ));
         // A blank repo spec falls back to mkdir.
         let plain = ssh_remote_command(
-            "server-x-3", "lbl", 1, 2, 3, "t", "code", "fleet-reporter", Some("   "),
+            "server-x-3",
+            "lbl",
+            1,
+            2,
+            3,
+            "t",
+            "code",
+            "fleet-reporter",
+            Some("   "),
         );
         assert!(plain.contains("mkdir -p '.fleet/ws-server-x-3';"));
         assert!(!plain.contains("git clone"));
@@ -3151,8 +3165,14 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
         assert!(sup.rename("server-b", "Docs"));
         assert!(!sup.rename("missing", "Nope"));
         let servers = sup.servers();
-        assert_eq!(servers.iter().find(|s| s.id == "server-a").unwrap().label, "server-a");
-        assert_eq!(servers.iter().find(|s| s.id == "server-b").unwrap().label, "Docs");
+        assert_eq!(
+            servers.iter().find(|s| s.id == "server-a").unwrap().label,
+            "server-a"
+        );
+        assert_eq!(
+            servers.iter().find(|s| s.id == "server-b").unwrap().label,
+            "Docs"
+        );
     }
 
     #[test]
@@ -3181,7 +3201,9 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
             .unwrap()
             .insert("server-dead".into(), vec![child]);
         // Give it a moment to actually exit so try_wait sees the Exited status.
-        let pruned = eventually(std::time::Duration::from_secs(2), || sup.servers().is_empty());
+        let pruned = eventually(std::time::Duration::from_secs(2), || {
+            sup.servers().is_empty()
+        });
         assert!(pruned, "an exited session should be pruned from the rail");
         assert!(!sup.children.lock().unwrap().contains_key("server-dead"));
     }
@@ -3544,15 +3566,9 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
             expand_user_path("~/projects/api"),
             PathBuf::from("/home/carol/projects/api")
         );
-        assert_eq!(
-            expand_user_path("/abs/path"),
-            PathBuf::from("/abs/path")
-        );
+        assert_eq!(expand_user_path("/abs/path"), PathBuf::from("/abs/path"));
         // A tilde not at the start is left literal.
-        assert_eq!(
-            expand_user_path("rel/~weird"),
-            PathBuf::from("rel/~weird")
-        );
+        assert_eq!(expand_user_path("rel/~weird"), PathBuf::from("rel/~weird"));
     }
 
     #[test]
@@ -3570,10 +3586,7 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
         // Valid object ⇒ preserved.
         let obj = dir.join("obj.json");
         std::fs::write(&obj, br#"{"a":1}"#).unwrap();
-        assert_eq!(
-            read_json_object_or_empty(&obj),
-            serde_json::json!({"a":1})
-        );
+        assert_eq!(read_json_object_or_empty(&obj), serde_json::json!({"a":1}));
 
         // Valid JSON but not an object (an array) ⇒ replaced with empty object.
         let arr = dir.join("arr.json");

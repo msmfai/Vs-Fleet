@@ -171,7 +171,10 @@ mod tests {
     fn codex_permission_fixtures_carry_decision() {
         let v = parse(&codex_permission_request("th", "/w", "shell"));
         assert_eq!(v["hook_event_name"], "PermissionRequest");
-        assert!(v.get("decision").is_none(), "the request carries no decision");
+        assert!(
+            v.get("decision").is_none(),
+            "the request carries no decision"
+        );
 
         let allow = parse(&codex_permission_response("th", "/w", "shell", true));
         assert_eq!(allow["decision"], "allow");
@@ -208,7 +211,10 @@ mod tests {
     fn claude_permission_fixtures_carry_permission() {
         let req = parse(&claude_permission_request("s", "/ui", "Edit"));
         assert_eq!(req["hook_event_name"], "PermissionRequest");
-        assert!(req.get("permission").is_none(), "the request has no verdict yet");
+        assert!(
+            req.get("permission").is_none(),
+            "the request has no verdict yet"
+        );
 
         // claude_permission_response — previously uncovered (both verdicts).
         let allow = parse(&claude_permission_response("s", "/ui", "Edit", true));
@@ -225,7 +231,9 @@ mod tests {
         let v = parse(&stuck);
         assert_eq!(v["type"], "assistant");
         let content = v["message"]["content"].as_array().unwrap();
-        assert!(content.iter().any(|c| c["type"] == "tool_use" && c["id"] == "tu-9"));
+        assert!(content
+            .iter()
+            .any(|c| c["type"] == "tool_use" && c["id"] == "tu-9"));
 
         // The resolved transcript is TWO JSONL lines: a tool_use then a tool_result.
         let resolved = claude_transcript_resolved("tu-9");

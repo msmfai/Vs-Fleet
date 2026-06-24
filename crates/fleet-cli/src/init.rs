@@ -61,7 +61,8 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn ensure_parent_dir(path: &Path, what: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("create {what} {}", parent.display()))?;
+        fs::create_dir_all(parent)
+            .with_context(|| format!("create {what} {}", parent.display()))?;
     }
     Ok(())
 }
@@ -1482,7 +1483,10 @@ mod tests {
 
         do_init(&cfg).unwrap();
         let backup = backup_path(&claude_path);
-        assert!(backup.exists(), "init created a backup for the existing file");
+        assert!(
+            backup.exists(),
+            "init created a backup for the existing file"
+        );
 
         // Simulate a lost backup (e.g. user deleted it).
         fs::remove_file(&backup).unwrap();
@@ -1563,7 +1567,10 @@ mod tests {
         let err = maybe_backup(&target, &backup)
             .expect_err("maybe_backup must fail when the backup parent is a file");
         let msg = format!("{err:#}");
-        assert!(msg.contains("backup dir") || msg.contains("create"), "got: {msg}");
+        assert!(
+            msg.contains("backup dir") || msg.contains("create"),
+            "got: {msg}"
+        );
     }
 
     #[test]
@@ -1579,7 +1586,10 @@ mod tests {
             .save(&manifest_path)
             .expect_err("save must fail when the manifest parent is a file");
         let msg = format!("{err:#}");
-        assert!(msg.contains("manifest dir") || msg.contains("create"), "got: {msg}");
+        assert!(
+            msg.contains("manifest dir") || msg.contains("create"),
+            "got: {msg}"
+        );
     }
 
     #[test]
@@ -1595,7 +1605,10 @@ mod tests {
             .save(&manifest_path)
             .expect_err("save must fail writing over a directory");
         let msg = format!("{err:#}");
-        assert!(msg.contains("write manifest") || msg.contains("manifest"), "got: {msg}");
+        assert!(
+            msg.contains("write manifest") || msg.contains("manifest"),
+            "got: {msg}"
+        );
     }
 
     #[test]

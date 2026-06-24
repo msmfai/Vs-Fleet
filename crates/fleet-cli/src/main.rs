@@ -422,7 +422,10 @@ mod tests {
         let _xdg = EnvGuard::unset("XDG_RUNTIME_DIR");
         let p = default_unix_path();
         let expected = std::env::temp_dir().join("fleet").join("hub.sock");
-        assert_eq!(p, expected, "temp_dir/fleet/hub.sock when no runtime dir env");
+        assert_eq!(
+            p, expected,
+            "temp_dir/fleet/hub.sock when no runtime dir env"
+        );
     }
 
     // ── home_dir ───────────────────────────────────────────────────────────────
@@ -431,7 +434,10 @@ mod tests {
     fn home_dir_reads_home_env() {
         let _g = ENV_LOCK.lock().unwrap();
         let _h = EnvGuard::set("HOME", "/home/tester");
-        assert_eq!(home_dir().unwrap(), std::path::PathBuf::from("/home/tester"));
+        assert_eq!(
+            home_dir().unwrap(),
+            std::path::PathBuf::from("/home/tester")
+        );
     }
 
     #[cfg(unix)]
@@ -699,7 +705,7 @@ mod tests {
             let (stream, _) = listener.accept().await.unwrap();
             let mut ws = accept_async(stream).await.unwrap();
             let _ = ws.next().await; // subscribe
-            // A delta with NO preceding snapshot.
+                                     // A delta with NO preceding snapshot.
             let delta = serde_json::to_string(&Event::session_added(session(
                 "early",
                 "before snapshot",

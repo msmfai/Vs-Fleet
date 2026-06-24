@@ -205,7 +205,11 @@ impl EventLog {
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn log_dropped_marks(session_id: &str, dropped: usize) {
     if dropped > 0 {
-        tracing::debug!(session_id, dropped, "dropped session reclaim marks atomically");
+        tracing::debug!(
+            session_id,
+            dropped,
+            "dropped session reclaim marks atomically"
+        );
     }
 }
 
@@ -1366,7 +1370,9 @@ mod tests {
     /// the root-safe way to drive the persist-failure error arms (no chmod). The
     /// projection is fully restored, so mutations still change in-memory state;
     /// only the durable append fails.
-    fn read_only_store_after(setup: impl FnOnce(&mut StateStore)) -> (tempfile::TempDir, StateStore) {
+    fn read_only_store_after(
+        setup: impl FnOnce(&mut StateStore),
+    ) -> (tempfile::TempDir, StateStore) {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("events.db");
         {
@@ -1401,7 +1407,9 @@ mod tests {
             let soloed = store.apply_solo("s1");
             assert_eq!(soloed.len(), 1);
 
-            let focus = store.apply_focus("s1").expect("focus still returns an event");
+            let focus = store
+                .apply_focus("s1")
+                .expect("focus still returns an event");
             assert_eq!(focus.type_name(), "session.updated");
             assert!(
                 !store.engine().session("s1").unwrap().unread,
@@ -1556,7 +1564,10 @@ mod tests {
     #[test]
     fn subtract_on_unparseable_now_returns_input_unchanged() {
         // A malformed clock makes the cutoff equal to `now` → never over-reaps.
-        assert_eq!(subtract("not-a-time", Duration::from_secs(3600)), "not-a-time");
+        assert_eq!(
+            subtract("not-a-time", Duration::from_secs(3600)),
+            "not-a-time"
+        );
     }
 
     #[test]

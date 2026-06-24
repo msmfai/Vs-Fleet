@@ -201,7 +201,10 @@ mod tests {
         let c = WsConnector::new("ws://127.0.0.1:1");
         match c.connect().await {
             Err(TransportError::Connect(msg)) => {
-                assert!(msg.contains("ws://127.0.0.1:1"), "error names the url: {msg}");
+                assert!(
+                    msg.contains("ws://127.0.0.1:1"),
+                    "error names the url: {msg}"
+                );
             }
             Err(other) => panic!("expected Connect error, got {other:?}"),
             Ok(_) => panic!("connect to ws://127.0.0.1:1 unexpectedly succeeded"),
@@ -228,7 +231,10 @@ mod tests {
         let c = UnixConnector::new(bogus.clone());
         match c.connect().await {
             Err(TransportError::Connect(msg)) => {
-                assert!(msg.contains(&bogus.display().to_string()), "names the path: {msg}");
+                assert!(
+                    msg.contains(&bogus.display().to_string()),
+                    "names the path: {msg}"
+                );
             }
             Err(other) => panic!("expected Connect error, got {other:?}"),
             Ok(_) => panic!("connect through ENOTDIR path unexpectedly succeeded"),

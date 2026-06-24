@@ -436,7 +436,10 @@ where
     match ev {
         Ok(ev) => sink.send(encode(&ev)).await.is_err(),
         Err(broadcast::error::RecvError::Lagged(n)) => {
-            tracing::warn!(skipped = n, "subscriber lagged; deltas dropped (re-subscribe for snapshot)");
+            tracing::warn!(
+                skipped = n,
+                "subscriber lagged; deltas dropped (re-subscribe for snapshot)"
+            );
             false
         }
         Err(broadcast::error::RecvError::Closed) => true,
@@ -692,7 +695,9 @@ mod tests {
         // resolves to None, so the `if let Some(session_id)` no-op branch is taken.
         let state = HubState::new();
         state
-            .apply(ClientMessage::SessionUpsert { session: sess("s1") })
+            .apply(ClientMessage::SessionUpsert {
+                session: sess("s1"),
+            })
             .await;
         let mut rx = state.subscribe();
         state
@@ -712,7 +717,9 @@ mod tests {
         // inner `if let Some(ev)` no-op branch is taken (no broadcast).
         let state = HubState::new();
         state
-            .apply(ClientMessage::SessionUpsert { session: sess("s1") }) // unread=false
+            .apply(ClientMessage::SessionUpsert {
+                session: sess("s1"),
+            }) // unread=false
             .await;
         let mut rx = state.subscribe();
         state

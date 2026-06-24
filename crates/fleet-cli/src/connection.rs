@@ -203,7 +203,11 @@ mod tests {
     {
         match ws.next().await {
             Some(Ok(Message::Text(t))) => {
-                assert_eq!(t.as_str(), SUBSCRIBE_MSG, "client must send subscribe first");
+                assert_eq!(
+                    t.as_str(),
+                    SUBSCRIBE_MSG,
+                    "client must send subscribe first"
+                );
             }
             other => panic!("expected subscribe text frame, got {other:?}"),
         }
@@ -214,9 +218,7 @@ mod tests {
     /// server side of the test. Returns the `ws://` URL to connect to.
     async fn spawn_ws_server<F, Fut>(handler: F) -> String
     where
-        F: FnOnce(
-                tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
-            ) -> Fut
+        F: FnOnce(tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>) -> Fut
             + Send
             + 'static,
         Fut: std::future::Future<Output = ()> + Send,
@@ -235,7 +237,9 @@ mod tests {
     #[tokio::test]
     async fn connect_ws_decodes_text_snapshot() {
         let url = spawn_ws_server(|mut ws| async move {
-            ws.send(Message::Text(snapshot_text().into())).await.unwrap();
+            ws.send(Message::Text(snapshot_text().into()))
+                .await
+                .unwrap();
             // Hold the connection so the client task does not see EOF mid-test.
             tokio::time::sleep(Duration::from_millis(50)).await;
         })
@@ -256,7 +260,10 @@ mod tests {
         .await;
 
         let mut rx = connect_ws(&url).await.unwrap();
-        let ev = rx.recv().await.expect("a snapshot event from a binary frame");
+        let ev = rx
+            .recv()
+            .await
+            .expect("a snapshot event from a binary frame");
         assert!(matches!(ev, Event::Snapshot { .. }));
     }
 
@@ -266,7 +273,9 @@ mod tests {
         // following valid frame still arrives. Covers the text Err arm.
         let url = spawn_ws_server(|mut ws| async move {
             ws.send(Message::Text("not json".into())).await.unwrap();
-            ws.send(Message::Text(snapshot_text().into())).await.unwrap();
+            ws.send(Message::Text(snapshot_text().into()))
+                .await
+                .unwrap();
             tokio::time::sleep(Duration::from_millis(50)).await;
         })
         .await;
@@ -280,14 +289,21 @@ mod tests {
     async fn connect_ws_skips_undecodable_binary_then_yields_valid() {
         // An undecodable binary frame is skipped; a following valid one arrives.
         let url = spawn_ws_server(|mut ws| async move {
-            ws.send(Message::Binary(vec![0xff, 0x00].into())).await.unwrap();
-            ws.send(Message::Text(snapshot_text().into())).await.unwrap();
+            ws.send(Message::Binary(vec![0xff, 0x00].into()))
+                .await
+                .unwrap();
+            ws.send(Message::Text(snapshot_text().into()))
+                .await
+                .unwrap();
             tokio::time::sleep(Duration::from_millis(50)).await;
         })
         .await;
 
         let mut rx = connect_ws(&url).await.unwrap();
-        let ev = rx.recv().await.expect("the valid frame after a bad binary one");
+        let ev = rx
+            .recv()
+            .await
+            .expect("the valid frame after a bad binary one");
         assert!(matches!(ev, Event::Snapshot { .. }));
     }
 
@@ -313,7 +329,11 @@ mod tests {
         let url = spawn_ws_server(|mut ws| async move {
             // Keep sending; the client drops its receiver, so the task should stop.
             for _ in 0..100 {
-                if ws.send(Message::Text(snapshot_text().into())).await.is_err() {
+                if ws
+                    .send(Message::Text(snapshot_text().into()))
+                    .await
+                    .is_err()
+                {
                     break;
                 }
                 tokio::time::sleep(Duration::from_millis(5)).await;
@@ -355,7 +375,9 @@ mod tests {
         let url = spawn_ws_server(|ws| async move {
             // Send one valid frame, then drop the stream abruptly (no Close).
             let mut ws = ws;
-            ws.send(Message::Text(snapshot_text().into())).await.unwrap();
+            ws.send(Message::Text(snapshot_text().into()))
+                .await
+                .unwrap();
             drop(ws); // abrupt reset — no closing handshake
         })
         .await;
@@ -402,7 +424,9 @@ mod tests {
             expect_subscribe(&mut ws).await;
             // A text frame, an undecodable text frame (skipped), a binary frame,
             // then Close — exercising the unix read loop's arms.
-            ws.send(Message::Text(snapshot_text().into())).await.unwrap();
+            ws.send(Message::Text(snapshot_text().into()))
+                .await
+                .unwrap();
             ws.send(Message::Text("garbage".into())).await.unwrap();
             let bin = serde_json::to_vec(&Event::snapshot(vec![])).unwrap();
             ws.send(Message::Binary(bin.into())).await.unwrap();
@@ -438,7 +462,9 @@ mod tests {
             let (stream, _) = listener.accept().await.unwrap();
             let mut ws = accept(stream).await.unwrap();
             expect_subscribe(&mut ws).await;
-            ws.send(Message::Binary(vec![0xde, 0xad].into())).await.unwrap();
+            ws.send(Message::Binary(vec![0xde, 0xad].into()))
+                .await
+                .unwrap();
             let bin = serde_json::to_vec(&Event::snapshot(vec![])).unwrap();
             ws.send(Message::Binary(bin.into())).await.unwrap();
             // Close cleanly so the server task ends and the client reader observes
@@ -469,7 +495,11 @@ mod tests {
             let mut ws = accept(stream).await.unwrap();
             expect_subscribe(&mut ws).await;
             for _ in 0..100 {
-                if ws.send(Message::Text(snapshot_text().into())).await.is_err() {
+                if ws
+                    .send(Message::Text(snapshot_text().into()))
+                    .await
+                    .is_err()
+                {
                     break;
                 }
                 tokio::time::sleep(Duration::from_millis(5)).await;
@@ -546,7 +576,9 @@ mod tests {
             let (stream, _) = listener.accept().await.unwrap();
             let mut ws = accept(stream).await.unwrap();
             expect_subscribe(&mut ws).await;
-            ws.send(Message::Text(snapshot_text().into())).await.unwrap();
+            ws.send(Message::Text(snapshot_text().into()))
+                .await
+                .unwrap();
             let _ = ws.send(Message::Close(None)).await;
         });
 
@@ -562,7 +594,9 @@ mod tests {
         // The unix socket path does not exist → connect skips the unix fast path
         // and uses the WebSocket URL.
         let url = spawn_ws_server(|mut ws| async move {
-            ws.send(Message::Text(snapshot_text().into())).await.unwrap();
+            ws.send(Message::Text(snapshot_text().into()))
+                .await
+                .unwrap();
             tokio::time::sleep(Duration::from_millis(50)).await;
         })
         .await;
@@ -585,7 +619,9 @@ mod tests {
         std::fs::write(&stale, b"not a socket").unwrap();
 
         let url = spawn_ws_server(|mut ws| async move {
-            ws.send(Message::Text(snapshot_text().into())).await.unwrap();
+            ws.send(Message::Text(snapshot_text().into()))
+                .await
+                .unwrap();
             tokio::time::sleep(Duration::from_millis(50)).await;
         })
         .await;

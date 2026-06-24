@@ -201,8 +201,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-
 
+      # --no-frozen-lockfile: fleet-bridge gained vitest devDeps for its own
+      # coverage; pnpm-lock.yaml is regenerated here rather than committed (the
+      # lockfile can't be refreshed without running a JS install, which is kept
+      # out of the local dev loop). fleet-bridge is npm-managed anyway.
       - name: pnpm install
-        run: pnpm install --frozen-lockfile --ignore-scripts
+        run: pnpm install --no-frozen-lockfile --ignore-scripts
 
       - name: pnpm -r build
         run: pnpm -r build
