@@ -124,6 +124,33 @@ describe("Fleet rail — rename flow (real UI)", () => {
   it("shows the phoned-home session as a rail row with its reported label", async () => {
     const row = await $(ROW);
     await row.waitForExist({ timeout: 45000 });
+
+    // DIAGNOSTIC (temporary): the row renders but its label text was wrong in CI;
+    // dump the backend server list + IPC state + rendered label so we can see the
+    // real srv.label/renamed and whether the webview has Tauri IPC. Printed to the
+    // CI log as `E2E-DIAG ...`. Removed once the render path is fixed.
+    const diag = await browser.execute(async () => {
+      const t = window.__TAURI__;
+      let servers = null;
+      let invokeErr = null;
+      try {
+        servers = t ? await t.core.invoke("get_servers") : null;
+      } catch (e) {
+        invokeErr = String(e);
+      }
+      const rail = document.getElementById("rail");
+      const row = document.querySelector('.srv[data-server-id="e2e-session-1"]');
+      return {
+        hasTauri: !!t,
+        servers,
+        invokeErr,
+        renderedLabel: row ? row.querySelector(".label")?.textContent : null,
+        railText: rail ? rail.textContent.slice(0, 300) : null,
+      };
+    });
+    // eslint-disable-next-line no-console
+    console.log("E2E-DIAG", JSON.stringify(diag));
+
     const label = await $(ROW_LABEL);
     // The row's visible label is the auto-reported one before any rename.
     await browser.waitUntil(async () => (await label.getText()) === AUTO_LABEL, {
