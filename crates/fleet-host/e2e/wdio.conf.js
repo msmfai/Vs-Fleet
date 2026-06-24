@@ -149,6 +149,17 @@ export const config = {
     // does not cross). The spec reads `configPath`, which it derives identically.
     fs.writeFileSync(configPath, JSON.stringify(sharedConfig, null, 2));
 
+    // Belt-and-suspenders for the app env: tauri-driver's `tauri:options.env`
+    // propagation is version-dependent, and the previous run's failure ("bridge
+    // token never appeared at <runtimeDir>/bridge.token") shows the app didn't
+    // get FLEET_RUNTIME_DIR — so it wrote the token to its default dir. Set the
+    // env on THIS launcher process before spawning tauri-driver below; tauri-driver
+    // (and the app it launches as a descendant) inherit it. This is exactly how the
+    // working release-smoke.mjs hands FLEET_RUNTIME_DIR to the binary.
+    process.env.FLEET_E2E_RAIL_ONLY = "1";
+    process.env.FLEET_RUNTIME_DIR = runtimeDir;
+    process.env.FLEET_PROBE_CONTROL_PORT = String(PROBE_PORT);
+
     tauriDriver = spawn(tauriDriverBin(), [], {
       stdio: [null, process.stdout, process.stderr],
     });
