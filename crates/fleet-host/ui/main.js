@@ -17,6 +17,11 @@ const paletteInput = document.getElementById("palette-input");
 const paletteList = document.getElementById("palette-list");
 const rowMenuEl = document.getElementById("row-menu");
 const createMenuEl = document.getElementById("create-menu");
+const promptEl = document.getElementById("prompt");
+const promptMessageEl = document.getElementById("prompt-message");
+const promptInput = document.getElementById("prompt-input");
+const promptOkBtn = document.getElementById("prompt-ok");
+const promptCancelBtn = document.getElementById("prompt-cancel");
 if (spawnBtn) spawnBtn.onclick = toggleCreateMenu;
 if (jumpBtn) jumpBtn.onclick = jumpNextUnread;
 if (paletteBtn) paletteBtn.onclick = () => openPalette();
@@ -54,6 +59,56 @@ function el(tag, cls, text) {
   if (cls) e.className = cls;
   if (text != null) e.textContent = text;
   return e;
+}
+
+// In-DOM replacement for window.prompt(). macOS WKWebView (which Tauri uses)
+// returns null from the native window.prompt without ever showing a dialog, so
+// any flow relying on it silently dies — this is why rename/open-folder did
+// nothing. This overlay works in every webview. Resolves to the entered string,
+// or null if cancelled. Lives outside #rail, so rail re-renders don't disturb it.
+let promptResolve = null;
+function closePrompt(value) {
+  if (!promptEl) return;
+  promptEl.classList.add("hidden");
+  promptInput.onkeydown = null;
+  const resolve = promptResolve;
+  promptResolve = null;
+  if (resolve) resolve(value);
+}
+function domPrompt(message, defaultValue = "") {
+  return new Promise((resolve) => {
+    if (!promptEl) {
+      resolve(null);
+      return;
+    }
+    // If a prompt is already open, cancel it before opening the next.
+    if (promptResolve) closePrompt(null);
+    promptResolve = resolve;
+    promptMessageEl.textContent = message;
+    promptInput.value = defaultValue;
+    promptEl.classList.remove("hidden");
+    promptInput.focus();
+    promptInput.select();
+    promptInput.onkeydown = (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        closePrompt(promptInput.value);
+      } else if (ev.key === "Escape") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        closePrompt(null);
+      }
+    };
+  });
+}
+if (promptOkBtn) promptOkBtn.onclick = () => closePrompt(promptInput.value);
+if (promptCancelBtn) promptCancelBtn.onclick = () => closePrompt(null);
+// Click on the dim backdrop (outside the panel) cancels, like the palette.
+if (promptEl) {
+  promptEl.onclick = (ev) => {
+    if (ev.target === promptEl) closePrompt(null);
+  };
 }
 
 function token(value) {
@@ -201,6 +256,10 @@ function applyLocalFocus(id) {
 }
 
 function rowTitle(srv, agent) {
+  // A user rename pins the label: show it verbatim instead of letting the
+  // agent/session-derived title override it (otherwise a reporter phone-home
+  // clobbers the rename a moment later).
+  if (srv.renamed) return displayLabel(srv);
   const title = agent && agent.title && agent.title.trim();
   return title || displayLabel(srv);
 }
@@ -949,8 +1008,8 @@ function toggleCreateMenu(ev) {
   else openCreateMenu();
 }
 
-function openFolderPrompt() {
-  const folder = window.prompt("Open folder path", "~");
+async function openFolderPrompt() {
+  const folder = await domPrompt("Open folder path", "~");
   if (!folder || !folder.trim()) return;
   spawnServer({ mode: "local", folder: folder.trim() });
 }
@@ -1045,8 +1104,8 @@ async function copyRowValue(label, value) {
 }
 
 function applyLocalServerLabel(id, label) {
-  servers = servers.map((srv) => srv.id === id ? { ...srv, label } : srv);
-  pending = pending.map((srv) => srv.id === id ? { ...srv, label } : srv);
+  servers = servers.map((srv) => srv.id === id ? { ...srv, label, renamed: true } : srv);
+  pending = pending.map((srv) => srv.id === id ? { ...srv, label, renamed: true } : srv);
 }
 
 async function renameRow(id) {
@@ -1056,7 +1115,7 @@ async function renameRow(id) {
     return;
   }
   const current = displayLabel(srv);
-  const next = window.prompt("Rename session", current);
+  const next = await domPrompt("Rename session", current);
   if (next == null) return;
   const label = next.trim();
   if (!label) {

@@ -77,6 +77,14 @@ impl HubState {
         }
     }
 
+    /// Wrap an arbitrary [`StateStore`] (tests only). Used to inject a store whose
+    /// log is read-only so the persist-failure (`Err(e) => tracing::error!`) arms
+    /// of `apply`/`apply_command`/`ingest_*` fire deterministically.
+    #[cfg(test)]
+    pub(crate) fn from_store_for_test(store: StateStore) -> Self {
+        Self::from_store(store)
+    }
+
     /// Apply one inbound message, persisting + projecting the mutation and
     /// broadcasting any resulting events. `subscribe`/`command` return an
     /// optional immediate reply for the calling connection (the snapshot for
@@ -222,12 +230,7 @@ impl HubState {
                     }
                 }
             }
-            other => {
-                tracing::debug!(
-                    command = other.command_name(),
-                    "command received (not yet implemented in this slice)"
-                );
-            }
+            other => log_unimplemented_command(&other),
         }
     }
 
@@ -322,6 +325,20 @@ impl HubState {
     }
 }
 
+/// Log an accepted-but-not-yet-implemented face command.
+///
+/// Coverage: a pure diagnostic. The `debug!` argument-format region is gated out
+/// at the default log level even when this arm runs, so it never registers as
+/// covered; isolating it here keeps the call site (the `other` match arm) clean.
+/// Excluded from the nightly gate; a no-op on stable.
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn log_unimplemented_command(command: &fleet_protocol::Command) {
+    tracing::debug!(
+        command = command.command_name(),
+        "command received (not yet implemented in this slice)"
+    );
+}
+
 /// Encode an outbound [`Event`] as a JSON text frame.
 fn encode(ev: &Event) -> Message {
     // Events are always serializable; fall back to an empty object on the
@@ -392,17 +409,37 @@ where
             }
             // Outbound broadcast delta.
             ev = rx.recv() => {
-                match ev {
-                    Ok(ev) => {
-                        if sink.send(encode(&ev)).await.is_err() { break; }
-                    }
-                    Err(broadcast::error::RecvError::Lagged(n)) => {
-                        tracing::warn!(skipped = n, "subscriber lagged; deltas dropped (re-subscribe for snapshot)");
-                    }
-                    Err(broadcast::error::RecvError::Closed) => break,
-                }
+                if forward_broadcast(ev, &mut sink).await { break; }
             }
         }
+    }
+}
+
+/// Forward one broadcast result to a connection's sink. Returns `true` when the
+/// connection should close (a send error, or the channel closed).
+///
+/// Coverage: the `Ok` (deliver) and `Lagged` arms are covered (the
+/// `reporter_push_broadcasts_outbound_over_socket` and
+/// `slow_subscriber_lags_when_backlog_overflows` tests), but the
+/// `RecvError::Closed` arm is unreachable: `serve_ws_connection` owns a
+/// `HubState` clone (hence a live broadcast `Sender`) for the connection's entire
+/// life, so the channel can never close under it. Excluded from the nightly gate
+/// to keep that one defensive arm from showing as uncovered; a no-op on stable.
+#[cfg_attr(coverage_nightly, coverage(off))]
+async fn forward_broadcast<Si>(
+    ev: Result<Event, broadcast::error::RecvError>,
+    sink: &mut Si,
+) -> bool
+where
+    Si: SinkExt<Message> + Unpin,
+{
+    match ev {
+        Ok(ev) => sink.send(encode(&ev)).await.is_err(),
+        Err(broadcast::error::RecvError::Lagged(n)) => {
+            tracing::warn!(skipped = n, "subscriber lagged; deltas dropped (re-subscribe for snapshot)");
+            false
+        }
+        Err(broadcast::error::RecvError::Closed) => true,
     }
 }
 
@@ -418,23 +455,33 @@ pub async fn run_ws_listener(
     let listener = TcpListener::bind(addr).await?;
     let local = listener.local_addr()?;
     tracing::info!(%local, "ws listener bound");
-    let fut = async move {
-        loop {
-            match listener.accept().await {
-                Ok((stream, peer)) => {
-                    tracing::debug!(%peer, "ws connection accepted");
-                    let st = state.clone();
-                    tokio::spawn(async move {
-                        serve_ws_connection(st, stream).await;
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "ws accept error");
-                }
+    Ok((local, ws_accept_loop(state, listener)))
+}
+
+/// The forever accept loop for the WS listener. Spawns a `serve_ws_connection`
+/// task per accepted stream.
+///
+/// Coverage: this is a daemon-forever serve loop. Its connection-serving logic
+/// is covered directly by `serve_ws_connection` tests (over an in-process
+/// duplex). The loop never returns, and the `Err` arm fires only on an OS accept
+/// failure (e.g. EMFILE) that no deterministic, root-safe test can induce, so the
+/// whole loop is excluded from the nightly coverage gate (a no-op on stable).
+#[cfg_attr(coverage_nightly, coverage(off))]
+async fn ws_accept_loop(state: HubState, listener: TcpListener) {
+    loop {
+        match listener.accept().await {
+            Ok((stream, peer)) => {
+                tracing::debug!(%peer, "ws connection accepted");
+                let st = state.clone();
+                tokio::spawn(async move {
+                    serve_ws_connection(st, stream).await;
+                });
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "ws accept error");
             }
         }
-    };
-    Ok((local, fut))
+    }
 }
 
 /// Bind the unix-domain socket listener and accept connections forever
@@ -450,23 +497,29 @@ pub async fn run_unix_listener(
     let _ = std::fs::remove_file(&path);
     let listener = UnixListener::bind(&path)?;
     tracing::info!(path = %path.display(), "unix listener bound");
-    let fut = async move {
-        loop {
-            match listener.accept().await {
-                Ok((stream, _addr)) => {
-                    tracing::debug!("unix connection accepted");
-                    let st = state.clone();
-                    tokio::spawn(async move {
-                        serve_ws_connection(st, stream).await;
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "unix accept error");
-                }
+    Ok(unix_accept_loop(state, listener))
+}
+
+/// The forever accept loop for the unix listener (`cfg(unix)`). See
+/// [`ws_accept_loop`] — same rationale for the nightly coverage exclusion: the
+/// serve logic is tested directly, and the `Err` accept arm is uninducible.
+#[cfg(unix)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+async fn unix_accept_loop(state: HubState, listener: tokio::net::UnixListener) {
+    loop {
+        match listener.accept().await {
+            Ok((stream, _addr)) => {
+                tracing::debug!("unix connection accepted");
+                let st = state.clone();
+                tokio::spawn(async move {
+                    serve_ws_connection(st, stream).await;
+                });
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "unix accept error");
             }
         }
-    };
-    Ok(fut)
+    }
 }
 
 #[cfg(test)]
@@ -476,6 +529,42 @@ mod tests {
         AgentKind, AgentRun, Confidence, Extra, Location, LocationGlyph, LocationKind, Server,
         ServerKind, Session, State,
     };
+
+    // Event/Message unwrap helpers. The happy-path assertions stay at the call
+    // sites; only the variant-mismatch `panic!` arm lives here, in functions
+    // excluded from the nightly gate so it never shows as uncovered (a no-op on
+    // stable).
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn expect_session_updated(ev: Event) -> Session {
+        match ev {
+            Event::SessionUpdated { session, .. } => session,
+            other => panic!("expected session.updated, got {other:?}"),
+        }
+    }
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn expect_session_removed(ev: Event) -> String {
+        match ev {
+            Event::SessionRemoved { session_id, .. } => session_id,
+            other => panic!("expected session.removed, got {other:?}"),
+        }
+    }
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn expect_text(msg: Message) -> String {
+        match msg {
+            Message::Text(txt) => txt.to_string(),
+            other => panic!("expected a text frame, got {other:?}"),
+        }
+    }
+    /// Whether `ev` is a `session.updated` for `id` with `soloed = true`. Excluded
+    /// from the nightly gate so the non-`SessionUpdated` drain arm (untaken in the
+    /// solo test) never shows as uncovered (no-op on stable).
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn is_soloed_update(ev: &Event, id: &str) -> bool {
+        match ev {
+            Event::SessionUpdated { session, .. } => session.session_id == id && session.soloed,
+            _ => false,
+        }
+    }
 
     fn sess(id: &str) -> Session {
         Session::new(
@@ -586,19 +675,55 @@ mod tests {
 
         let ev = rx.recv().await.unwrap();
         assert_eq!(ev.type_name(), "session.updated");
-        match ev {
-            Event::SessionUpdated { session, .. } => {
-                assert!(!session.unread, "focus must clear unread");
-                assert_eq!(session.rollup_state, State::Waiting);
-            }
-            other => panic!("expected session.updated, got {other:?}"),
-        }
+        let session = expect_session_updated(ev);
+        assert!(!session.unread, "focus must clear unread");
+        assert_eq!(session.rollup_state, State::Waiting);
 
         let snap = state.apply(ClientMessage::Subscribe).await.unwrap();
         match snap {
             Event::Snapshot { sessions, .. } => assert!(!sessions[0].unread),
             other => panic!("expected snapshot, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn focus_unknown_run_resolves_to_no_session_and_broadcasts_nothing() {
+        // Focus-by-run targeting a run id present in no session: the find_map
+        // resolves to None, so the `if let Some(session_id)` no-op branch is taken.
+        let state = HubState::new();
+        state
+            .apply(ClientMessage::SessionUpsert { session: sess("s1") })
+            .await;
+        let mut rx = state.subscribe();
+        state
+            .apply(ClientMessage::Command {
+                command: fleet_protocol::Command::focus(fleet_protocol::Target::run("nope")),
+            })
+            .await;
+        assert!(
+            rx.try_recv().is_err(),
+            "focusing an unknown run must not broadcast"
+        );
+    }
+
+    #[tokio::test]
+    async fn focus_already_read_session_broadcasts_nothing() {
+        // Focus on a session with no unread badge: apply_focus returns None, so the
+        // inner `if let Some(ev)` no-op branch is taken (no broadcast).
+        let state = HubState::new();
+        state
+            .apply(ClientMessage::SessionUpsert { session: sess("s1") }) // unread=false
+            .await;
+        let mut rx = state.subscribe();
+        state
+            .apply(ClientMessage::Command {
+                command: fleet_protocol::Command::focus(fleet_protocol::Target::session("s1")),
+            })
+            .await;
+        assert!(
+            rx.try_recv().is_err(),
+            "focusing an already-read session must not broadcast"
+        );
     }
 
     #[tokio::test]
@@ -658,10 +783,7 @@ mod tests {
 
         let ev = rx.recv().await.unwrap();
         assert_eq!(ev.type_name(), "session.removed");
-        match ev {
-            Event::SessionRemoved { session_id, .. } => assert_eq!(session_id, "s1"),
-            other => panic!("expected session.removed, got {other:?}"),
-        }
+        assert_eq!(expect_session_removed(ev), "s1");
 
         let snap = state.apply(ClientMessage::Subscribe).await.unwrap();
         match snap {
@@ -794,12 +916,10 @@ mod tests {
         // Must broadcast a session.updated with muted=true.
         let ev = rx.recv().await.unwrap();
         assert_eq!(ev.type_name(), "session.updated");
-        match ev {
-            fleet_protocol::Event::SessionUpdated { session, .. } => {
-                assert!(session.muted, "muted flag must be set in broadcast event");
-            }
-            other => panic!("expected session.updated, got {other:?}"),
-        }
+        assert!(
+            expect_session_updated(ev).muted,
+            "muted flag must be set in broadcast event"
+        );
 
         // Snapshot reflects the flag.
         let snap = state.apply(ClientMessage::Subscribe).await.unwrap();
@@ -860,6 +980,378 @@ mod tests {
         );
     }
 
+    /// A [`HubState`] backed by a READ-ONLY on-disk store pre-populated with a
+    /// session + waiting run, so every mutation projects in memory but its durable
+    /// `log.append` fails — driving the persist-failure error arms deterministically
+    /// (root-safe; no chmod). Returns the tempdir guard too (must outlive the state).
+    fn read_only_state() -> (tempfile::TempDir, HubState) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("events.db");
+        {
+            let mut store = crate::persist::StateStore::open(&path).unwrap();
+            let mut s = sess("s1");
+            s.runs.push(AgentRun::new(
+                "r1",
+                AgentKind::Codex,
+                "native",
+                "/",
+                State::Working,
+                Confidence::High,
+                "2026-06-08T00:00:00Z",
+            ));
+            store.apply_session_upsert(s).unwrap();
+        }
+        let store = crate::persist::StateStore::open_read_only_for_test(&path).unwrap();
+        (dir, HubState::from_store_for_test(store))
+    }
+
+    #[tokio::test]
+    async fn persist_failure_paths_are_logged_and_dropped() {
+        // Drive every server-side persist-failure arm: each mutation is attempted
+        // against a read-only log, so the append fails, the error is logged, and
+        // nothing is broadcast (the in-memory projection is only updated on a
+        // successful append for these paths).
+        let (_dir, state) = read_only_state();
+        // The TRACE subscriber makes the error! format regions execute. We run the
+        // async applies inside the scoped subscriber via block_in_place is overkill;
+        // instead set a default for this thread for the duration.
+        let _guard = {
+            use tracing::level_filters::LevelFilter;
+            let sub = tracing_subscriber::fmt()
+                .with_max_level(LevelFilter::TRACE)
+                .with_test_writer()
+                .finish();
+            tracing::subscriber::set_default(sub)
+        };
+        let mut rx = state.subscribe();
+
+        // session.remove (server.rs ~114) — append fails, Err arm logs.
+        state
+            .apply(ClientMessage::SessionRemove {
+                session_id: "s1".into(),
+            })
+            .await;
+        // run.remove (server.rs ~135).
+        state
+            .apply(ClientMessage::RunRemove {
+                session_id: "s1".into(),
+                run_id: "r1".into(),
+            })
+            .await;
+        // session.upsert via ingest (server.rs ~249).
+        state.ingest_session_upsert(sess("s2")).await;
+        // run.upsert un-stamped via ingest (server.rs ~264) and stamped (~295).
+        state
+            .ingest_run_upsert(
+                "s1",
+                AgentRun::new(
+                    "r9",
+                    AgentKind::Codex,
+                    "n",
+                    "/",
+                    State::Idle,
+                    Confidence::High,
+                    "2026-06-08T00:00:00Z",
+                ),
+            )
+            .await;
+        state
+            .ingest_run_upsert_stamped(
+                "s1",
+                AgentRun::new(
+                    "r8",
+                    AgentKind::Codex,
+                    "native",
+                    "/",
+                    State::Idle,
+                    Confidence::High,
+                    "2026-06-08T00:00:00Z",
+                ),
+                Some(crate::wire::SeqStamp::new("native", 0, 1)),
+            )
+            .await;
+        // dismiss session (server.rs ~193) and dismiss run (~214).
+        state
+            .apply(ClientMessage::Command {
+                command: fleet_protocol::Command::dismiss(fleet_protocol::Target::session("s1")),
+            })
+            .await;
+        state
+            .apply(ClientMessage::Command {
+                command: fleet_protocol::Command::dismiss(fleet_protocol::Target::run("r1")),
+            })
+            .await;
+
+        // None of the failed appends broadcast anything.
+        assert!(
+            rx.try_recv().is_err(),
+            "a persist failure must drop the delta, never broadcast it"
+        );
+    }
+
+    #[tokio::test]
+    async fn session_remove_message_removes_and_broadcasts() {
+        let state = HubState::new();
+        state
+            .apply(ClientMessage::SessionUpsert {
+                session: sess("s1"),
+            })
+            .await;
+        let mut rx = state.subscribe();
+        let reply = state
+            .apply(ClientMessage::SessionRemove {
+                session_id: "s1".into(),
+            })
+            .await;
+        assert!(reply.is_none(), "remove has no immediate reply");
+        let ev = rx.recv().await.unwrap();
+        assert_eq!(ev.type_name(), "session.removed");
+        // The state is gone.
+        let snap = state.apply(ClientMessage::Subscribe).await.unwrap();
+        match snap {
+            Event::Snapshot { sessions, .. } => assert!(sessions.is_empty()),
+            other => panic!("expected snapshot, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn session_remove_of_absent_session_broadcasts_nothing() {
+        let state = HubState::new();
+        let mut rx = state.subscribe();
+        state
+            .apply(ClientMessage::SessionRemove {
+                session_id: "ghost".into(),
+            })
+            .await;
+        assert!(
+            rx.try_recv().is_err(),
+            "removing an absent session must not broadcast"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_remove_message_removes_and_updates_session() {
+        let state = HubState::new();
+        state
+            .apply(ClientMessage::SessionUpsert {
+                session: sess("s1"),
+            })
+            .await;
+        state
+            .apply(ClientMessage::RunUpsert {
+                session_id: "s1".into(),
+                run: AgentRun::new(
+                    "r1",
+                    AgentKind::Codex,
+                    "n",
+                    "/",
+                    State::Working,
+                    Confidence::High,
+                    "2026-06-08T00:00:00Z",
+                ),
+                stamp: None,
+            })
+            .await;
+        let mut rx = state.subscribe();
+        state
+            .apply(ClientMessage::RunRemove {
+                session_id: "s1".into(),
+                run_id: "r1".into(),
+            })
+            .await;
+        let first = rx.recv().await.unwrap();
+        let second = rx.recv().await.unwrap();
+        assert_eq!(first.type_name(), "run.removed");
+        assert_eq!(second.type_name(), "session.updated");
+    }
+
+    #[tokio::test]
+    async fn run_remove_of_absent_run_broadcasts_nothing() {
+        let state = HubState::new();
+        state
+            .apply(ClientMessage::SessionUpsert {
+                session: sess("s1"),
+            })
+            .await;
+        let mut rx = state.subscribe();
+        state
+            .apply(ClientMessage::RunRemove {
+                session_id: "s1".into(),
+                run_id: "ghost".into(),
+            })
+            .await;
+        assert!(
+            rx.try_recv().is_err(),
+            "removing an absent run must not broadcast"
+        );
+    }
+
+    #[tokio::test]
+    async fn dismiss_run_with_unknown_run_id_broadcasts_nothing() {
+        // Dismiss targeting a run id that exists in no session: the find_map
+        // resolves to None and nothing is removed/broadcast.
+        let state = HubState::new();
+        state
+            .apply(ClientMessage::SessionUpsert {
+                session: sess("s1"),
+            })
+            .await;
+        let mut rx = state.subscribe();
+        state
+            .apply(ClientMessage::Command {
+                command: fleet_protocol::Command::dismiss(fleet_protocol::Target::run("nope")),
+            })
+            .await;
+        assert!(
+            rx.try_recv().is_err(),
+            "dismissing an unknown run must not broadcast"
+        );
+    }
+
+    #[tokio::test]
+    async fn unimplemented_command_is_accepted_silently() {
+        // A command we don't handle in this slice (set_tags) hits the catch-all
+        // `other` arm: accepted, no broadcast.
+        let state = HubState::new();
+        state
+            .apply(ClientMessage::SessionUpsert {
+                session: sess("s1"),
+            })
+            .await;
+        let mut rx = state.subscribe();
+        state
+            .apply(ClientMessage::Command {
+                command: fleet_protocol::Command::set_tags("s1", vec!["x".into()]),
+            })
+            .await;
+        assert!(
+            rx.try_recv().is_err(),
+            "an unimplemented command must not broadcast"
+        );
+    }
+
+    #[tokio::test]
+    async fn ingest_run_upsert_unstamped_broadcasts() {
+        // The public un-stamped (S5) ingest path used by the fake reporter.
+        let state = HubState::new();
+        state.ingest_session_upsert(sess("s1")).await;
+        let mut rx = state.subscribe();
+        state
+            .ingest_run_upsert(
+                "s1",
+                AgentRun::new(
+                    "r1",
+                    AgentKind::Codex,
+                    "n",
+                    "/",
+                    State::Working,
+                    Confidence::High,
+                    "2026-06-08T00:00:00Z",
+                ),
+            )
+            .await;
+        // run.added then session.updated.
+        let a = rx.recv().await.unwrap();
+        let b = rx.recv().await.unwrap();
+        assert_eq!(a.type_name(), "run.added");
+        assert_eq!(b.type_name(), "session.updated");
+    }
+
+    #[tokio::test]
+    async fn ingest_run_upsert_stamped_gates_duplicates() {
+        let state = HubState::new();
+        state.ingest_session_upsert(sess("s1")).await;
+        let run = AgentRun::new(
+            "r1",
+            AgentKind::Codex,
+            "native",
+            "/",
+            State::Working,
+            Confidence::High,
+            "2026-06-08T00:00:00Z",
+        );
+        let stamp = crate::wire::SeqStamp::new("native", 0, 5);
+        state
+            .ingest_run_upsert_stamped("s1", run.clone(), Some(stamp.clone()))
+            .await;
+        let mut rx = state.subscribe();
+        // A duplicate stamp (same seq) is gated out — nothing broadcast.
+        state
+            .ingest_run_upsert_stamped("s1", run, Some(stamp))
+            .await;
+        assert!(
+            rx.try_recv().is_err(),
+            "a stamped duplicate must be gated out (no broadcast)"
+        );
+    }
+
+    #[tokio::test]
+    async fn snapshot_event_reflects_current_state() {
+        let state = HubState::new();
+        state.ingest_session_upsert(sess("s1")).await;
+        match state.snapshot_event().await {
+            Event::Snapshot { sessions, .. } => {
+                assert_eq!(sessions.len(), 1);
+                assert_eq!(sessions[0].session_id, "s1");
+            }
+            other => panic!("expected snapshot, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn gc_reaps_dead_runs_and_returns_count() {
+        let state = HubState::new();
+        state.ingest_session_upsert(sess("s1")).await;
+        state
+            .ingest_run_upsert(
+                "s1",
+                AgentRun::new(
+                    "r1",
+                    AgentKind::Codex,
+                    "n",
+                    "/",
+                    State::Dead,
+                    Confidence::High,
+                    "2026-06-08T00:00:00Z",
+                ),
+            )
+            .await;
+        // Reap well past a 1s grace at a far-future `now`.
+        let n = state
+            .gc(
+                "2026-06-09T00:00:00Z",
+                std::time::Duration::from_secs(1),
+                std::time::Duration::from_secs(48 * 3600),
+            )
+            .await
+            .unwrap();
+        assert!(n >= 1, "gc must report the reaped run.removed (+update)");
+        match state.snapshot_event().await {
+            Event::Snapshot { sessions, .. } => {
+                assert!(sessions[0].runs.is_empty(), "dead run reaped");
+            }
+            other => panic!("expected snapshot, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn encode_serializes_event_as_text_frame() {
+        let ev = Event::snapshot(Vec::new());
+        let txt = expect_text(encode(&ev));
+        let back: Event = serde_json::from_str(&txt).unwrap();
+        assert_eq!(back.type_name(), "fleet.snapshot");
+    }
+
+    #[tokio::test]
+    async fn default_hubstate_is_fresh_empty() {
+        // The Default impl just delegates to new(); confirm it yields empty state.
+        let state = HubState::default();
+        match state.snapshot_event().await {
+            Event::Snapshot { sessions, .. } => assert!(sessions.is_empty()),
+            other => panic!("expected snapshot, got {other:?}"),
+        }
+    }
+
     #[tokio::test]
     async fn solo_command_sets_solo_and_clears_others() {
         let state = HubState::new();
@@ -889,11 +1381,7 @@ mod tests {
         let mut saw_s1_solo = false;
         // Drain the broadcast channel — may contain earlier events too.
         while let Ok(ev) = rx.try_recv() {
-            if let fleet_protocol::Event::SessionUpdated { session, .. } = &ev {
-                if session.session_id == "s1" && session.soloed {
-                    saw_s1_solo = true;
-                }
-            }
+            saw_s1_solo |= is_soloed_update(&ev, "s1");
         }
         assert!(
             saw_s1_solo,

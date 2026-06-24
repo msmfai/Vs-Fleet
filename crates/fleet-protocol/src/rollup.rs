@@ -92,4 +92,55 @@ mod tests {
         ];
         assert_eq!(rollup_urgency(&runs), Some(Urgency::Approval));
     }
+
+    // Exercise every `state_rank` arm so the worst-across-runs contract is
+    // pinned for all six states, not just the headline Waiting/Done cases.
+    #[test]
+    fn state_rank_total_order_across_all_variants() {
+        use State::*;
+        // Descending urgency: each earlier state must win the rollup over each
+        // later one when both appear in the same session.
+        let order = [Waiting, Error, Working, Done, Idle, Dead];
+        for (i, &hi) in order.iter().enumerate() {
+            for &lo in &order[i + 1..] {
+                let runs = vec![run(lo, None), run(hi, None)];
+                assert_eq!(
+                    rollup_state(&runs),
+                    Some(hi),
+                    "{hi:?} must outrank {lo:?} in the rollup"
+                );
+            }
+        }
+        // A lone Dead/Error run still rolls up to itself (lowest arms reached).
+        assert_eq!(rollup_state(&[run(Dead, None)]), Some(Dead));
+        assert_eq!(rollup_state(&[run(Error, None)]), Some(Error));
+    }
+
+    // Exercise every `urgency_rank` arm, including IdleDone and the explicit
+    // None contributed by a run with no urgency.
+    #[test]
+    fn urgency_rank_total_order_across_all_variants() {
+        use Urgency::*;
+        let order = [Approval, Question, IdleDone, None];
+        for (i, &hi) in order.iter().enumerate() {
+            for &lo in &order[i + 1..] {
+                let runs = vec![run(State::Waiting, Some(lo)), run(State::Waiting, Some(hi))];
+                assert_eq!(
+                    rollup_urgency(&runs),
+                    Some(hi),
+                    "{hi:?} must outrank {lo:?} in the rollup"
+                );
+            }
+        }
+        // A run with `urgency: None` contributes Urgency::None (unwrap_or path).
+        // `use Urgency::*` shadows `Option::None` here, so qualify the absent one.
+        assert_eq!(
+            rollup_urgency(&[run(State::Idle, Option::None)]),
+            Some(Urgency::None)
+        );
+        assert_eq!(
+            rollup_urgency(&[run(State::Done, Some(Urgency::IdleDone))]),
+            Some(Urgency::IdleDone)
+        );
+    }
 }

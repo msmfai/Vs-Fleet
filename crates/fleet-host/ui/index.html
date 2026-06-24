@@ -28,6 +28,16 @@
     </div>
     <div id="row-menu" class="row-menu hidden" role="menu" aria-label="Session actions"></div>
     <div id="create-menu" class="row-menu create-menu hidden" role="menu" aria-label="Create session"></div>
+    <div id="prompt" class="prompt hidden" role="dialog" aria-modal="true" aria-labelledby="prompt-message">
+      <div class="prompt-panel">
+        <label id="prompt-message" class="prompt-message" for="prompt-input">Prompt</label>
+        <input id="prompt-input" class="prompt-input" type="text" autocomplete="off" spellcheck="false" />
+        <div class="prompt-actions">
+          <button id="prompt-cancel" class="prompt-button" type="button">Cancel</button>
+          <button id="prompt-ok" class="prompt-button primary" type="button">OK</button>
+        </div>
+      </div>
+    </div>
     <script src="main.js"></script>
   </body>
 </html>

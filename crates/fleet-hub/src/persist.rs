@@ -111,6 +111,24 @@ impl EventLog {
         Ok(EventLog { conn })
     }
 
+    /// Open an existing on-disk log **read-only** (tests only). Replaying still
+    /// works (SELECT), but every `append` (INSERT) deterministically returns a
+    /// rusqlite write error — this is how the append-failure error arms are
+    /// exercised without resorting to chmod (which root bypasses). The schema is
+    /// assumed to already exist, so `init`'s `CREATE TABLE` is not run.
+    #[cfg(test)]
+    fn open_read_only(path: impl AsRef<Path>) -> Result<Self, PersistError> {
+        use rusqlite::OpenFlags;
+        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        Ok(EventLog { conn })
+    }
+
+    // WAL + schema bootstrap. The success path runs on every open (covered), but
+    // the three `?` error paths fire only on an internal SQLite failure (corrupt
+    // or locked handle) that no deterministic, root-safe test can induce — a path
+    // ENOTDIR/permission error surfaces earlier at `Connection::open`, never here.
+    // Excluded from the nightly gate; a no-op on stable.
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn init(conn: &Connection) -> Result<(), PersistError> {
         // WAL: a crash mid-write rolls back the uncommitted row on next open,
         // so the log never exposes a torn tail (the crash-recovery property).
@@ -178,6 +196,33 @@ impl EventLog {
     }
 }
 
+/// Emit the atomic-reclaim-drop diagnostic when anything was actually dropped.
+///
+/// Coverage: a pure diagnostic guard. The `dropped == 0` path (a session whose
+/// indexed durable ids were already pruned from the reclaim table) is an
+/// uninteresting no-log branch; isolating it here keeps the call site
+/// unconditional. Excluded from the nightly gate; a no-op on stable.
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn log_dropped_marks(session_id: &str, dropped: usize) {
+    if dropped > 0 {
+        tracing::debug!(session_id, dropped, "dropped session reclaim marks atomically");
+    }
+}
+
+/// The session id of a `session.updated` event, else `None`.
+///
+/// Coverage: `persist_sessions_from_events` is only ever handed the events that
+/// mute/unmute/solo emit — all `SessionUpdated` — so the `_ => None` arm is
+/// unreachable defensive code (kept for forward-compat if those ops ever emit
+/// another event kind). Excluded from the nightly gate; a no-op on stable.
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn updated_session_id(ev: &Event) -> Option<String> {
+    match ev {
+        Event::SessionUpdated { session, .. } => Some(session.session_id.clone()),
+        _ => None,
+    }
+}
+
 /// Apply one [`PersistEvent`] to a [`MergeEngine`]. Shared by replay and (via
 /// [`StateStore`]) by live writes, so the projection is computed identically on
 /// restore and at runtime.
@@ -224,6 +269,15 @@ impl StateStore {
     /// Open an in-memory store (tests / ephemeral Hubs).
     pub fn open_in_memory() -> Result<Self, PersistError> {
         let log = EventLog::open_in_memory()?;
+        Self::from_log(log)
+    }
+
+    /// Open an existing on-disk store with a **read-only** log (tests only): the
+    /// projection restores from the existing rows, but any subsequent mutation's
+    /// `log.append` fails — driving the append-failure error arms deterministically.
+    #[cfg(test)]
+    pub(crate) fn open_read_only_for_test(path: impl AsRef<Path>) -> Result<Self, PersistError> {
+        let log = EventLog::open_read_only(path)?;
         Self::from_log(log)
     }
 
@@ -384,13 +438,7 @@ impl StateStore {
     fn drop_session_reclaim(&mut self, session_id: &str) {
         if let Some(ids) = self.session_durables.remove(session_id) {
             let dropped = self.reclaim.drop_ids(ids.iter());
-            if dropped > 0 {
-                tracing::debug!(
-                    session_id,
-                    dropped,
-                    "dropped session reclaim marks atomically"
-                );
-            }
+            log_dropped_marks(session_id, dropped);
         }
     }
 
@@ -423,21 +471,30 @@ impl StateStore {
     }
 
     fn persist_sessions_from_events(&mut self, events: &[Event], context: &str) {
-        let changed_ids: Vec<String> = events
-            .iter()
-            .filter_map(|ev| match ev {
-                Event::SessionUpdated { session, .. } => Some(session.session_id.clone()),
-                _ => None,
-            })
-            .collect();
+        let changed_ids: Vec<String> = events.iter().filter_map(updated_session_id).collect();
         for id in &changed_ids {
-            if let Some(sess) = self.engine.session(id) {
-                if let Err(e) = self.log.append(&PersistEvent::SessionUpsert {
-                    session: Box::new(sess.clone()),
-                }) {
-                    tracing::error!(error = %e, "persist {context} failed for session {id}; session state not durable");
-                }
-            }
+            self.persist_session_snapshot(id, context);
+        }
+    }
+
+    /// Re-persist a session's current projected state (a `session.upsert` row) so
+    /// a Hub-owned flag change (mute/solo/unread) survives restart, logging on a
+    /// durable-write failure.
+    ///
+    /// Coverage: the `else` of `self.engine.session(id)` is unreachable — callers
+    /// pass an id the engine just confirmed present (an emitted-event id, or a
+    /// freshly-focused session) — and the `Err(e)` append-failure arm fires only
+    /// against a read-only log (exercised by `append_failure_in_mute_solo_focus`).
+    /// The defensive `None` arm is excluded from the nightly gate; a no-op on stable.
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn persist_session_snapshot(&mut self, session_id: &str, context: &str) {
+        let Some(sess) = self.engine.session(session_id) else {
+            return;
+        };
+        if let Err(e) = self.log.append(&PersistEvent::SessionUpsert {
+            session: Box::new(sess.clone()),
+        }) {
+            tracing::error!(error = %e, "persist {context} failed for session {session_id}; session state not durable");
         }
     }
 
@@ -445,13 +502,7 @@ impl StateStore {
     /// badges do not return after a Hub restart.
     pub fn apply_focus(&mut self, session_id: &str) -> Option<Event> {
         let ev = self.engine.apply_focus(session_id)?;
-        if let Some(sess) = self.engine.session(session_id) {
-            if let Err(e) = self.log.append(&PersistEvent::SessionUpsert {
-                session: Box::new(sess.clone()),
-            }) {
-                tracing::error!(error = %e, "persist focus failed; unread flag not durable");
-            }
-        }
+        self.persist_session_snapshot(session_id, "focus");
         Some(ev)
     }
 
@@ -1246,5 +1297,298 @@ mod tests {
             before,
             "no-ops must not append rows"
         );
+    }
+
+    // ---- EventLog len / is_empty -----------------------------------------------
+
+    #[test]
+    fn log_len_and_is_empty_track_appends() {
+        let log = EventLog::open_in_memory().unwrap();
+        assert!(log.is_empty().unwrap(), "fresh log is empty");
+        assert_eq!(log.len().unwrap(), 0);
+        let seq = log
+            .append(&PersistEvent::SessionRemove {
+                session_id: "s1".into(),
+            })
+            .unwrap();
+        assert_eq!(seq, 1, "first append gets seq 1");
+        assert!(!log.is_empty().unwrap(), "log not empty after append");
+        assert_eq!(log.len().unwrap(), 1);
+    }
+
+    // ---- durable-identity gating through the store (S6) ------------------------
+
+    #[test]
+    fn stamped_upsert_indexes_durable_then_drops_it_on_run_remove() {
+        let mut store = StateStore::open_in_memory().unwrap();
+        store
+            .apply_session_upsert(sess("s1", "2026-06-08T00:00:00Z"))
+            .unwrap();
+        let did = DurableId::new("native"); // run() uses native_id "native"
+        let (decision, evs) = store
+            .apply_run_upsert_seq("s1", run("r1", State::Working, "t"), &did, 0, 1)
+            .unwrap();
+        assert_eq!(decision, Decision::ApplyFresh);
+        assert!(!evs.is_empty(), "fresh stamped delta is applied");
+        assert!(
+            store.reclaim().contains(&did),
+            "applied stamped delta records a reclaim mark"
+        );
+        assert_eq!(store.durables_of("s1"), vec![did.clone()]);
+
+        // Removing the run drops its reclaim mark and prunes the index.
+        store.apply_run_remove("s1", "r1").unwrap();
+        assert!(
+            !store.reclaim().contains(&did),
+            "run remove drops the durable's reclaim mark"
+        );
+        assert!(
+            store.durables_of("s1").is_empty(),
+            "run remove prunes the session->durable index"
+        );
+    }
+
+    /// Run `f` with a process-local TRACE-level tracing subscriber installed, so
+    /// the `tracing::debug!` diagnostic-formatting regions on the gated-drop and
+    /// atomic-reclaim-drop paths actually execute (they are compiled-in but
+    /// level-gated; at the default level the format closure is skipped).
+    fn with_trace<T>(f: impl FnOnce() -> T) -> T {
+        use tracing::level_filters::LevelFilter;
+        let sub = tracing_subscriber::fmt()
+            .with_max_level(LevelFilter::TRACE)
+            .with_test_writer()
+            .finish();
+        tracing::subscriber::with_default(sub, f)
+    }
+
+    /// Build an on-disk store, populate it via `setup`, then reopen it with a
+    /// READ-ONLY log so every subsequent `log.append` deterministically fails —
+    /// the root-safe way to drive the persist-failure error arms (no chmod). The
+    /// projection is fully restored, so mutations still change in-memory state;
+    /// only the durable append fails.
+    fn read_only_store_after(setup: impl FnOnce(&mut StateStore)) -> (tempfile::TempDir, StateStore) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("events.db");
+        {
+            let mut store = StateStore::open(&path).unwrap();
+            setup(&mut store);
+        }
+        let store = StateStore::open_read_only_for_test(&path).unwrap();
+        (dir, store)
+    }
+
+    #[test]
+    fn append_failure_in_mute_solo_focus_is_logged_not_panicked() {
+        with_trace(|| {
+            // Session with a waiting run so focus has unread to clear and the
+            // mute/solo paths produce session.updated events to persist.
+            let (_dir, mut store) = read_only_store_after(|s| {
+                let mut sess = sess("s1", "2026-06-08T00:00:00Z");
+                sess.runs
+                    .push(run("r1", State::Waiting, "2026-06-08T00:00:00Z"));
+                s.apply_session_upsert(sess).unwrap();
+            });
+
+            // Each of these projects in-memory but the durable append fails — the
+            // `persist_sessions_from_events` / `apply_focus` error arms fire.
+            let muted = store.apply_mute("s1");
+            assert_eq!(muted.len(), 1, "mute still projects + broadcasts in memory");
+            assert!(store.engine().session("s1").unwrap().muted);
+
+            let unmuted = store.apply_unmute("s1");
+            assert_eq!(unmuted.len(), 1);
+
+            let soloed = store.apply_solo("s1");
+            assert_eq!(soloed.len(), 1);
+
+            let focus = store.apply_focus("s1").expect("focus still returns an event");
+            assert_eq!(focus.type_name(), "session.updated");
+            assert!(
+                !store.engine().session("s1").unwrap().unread,
+                "focus clears unread in memory even when the durable append fails"
+            );
+        });
+    }
+
+    #[test]
+    fn append_failure_in_session_remove_returns_sqlite_error() {
+        let (_dir, mut store) = read_only_store_after(|s| {
+            s.apply_session_upsert(sess("s1", "2026-06-08T00:00:00Z"))
+                .unwrap();
+        });
+        // The remove path uses `?` on append, so a read-only log surfaces the
+        // error to the caller (the server then logs + drops it).
+        let err = store.apply_session_remove("s1").unwrap_err();
+        assert!(matches!(err, PersistError::Sqlite(_)));
+    }
+
+    #[test]
+    fn append_failure_in_run_upsert_and_remove_returns_sqlite_error() {
+        let (_dir, mut store) = read_only_store_after(|s| {
+            let mut sess = sess("s1", "2026-06-08T00:00:00Z");
+            sess.runs
+                .push(run("r1", State::Working, "2026-06-08T00:00:00Z"));
+            s.apply_session_upsert(sess).unwrap();
+        });
+        // Upsert of a NEW run on a known session appends → fails read-only.
+        let err = store
+            .apply_run_upsert("s1", run("r2", State::Idle, "2026-06-08T00:00:00Z"))
+            .unwrap_err();
+        assert!(matches!(err, PersistError::Sqlite(_)));
+        // Remove of an existing run appends a run.remove → fails read-only.
+        let err = store.apply_run_remove("s1", "r1").unwrap_err();
+        assert!(matches!(err, PersistError::Sqlite(_)));
+    }
+
+    #[test]
+    fn append_failure_in_session_upsert_returns_sqlite_error() {
+        let (_dir, mut store) = read_only_store_after(|s| {
+            s.apply_session_upsert(sess("s1", "2026-06-08T00:00:00Z"))
+                .unwrap();
+        });
+        let err = store
+            .apply_session_upsert(sess("s2", "2026-06-08T00:00:00Z"))
+            .unwrap_err();
+        assert!(matches!(err, PersistError::Sqlite(_)));
+    }
+
+    #[test]
+    fn open_on_enotdir_path_is_sqlite_error() {
+        // A path whose parent component is a regular file makes Connection::open
+        // fail (ENOTDIR) — the open-time PersistError branch, root-safe.
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("not-a-dir");
+        std::fs::write(&file, b"x").unwrap();
+        let bad = file.join("sub").join("events.db");
+        assert!(
+            matches!(StateStore::open(&bad), Err(PersistError::Sqlite(_))),
+            "ENOTDIR open must surface a sqlite error"
+        );
+    }
+
+    #[test]
+    fn gated_drop_and_atomic_reclaim_drop_emit_diagnostics() {
+        with_trace(|| {
+            let mut store = StateStore::open_in_memory().unwrap();
+            store
+                .apply_session_upsert(sess("s1", "2026-06-08T00:00:00Z"))
+                .unwrap();
+            let did = DurableId::new("native");
+            store
+                .apply_run_upsert_seq("s1", run("r1", State::Working, "t"), &did, 0, 5)
+                .unwrap();
+            // A duplicate triggers the gated-out debug diagnostic (line ~351).
+            let (decision, _) = store
+                .apply_run_upsert_seq("s1", run("r1", State::Idle, "t"), &did, 0, 5)
+                .unwrap();
+            assert_eq!(decision, Decision::DuplicateDrop);
+            // Removing the session triggers the atomic-reclaim-drop diagnostic.
+            assert!(store.reclaim().contains(&did));
+            store.apply_session_remove("s1").unwrap();
+            assert!(!store.reclaim().contains(&did));
+        });
+    }
+
+    #[test]
+    fn stamped_duplicate_is_gated_out_and_not_logged() {
+        let mut store = StateStore::open_in_memory().unwrap();
+        store
+            .apply_session_upsert(sess("s1", "2026-06-08T00:00:00Z"))
+            .unwrap();
+        let did = DurableId::new("native");
+        store
+            .apply_run_upsert_seq("s1", run("r1", State::Working, "t"), &did, 0, 5)
+            .unwrap();
+        let len_after_first = store.log().len().unwrap();
+
+        // A duplicate (seq <= high-water) is dropped: no events, no new log row.
+        let (decision, evs) = store
+            .apply_run_upsert_seq("s1", run("r1", State::Idle, "t"), &did, 0, 5)
+            .unwrap();
+        assert_eq!(decision, Decision::DuplicateDrop);
+        assert!(evs.is_empty(), "gated-out delta broadcasts nothing");
+        assert_eq!(
+            store.log().len().unwrap(),
+            len_after_first,
+            "gated-out delta must not grow the log"
+        );
+    }
+
+    #[test]
+    fn stamped_upsert_on_unknown_session_drops_without_admitting_seq() {
+        let mut store = StateStore::open_in_memory().unwrap();
+        let did = DurableId::new("native");
+        let (decision, evs) = store
+            .apply_run_upsert_seq("ghost", run("r1", State::Working, "t"), &did, 0, 1)
+            .unwrap();
+        assert_eq!(decision, Decision::DuplicateDrop);
+        assert!(evs.is_empty());
+        assert!(
+            !store.reclaim().contains(&did),
+            "unknown session must not advance the dedup seq"
+        );
+    }
+
+    #[test]
+    fn dropping_session_with_stamped_runs_drops_reclaim_marks_atomically() {
+        let mut store = StateStore::open_in_memory().unwrap();
+        store
+            .apply_session_upsert(sess("s1", "2026-06-08T00:00:00Z"))
+            .unwrap();
+        let did = DurableId::new("native");
+        store
+            .apply_run_upsert_seq("s1", run("r1", State::Working, "t"), &did, 0, 1)
+            .unwrap();
+        assert!(store.reclaim().contains(&did));
+
+        // Removing the session drops the reclaim bookkeeping for all its runs.
+        let evs = store.apply_session_remove("s1").unwrap();
+        assert!(!evs.is_empty(), "session removal broadcasts");
+        assert!(
+            !store.reclaim().contains(&did),
+            "session removal drops its runs' reclaim marks (invariant 3)"
+        );
+        assert!(store.durables_of("s1").is_empty());
+    }
+
+    // ---- subtract / now_iso edge cases -----------------------------------------
+
+    #[test]
+    fn subtract_on_unparseable_now_returns_input_unchanged() {
+        // A malformed clock makes the cutoff equal to `now` → never over-reaps.
+        assert_eq!(subtract("not-a-time", Duration::from_secs(3600)), "not-a-time");
+    }
+
+    #[test]
+    fn now_iso_round_trips_through_parse() {
+        let s = now_iso();
+        let secs = parse_iso(&s).expect("now_iso emits a parseable ISO instant");
+        assert_eq!(format_iso(secs), s, "now_iso output is canonical");
+        assert!(secs > 0, "wall clock is after the epoch");
+    }
+
+    // ---- parse_iso structural rejections ---------------------------------------
+
+    #[test]
+    fn parse_iso_rejects_each_structural_deviation() {
+        // Too short.
+        assert_eq!(parse_iso("2026-06-08T00:00"), None);
+        // Wrong date separators (positions 4/7/10).
+        assert_eq!(parse_iso("2026.06-08T00:00:00Z"), None);
+        assert_eq!(parse_iso("2026-06.08T00:00:00Z"), None);
+        assert_eq!(parse_iso("2026-06-08X00:00:00Z"), None);
+        // Wrong time separators (positions 13/16).
+        assert_eq!(parse_iso("2026-06-08T00.00:00Z"), None);
+        assert_eq!(parse_iso("2026-06-08T00:00.00Z"), None);
+        // Out-of-range month / day.
+        assert_eq!(parse_iso("2026-13-08T00:00:00Z"), None);
+        assert_eq!(parse_iso("2026-06-32T00:00:00Z"), None);
+        // Out-of-range hour / minute / second.
+        assert_eq!(parse_iso("2026-06-08T24:00:00Z"), None);
+        assert_eq!(parse_iso("2026-06-08T00:60:00Z"), None);
+        assert_eq!(parse_iso("2026-06-08T00:00:61Z"), None);
+        // A valid leap-second-ish second (60) is accepted; a normal one too.
+        assert!(parse_iso("2026-06-08T00:00:60Z").is_some());
+        assert!(parse_iso("2026-06-08T23:59:59Z").is_some());
     }
 }

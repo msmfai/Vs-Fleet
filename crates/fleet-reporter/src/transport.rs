@@ -183,3 +183,89 @@ mod unix {
 
 #[cfg(unix)]
 pub use unix::{UnixConnection, UnixConnector};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ws_connector_endpoint_is_the_url() {
+        let c = WsConnector::new("ws://127.0.0.1:51777");
+        assert_eq!(c.endpoint(), "ws://127.0.0.1:51777");
+    }
+
+    #[tokio::test]
+    async fn ws_connect_failure_yields_connect_error() {
+        // Port 1 is privileged/unbound in test environments → connect refuses,
+        // exercising the Connect error map in WsConnector::connect.
+        let c = WsConnector::new("ws://127.0.0.1:1");
+        match c.connect().await {
+            Err(TransportError::Connect(msg)) => {
+                assert!(msg.contains("ws://127.0.0.1:1"), "error names the url: {msg}");
+            }
+            Err(other) => panic!("expected Connect error, got {other:?}"),
+            Ok(_) => panic!("connect to ws://127.0.0.1:1 unexpectedly succeeded"),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_connector_endpoint_describes_path() {
+        let c = UnixConnector::new("/tmp/fleet-hub.sock");
+        assert_eq!(c.endpoint(), "unix:/tmp/fleet-hub.sock");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn unix_connect_failure_on_missing_path() {
+        // Connecting through a path whose parent component is a regular file
+        // yields ENOTDIR (root-safe, no chmod): drives the Connect error arm of
+        // UnixConnector::connect.
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("not-a-dir");
+        std::fs::write(&file, b"x").unwrap();
+        let bogus = file.join("hub.sock"); // <file>/hub.sock → ENOTDIR
+        let c = UnixConnector::new(bogus.clone());
+        match c.connect().await {
+            Err(TransportError::Connect(msg)) => {
+                assert!(msg.contains(&bogus.display().to_string()), "names the path: {msg}");
+            }
+            Err(other) => panic!("expected Connect error, got {other:?}"),
+            Ok(_) => panic!("connect through ENOTDIR path unexpectedly succeeded"),
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn unix_ws_handshake_failure_maps_to_connect_error() {
+        use tokio::io::AsyncWriteExt;
+        use tokio::net::UnixListener;
+
+        // A listener that accepts the TCP-equivalent connection but speaks
+        // garbage instead of a WebSocket handshake → the client-side WS upgrade
+        // fails, exercising the handshake error arm of UnixConnector::connect.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("garbage.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("client must connect");
+            // Not a valid HTTP/WS response — the upgrade must fail.
+            let _ = stream.write_all(b"NOPE not http\r\n\r\n").await;
+            let _ = stream.shutdown().await;
+        });
+
+        let c = UnixConnector::new(path.clone());
+        match c.connect().await {
+            Err(TransportError::Connect(msg)) => {
+                assert!(
+                    msg.contains("ws handshake over"),
+                    "handshake failure is reported: {msg}"
+                );
+            }
+            Err(other) => panic!("expected Connect (handshake) error, got {other:?}"),
+            Ok(_) => panic!("WS upgrade over garbage stream unexpectedly succeeded"),
+        }
+        let _ = server.await;
+    }
+}

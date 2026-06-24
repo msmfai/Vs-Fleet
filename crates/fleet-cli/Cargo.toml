@@ -29,3 +29,8 @@ toml = "1.1"
 [dev-dependencies]
 tokio = { workspace = true }
 tempfile = "3"
+
+[lints.rust]
+# `coverage_nightly` is set by cargo-llvm-cov's nightly coverage gate; register
+# it so the `#[cfg_attr(coverage_nightly, ...)]` exclusions don't warn on stable.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }

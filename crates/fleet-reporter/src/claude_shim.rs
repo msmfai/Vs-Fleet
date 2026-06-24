@@ -190,17 +190,25 @@ impl ApprovalRequest {
         if !is_permission_request(&ev.kind) {
             return Ok(None);
         }
-        // Best-effort decision parse; a malformed/absent decision ⇒ fresh request.
+        Ok(Some(Self::from_event(ev, json)))
+    }
+
+    /// Build an [`ApprovalRequest`] from an already-parsed [`ClaudeHookEvent`]
+    /// known to be a `PermissionRequest`, layering the approval-specific
+    /// `decision` envelope on top of the common identity/cwd/tool fields. `json`
+    /// is the original line, re-read only for the best-effort decision parse (a
+    /// malformed/absent decision ⇒ a fresh request, not an error).
+    fn from_event(ev: ClaudeHookEvent, json: &str) -> Self {
         let decision = serde_json::from_str::<RawPermission>(json)
             .ok()
             .and_then(|r| r.decision)
             .and_then(RawDecision::into_decision);
-        Ok(Some(ApprovalRequest {
+        ApprovalRequest {
             session_id: ev.session_id,
             cwd: ev.cwd,
             tool_name: ev.tool_name,
             decision,
-        }))
+        }
     }
 
     /// `true` when this is the **response** to an approval (carries a decision),
@@ -584,15 +592,20 @@ impl ClaudeShimAdapter {
     /// the lifecycle path. Parse errors are swallowed — a malformed line must never
     /// crash the reporter or overstate state.
     pub fn ingest_json(&mut self, json: &str) -> Vec<ReporterCommand> {
-        // Try the approval path first (PermissionRequest only).
-        match ApprovalRequest::parse(json) {
-            Ok(Some(req)) => return self.ingest_approval(&req).0,
-            Ok(None) => {}
-            Err(_) => return Vec::new(),
-        }
-        match ClaudeHookEvent::parse(json) {
-            Ok(ev) => self.ingest(&ev).0,
-            Err(_) => Vec::new(),
+        // Parse the common hook envelope exactly once. A malformed line (invalid
+        // JSON / missing identity) is swallowed — it must never crash the reporter
+        // or overstate state.
+        let Ok(ev) = ClaudeHookEvent::parse(json) else {
+            return Vec::new();
+        };
+        // A PermissionRequest goes through the approval path (layering the
+        // best-effort decision envelope on top); everything else through the
+        // lifecycle path.
+        if is_permission_request(&ev.kind) {
+            let req = ApprovalRequest::from_event(ev, json);
+            self.ingest_approval(&req).0
+        } else {
+            self.ingest(&ev).0
         }
     }
 

@@ -649,6 +649,45 @@ mod tests {
         assert_eq!(mechs.len(), 4, "each platform picks a distinct mechanism");
     }
 
+    #[test]
+    fn current_delegates_to_detect_and_for_platform() {
+        // `current()` must be exactly `for_platform(detect())` — driving the
+        // real platform-detection path and proving the convenience wiring.
+        let detected = FocusPlatform::detect();
+        let current = FocusStrategy::current();
+        assert_eq!(current.platform, detected);
+        assert_eq!(current, FocusStrategy::for_platform(detected));
+        // Whatever the host platform, the detected strategy is internally
+        // consistent (its mechanism matches what `for_platform` assigns).
+        assert_eq!(current.mechanism, FocusStrategy::for_platform(detected).mechanism);
+    }
+
+    /// On the macOS build host, detection resolves to macOS (compile-target arm).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn detect_resolves_to_macos_on_macos_target() {
+        assert_eq!(FocusPlatform::detect(), FocusPlatform::MacOs);
+    }
+
+    /// A backend that does not override `notify_fallback` exercises the trait's
+    /// default impl (no fallback available), so a Failed activation → Failed.
+    #[test]
+    fn default_notify_fallback_yields_failed_outcome() {
+        struct NoFallbackBackend;
+        impl FocusBackend for NoFallbackBackend {
+            fn activate(&self, _mechanism: FocusMechanism, _focus_hint: &str) -> BackendResult {
+                BackendResult::Failed
+            }
+            // notify_fallback intentionally NOT overridden → trait default.
+        }
+        let outcome = focus_on_platform(&NoFallbackBackend, FocusPlatform::MacOs, "code");
+        assert_eq!(
+            outcome,
+            FocusOutcome::Failed,
+            "with no fallback available, a failed activation must report Failed"
+        );
+    }
+
     // ── Part 2: confirmation telemetry — success paths ────────────────────────
 
     #[test]

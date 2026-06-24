@@ -732,3 +732,174 @@ fn codex_permission_request_is_authoritative_waiting_high() {
     assert_eq!(m.state(), State::Waiting);
     assert_eq!(m.confidence(), Confidence::High, "PermissionRequest is authoritative");
 }
+
+// ── CodexHookKind::name(): every variant round-trips its wire token ───────────
+
+#[test]
+fn hook_kind_name_round_trips_every_variant() {
+    // `name()` is the inverse of `from_name()` for every modelled variant, and an
+    // `Other(s)` returns its borrowed payload verbatim (forward-compatible token).
+    let cases = [
+        (CodexHookKind::SessionStart, "SessionStart"),
+        (CodexHookKind::UserPromptSubmit, "UserPromptSubmit"),
+        (CodexHookKind::PreToolUse, "PreToolUse"),
+        (CodexHookKind::PostToolUse, "PostToolUse"),
+        (CodexHookKind::PermissionRequest, "PermissionRequest"),
+        (CodexHookKind::Stop, "Stop"),
+        (CodexHookKind::SessionEnd, "SessionEnd"),
+        (CodexHookKind::PreCompact, "PreCompact"),
+        (CodexHookKind::PostCompact, "PostCompact"),
+    ];
+    for (kind, token) in cases {
+        assert_eq!(kind.name(), token, "name() must emit the wire token");
+        // Inverse: the token parses back to the same kind.
+        assert_eq!(CodexHookKind::from_name(token), kind);
+    }
+    // Other(s) surfaces the raw token unchanged (schema-drift forward-compat).
+    let other = CodexHookKind::Other("FutureHook".to_string());
+    assert_eq!(other.name(), "FutureHook");
+    assert_eq!(
+        CodexHookKind::from_name("FutureHook"),
+        CodexHookKind::Other("FutureHook".to_string())
+    );
+}
+
+// ── RawDecision::Structured via `decision`/`action` keys, and unknown token ───
+
+#[test]
+fn structured_decision_uses_decision_key_when_no_permission() {
+    // The Structured arm prefers `permission`, then falls back to `decision`, then
+    // `action`. Here only `decision` is present → exercises the `.or(decision)` leg.
+    let json = r#"{"session_id":"t","hook_event_name":"PermissionRequest","decision":{"kind":"approval","decision":"approved"}}"#;
+    let e = CodexHookEvent::parse(json).unwrap();
+    assert_eq!(e.decision, Some(ApprovalDecision::Allow));
+    assert!(e.is_approval_response());
+}
+
+#[test]
+fn structured_decision_uses_action_key_as_last_resort() {
+    // Only `action` present → exercises the final `.or(action)` leg.
+    let json = r#"{"session_id":"t","hook_event_name":"PermissionRequest","decision":{"action":"reject"}}"#;
+    let e = CodexHookEvent::parse(json).unwrap();
+    assert_eq!(e.decision, Some(ApprovalDecision::Deny));
+}
+
+#[test]
+fn structured_decision_all_keys_absent_yields_no_decision() {
+    // None of permission/decision/action present → the `?` short-circuits to None,
+    // so this is a *fresh* request, not a response (the `?` None-propagation path).
+    let json = r#"{"session_id":"t","hook_event_name":"PermissionRequest","decision":{"kind":"approval"}}"#;
+    let e = CodexHookEvent::parse(json).unwrap();
+    assert!(e.decision.is_none(), "no token ⇒ not a decision");
+    assert!(!e.is_approval_response(), "a request with no decision is fresh");
+    // And it really drives the waiting gate, not an auto-resolve.
+    let mut m = CodexStateMachine::new("t");
+    m.apply(&e);
+    assert_eq!(m.state(), State::Waiting);
+    assert_eq!(m.confidence(), Confidence::High);
+}
+
+#[test]
+fn unrecognised_decision_token_maps_to_none() {
+    // A token that is neither an allow- nor a deny-synonym → the `_ => None` arm.
+    // The event must NOT count as an approval response (honesty: we don't guess).
+    let json = r#"{"session_id":"t","hook_event_name":"PermissionRequest","decision":"maybe"}"#;
+    let e = CodexHookEvent::parse(json).unwrap();
+    assert!(e.decision.is_none(), "unknown token ⇒ no decision");
+    assert!(!e.is_approval_response());
+    // It behaves as a fresh request, raising the gate rather than resolving it.
+    let mut m = CodexStateMachine::new("t");
+    m.apply(&e);
+    assert_eq!(m.state(), State::Waiting);
+}
+
+// ── CodexHookEvent::from_value: the serde_json::Value entry point ─────────────
+
+#[test]
+fn from_value_parses_a_json_value() {
+    // The socket layer can hand us an already-deserialized Value; from_value must
+    // produce the same event as parsing the equivalent string.
+    let v: serde_json::Value = serde_json::json!({
+        "session_id": "tv",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_use_id": "tool_42",
+    });
+    let e = CodexHookEvent::from_value(v).unwrap();
+    assert_eq!(e.kind, CodexHookKind::PreToolUse);
+    assert_eq!(e.thread_id, "tv");
+    assert_eq!(e.tool_name.as_deref(), Some("Bash"));
+    assert_eq!(e.tool_use_id.as_deref(), Some("tool_42"));
+}
+
+#[test]
+fn from_value_wrong_shape_is_invalid_json_error() {
+    // A non-object Value cannot deserialize into RawCodexHook → InvalidJson, not a
+    // panic (the from_value error-mapping leg).
+    let v = serde_json::json!(["not", "an", "object"]);
+    assert!(matches!(
+        CodexHookEvent::from_value(v),
+        Err(CodexParseError::InvalidJson(_))
+    ));
+}
+
+#[test]
+fn from_value_missing_thread_id_errors() {
+    // from_raw's identity-honesty guard still applies through the Value path.
+    let v = serde_json::json!({ "hook_event_name": "PreToolUse" });
+    assert_eq!(
+        CodexHookEvent::from_value(v),
+        Err(CodexParseError::MissingThreadId)
+    );
+}
+
+// ── last_message fall-through for a non-modelled State (State::Error) ─────────
+
+#[test]
+fn last_message_for_error_state_is_none() {
+    // The Codex state machine never *emits* State::Error via real hooks, but
+    // last_message() must stay total: any state it does not specially preview
+    // (here Error) falls through to None. We set the private state field directly
+    // (same-module test) and assert the real resulting run snapshot carries no
+    // preview — the honest "nothing to show" outcome for an un-modelled state.
+    let mut m = machine();
+    m.state = State::Error;
+    let run = m.to_run("r", "2026-06-08T00:00:00Z");
+    assert_eq!(run.state, State::Error);
+    assert!(
+        run.last_message.is_none(),
+        "an un-modelled state yields no inbox preview"
+    );
+}
+
+// ── adapter accessors: machine_of + forget ───────────────────────────────────
+
+#[test]
+fn adapter_machine_of_borrows_tracked_thread() {
+    let mut a = CodexAdapter::new();
+    a.ingest(&tool_ev(CodexHookKind::PermissionRequest, "Bash"));
+    // A tracked thread hands back its live machine, reflecting real state.
+    let m = a.machine_of(THREAD).expect("thread is tracked");
+    assert_eq!(m.state(), State::Waiting);
+    assert_eq!(m.confidence(), Confidence::High);
+    assert_eq!(m.thread_id(), THREAD);
+    // An unknown thread yields None.
+    assert!(a.machine_of("no-such-thread").is_none());
+}
+
+#[test]
+fn adapter_forget_drops_thread_and_reports_presence() {
+    let mut a = CodexAdapter::new();
+    a.ingest(&ev(CodexHookKind::UserPromptSubmit));
+    assert_eq!(a.thread_count(), 1);
+    // Forgetting a tracked thread returns true and actually removes it.
+    assert!(a.forget(THREAD), "forget returns true for a tracked thread");
+    assert_eq!(a.thread_count(), 0);
+    assert!(a.state_of(THREAD).is_none());
+    // Forgetting an absent thread returns false (idempotent, no panic).
+    assert!(!a.forget(THREAD), "forget returns false for an absent thread");
+    // A later event for the same id starts a fresh run with a NEW run-id.
+    a.ingest(&ev(CodexHookKind::UserPromptSubmit));
+    assert_eq!(a.thread_count(), 1);
+    assert_eq!(a.state_of(THREAD), Some(State::Working));
+}

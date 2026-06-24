@@ -66,6 +66,10 @@
 //! ```
 
 #![forbid(unsafe_code)]
+// Enable the `#[coverage(off)]` attribute under cargo-llvm-cov's nightly run
+// (it sets cfg(coverage_nightly)). A no-op on stable. Used to exclude the rare
+// genuinely-unreachable defensive branch from the 100%-coverage gate.
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 mod view;
 

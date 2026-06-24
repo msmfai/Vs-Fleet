@@ -170,6 +170,52 @@ mod tests {
     }
 
     #[test]
+    fn type_name_matches_wire_tag_for_every_variant() {
+        // Exhaustively pins `type_name()` to the serialized `type` discriminator
+        // for all variants, including Subscribe and Command (the others are also
+        // checked in the round-trip test).
+        assert_eq!(ClientMessage::Subscribe.type_name(), "subscribe");
+        assert_eq!(
+            ClientMessage::Command {
+                command: Command::mute("s1")
+            }
+            .type_name(),
+            "command"
+        );
+        assert_eq!(
+            ClientMessage::SessionUpsert {
+                session: sample_session("s1")
+            }
+            .type_name(),
+            "session.upsert"
+        );
+        assert_eq!(
+            ClientMessage::SessionRemove {
+                session_id: "s1".into()
+            }
+            .type_name(),
+            "session.remove"
+        );
+        assert_eq!(
+            ClientMessage::RunUpsert {
+                session_id: "s1".into(),
+                run: sample_run("r1"),
+                stamp: None,
+            }
+            .type_name(),
+            "run.upsert"
+        );
+        assert_eq!(
+            ClientMessage::RunRemove {
+                session_id: "s1".into(),
+                run_id: "r1".into(),
+            }
+            .type_name(),
+            "run.remove"
+        );
+    }
+
+    #[test]
     fn command_is_flattened() {
         let m = ClientMessage::Command {
             command: Command::mute("s1"),

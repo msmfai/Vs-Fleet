@@ -308,4 +308,27 @@ mod tests {
             "kept sorted by seq regardless of insert order"
         );
     }
+
+    #[test]
+    fn push_preserving_drops_oldest_on_overflow() {
+        // Requeue more deltas than capacity: the oldest is evicted and counted,
+        // exercising the capacity-overflow branch of push_preserving.
+        let mut b = DeltaBuffer::with_capacity(2);
+        b.push_preserving(1, run_upsert("a"));
+        b.push_preserving(2, run_upsert("b"));
+        b.push_preserving(3, run_upsert("c")); // over capacity → drop seq 1
+        assert_eq!(b.len(), 2);
+        assert_eq!(b.dropped(), 1);
+        let seqs: Vec<u64> = b.drain().iter().map(|d| d.seq).collect();
+        assert_eq!(seqs, vec![2, 3], "oldest requeued delta evicted on overflow");
+    }
+
+    #[test]
+    fn default_matches_new() {
+        // `DeltaBuffer::default()` must behave identically to `new()`.
+        let mut d = DeltaBuffer::default();
+        assert_eq!(d.next_seq(), 1);
+        assert!(d.is_empty());
+        assert_eq!(d.push(run_upsert("a")), 1);
+    }
 }

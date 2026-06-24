@@ -284,6 +284,204 @@ fn unknown_decision_token_is_treated_as_fresh_request() {
     assert_eq!(a.confidence_of(SID), Some(Confidence::High));
 }
 
+// ── structured decision envelope with no recognised key ⇒ fresh request ──────
+
+#[test]
+fn structured_decision_with_no_known_key_is_a_fresh_request() {
+    // A `decision` object that carries none of permission/decision/behavior (only
+    // unrelated keys) yields `None` from the Structured arm (the `?` early-return),
+    // so it must NOT resolve the approval — it stays a fresh request.
+    let json = format!(
+        r#"{{"session_id":"{SID}","hook_event_name":"PermissionRequest","tool_name":"Bash","decision":{{"updatedInput":{{}}}}}}"#
+    );
+    let r = ApprovalRequest::parse(&json).unwrap().unwrap();
+    assert!(
+        !r.is_response(),
+        "a structured decision with no allow/deny key is not a resolution"
+    );
+
+    let mut a = ClaudeShimAdapter::new(LaunchContext::ShimTerminal);
+    a.ingest_json(&json);
+    assert_eq!(a.state_of(SID), Some(State::Waiting));
+    assert_eq!(a.confidence_of(SID), Some(Confidence::High));
+}
+
+// ── accessors expose the real machine identity / context / cwd ───────────────
+
+#[test]
+fn machine_accessors_reflect_real_state() {
+    let mut m = ClaudeShimStateMachine::new(SID, LaunchContext::ShimTerminal);
+    // Identity + fixed context are exposed verbatim.
+    assert_eq!(m.session_id(), SID);
+    assert_eq!(m.context(), LaunchContext::ShimTerminal);
+    // cwd defaults to "/" then tracks the event's cwd.
+    assert_eq!(m.cwd(), "/");
+
+    let ev = ClaudeHookEvent::parse(&permission_request_json()).unwrap();
+    // permission_request_json carries cwd "/Users/dev/project"; it is routed as a
+    // PermissionRequest through apply() and updates cwd.
+    m.apply(&ev);
+    assert_eq!(m.cwd(), "/Users/dev/project");
+    assert_eq!(m.state(), State::Waiting);
+}
+
+// ── apply() lifecycle path: foreign session is an idempotent no-op ───────────
+
+#[test]
+fn apply_lifecycle_foreign_session_is_noop() {
+    let mut m = ClaudeShimStateMachine::new(SID, LaunchContext::ShimTerminal);
+    let foreign =
+        r#"{"session_id":"not-ours","hook_event_name":"UserPromptSubmit","prompt":"go"}"#;
+    let ev = ClaudeHookEvent::parse(foreign).unwrap();
+    let t = m.apply(&ev);
+    assert!(!t.changed, "a foreign-session lifecycle event must not change state");
+    assert_eq!(m.state(), State::Idle, "still idle, untouched");
+}
+
+// ── apply() routes a PermissionRequest through raise_approval ─────────────────
+
+#[test]
+fn apply_routes_permission_request_to_raise_approval() {
+    // A PermissionRequest reaching the lifecycle apply() path (not apply_approval)
+    // is raised as a fresh approval, stamped with the launch-context confidence.
+    let mut m = ClaudeShimStateMachine::new(SID, LaunchContext::ShimTerminal);
+    let ev = ClaudeHookEvent::parse(&permission_request_json()).unwrap();
+    let t = m.apply(&ev);
+    assert_eq!(m.state(), State::Waiting);
+    assert_eq!(m.urgency(), Some(Urgency::Approval));
+    assert_eq!(t.confidence, Confidence::High);
+    assert!(m.awaiting_approval());
+}
+
+// ── Stop carrying a completion marker ⇒ Done (not Idle) ──────────────────────
+
+#[test]
+fn stop_with_completion_marker_is_done() {
+    let mut a = ClaudeShimAdapter::new(LaunchContext::ShimTerminal);
+    a.ingest_json(&prompt_json());
+    assert_eq!(a.state_of(SID), Some(State::Working));
+    // task_complete:true with stop_hook_active:false ⇒ turn_complete_done ⇒ Done.
+    let stop_done = format!(
+        r#"{{"session_id":"{SID}","hook_event_name":"Stop","stop_hook_active":false,"task_complete":true}}"#
+    );
+    a.ingest_json(&stop_done);
+    assert_eq!(a.state_of(SID), Some(State::Done));
+    assert_eq!(a.confidence_of(SID), Some(Confidence::Inferred));
+}
+
+// ── SessionStart after a confirmed exit revives the run to idle ──────────────
+
+#[test]
+fn session_start_after_session_end_revives_to_idle() {
+    let mut a = ClaudeShimAdapter::new(LaunchContext::ShimTerminal);
+    a.ingest_json(&prompt_json());
+    a.ingest_json(&session_end_json());
+    assert_eq!(a.state_of(SID), Some(State::Dead));
+    assert_eq!(a.confidence_of(SID), Some(Confidence::High));
+
+    // A fresh SessionStart on the same session id revives it: dead → idle, and the
+    // transition is marked changed (into_changed) so a fresh upsert is emitted.
+    let start = format!(r#"{{"session_id":"{SID}","hook_event_name":"SessionStart"}}"#);
+    let cmds = a.ingest_json(&start);
+    assert_eq!(a.state_of(SID), Some(State::Idle));
+    assert_eq!(a.confidence_of(SID), Some(Confidence::Inferred));
+    let run = cmds
+        .iter()
+        .find_map(|c| match c {
+            ReporterCommand::UpsertRun(r) => Some(r),
+            _ => None,
+        })
+        .expect("revival emits an upsert because into_changed marks it changed");
+    assert_eq!(run.state, State::Idle);
+}
+
+#[test]
+fn session_start_on_live_run_is_a_noop() {
+    // SessionStart while not dead is an idempotent no-op (the else arm).
+    let mut m = ClaudeShimStateMachine::new(SID, LaunchContext::ShimTerminal);
+    let prompt = ClaudeHookEvent::parse(&prompt_json()).unwrap();
+    m.apply(&prompt);
+    assert_eq!(m.state(), State::Working);
+    let start = format!(r#"{{"session_id":"{SID}","hook_event_name":"SessionStart"}}"#);
+    let ev = ClaudeHookEvent::parse(&start).unwrap();
+    let t = m.apply(&ev);
+    assert!(!t.changed, "SessionStart on a live run does not change state");
+    assert_eq!(m.state(), State::Working);
+}
+
+// ── last_message: every state's human-readable summary in to_run ─────────────
+
+#[test]
+fn waiting_with_no_tool_says_approval_required() {
+    // A PermissionRequest with no tool_name ⇒ last_message "Approval required".
+    let mut m = ClaudeShimStateMachine::new(SID, LaunchContext::ShimTerminal);
+    let json = format!(
+        r#"{{"session_id":"{SID}","hook_event_name":"PermissionRequest"}}"#
+    );
+    let req = ApprovalRequest::parse(&json).unwrap().unwrap();
+    m.apply_approval(&req);
+    assert_eq!(m.state(), State::Waiting);
+    let run = m.to_run("run-1", "2026-06-08T00:00:00Z");
+    assert_eq!(run.last_message.as_deref(), Some("Approval required"));
+}
+
+#[test]
+fn done_state_reports_task_complete_message() {
+    let mut m = ClaudeShimStateMachine::new(SID, LaunchContext::ShimTerminal);
+    let stop_done = format!(
+        r#"{{"session_id":"{SID}","hook_event_name":"Stop","stop_hook_active":false,"task_complete":true}}"#
+    );
+    let ev = ClaudeHookEvent::parse(&stop_done).unwrap();
+    m.apply(&ev);
+    assert_eq!(m.state(), State::Done);
+    let run = m.to_run("run-1", "2026-06-08T00:00:00Z");
+    assert_eq!(run.last_message.as_deref(), Some("Task complete."));
+}
+
+// ── adapter accessors: context / run_id_of / ingest_json error path / forget ──
+
+#[test]
+fn adapter_context_is_exposed() {
+    assert_eq!(
+        ClaudeShimAdapter::new(LaunchContext::ShimTerminal).context(),
+        LaunchContext::ShimTerminal
+    );
+    assert_eq!(
+        ClaudeShimAdapter::new(LaunchContext::NativeUi).context(),
+        LaunchContext::NativeUi
+    );
+}
+
+#[test]
+fn run_id_of_returns_minted_id_for_tracked_session() {
+    let mut a = ClaudeShimAdapter::new(LaunchContext::ShimTerminal);
+    assert_eq!(a.run_id_of(SID), None, "untracked session has no run id");
+    a.ingest_json(&prompt_json());
+    let run_id = a.run_id_of(SID).expect("a tracked session has a minted run id");
+    assert_eq!(run_id, format!("claude:{SID}:run-1"));
+}
+
+#[test]
+fn ingest_json_valid_json_but_unparseable_event_is_swallowed() {
+    // Valid JSON that the ApprovalRequest path skips (not a PermissionRequest) but
+    // that the lifecycle ClaudeHookEvent::parse rejects (no session_id) must be
+    // swallowed: no commands, no ghost session.
+    let mut a = ClaudeShimAdapter::new(LaunchContext::ShimTerminal);
+    let cmds = a.ingest_json(r#"{"hook_event_name":"UserPromptSubmit","prompt":"go"}"#);
+    assert!(cmds.is_empty(), "an event missing session_id yields no commands");
+    assert_eq!(a.session_count(), 0, "and creates no ghost session");
+}
+
+#[test]
+fn forget_removes_a_tracked_session_only_once() {
+    let mut a = ClaudeShimAdapter::new(LaunchContext::ShimTerminal);
+    a.ingest_json(&prompt_json());
+    assert_eq!(a.session_count(), 1);
+    assert!(a.forget(SID), "forgetting a tracked session returns true");
+    assert_eq!(a.session_count(), 0);
+    assert!(!a.forget(SID), "forgetting an unknown session returns false");
+}
+
 // ── liveness-only events do not flip state ───────────────────────────────────
 
 #[test]

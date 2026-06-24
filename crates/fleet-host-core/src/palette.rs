@@ -150,9 +150,10 @@ pub fn fuzzy_score(query: &str, target: &str) -> Option<i32> {
 pub fn tab_fuzzy_score(query: &str, tab: &SessionTab, cwds: &[&str]) -> Option<i32> {
     let mut best: Option<i32> = None;
 
-    // Score against the title.
+    // Score against the title. This is the first field scored, so `best` is
+    // still `None` here — the title score is the running best outright.
     if let Some(s) = fuzzy_score(query, &tab.title) {
-        best = Some(best.map_or(s, |b: i32| b.max(s)));
+        best = Some(s);
     }
 
     // Score against each cwd.
@@ -654,7 +655,9 @@ mod tests {
         // What matters is that the scores are computed correctly.
         let s1_score = results.iter().find(|c| c.session_id == "s1").unwrap().score;
         let s2_score = results.iter().find(|c| c.session_id == "s2").unwrap().score;
-        assert!(s1_score != s2_score || results[0].session_id == "s1");
+        // The two scores are distinct and the higher-scoring s1 ranks first.
+        assert_ne!(s1_score, s2_score);
+        assert_eq!(results[0].session_id, "s1");
         // Verify the scores match the expected calculation.
         assert_eq!(s2_score, 30); // exact "fleet": prefix(10) + 4 consecutive(20) = 30
                                   // For s1: "my-fleet-project-very-long", "fleet" starts at 3, no prefix,

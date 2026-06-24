@@ -26,6 +26,18 @@ jobs:
       - name: Check DCO sign-offs
         run: ./scripts/check-dco-signoff.sh "origin/${{ github.base_ref }}..HEAD"
 
+  # Static frontend↔backend guards (pure shell, no toolchain): forbid
+  # WKWebView-unsupported input APIs (window.prompt/alert/confirm) in ui/ and
+  # assert every invoke() call maps to a registered #[tauri::command]. Catches
+  # the seam/runtime bug class that 100% unit coverage missed (the rename break).
+  frontend-contract:
+    name: Frontend contract + webview safety
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: check-frontend-contract.sh
+        run: ./scripts/check-frontend-contract.sh
+
   rust:
     name: Rust (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -197,3 +209,59 @@ jobs:
 
       - name: pnpm -r test
         run: pnpm -r test
+
+  # Layer C: frontend unit tests (vitest + jsdom) for the Tauri rail UI. Runs on
+  # CI/Linux only — never locally — and includes the rename/domPrompt/rowTitle
+  # regression tests that lock the seam bugs 100% Rust coverage missed.
+  frontend-unit:
+    name: Frontend unit (vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates/fleet-host/ui
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: npm install
+        run: npm install
+      - name: vitest + coverage
+        run: npm run coverage
+
+  # Layer E end-to-end: boot the built fleet-host headless under Xvfb with the
+  # probe-control port, drive the real command seam (rename round-trip + survives
+  # a reporter re-register) over HTTP, asserting observable /servers state.
+  host-smoke:
+    name: Host smoke (probe E2E)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Cache Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            crates/fleet-host/target
+          key: ${{ runner.os }}-smoke-cargo-${{ hashFiles('crates/fleet-host/Cargo.toml', 'crates/fleet-host/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-smoke-cargo-
+      - name: Build fleet-host (release)
+        working-directory: crates/fleet-host
+        run: cargo build --release
+      - name: Run probe smoke under Xvfb
+        run: xvfb-run -a node scripts/release-smoke.mjs --bin crates/fleet-host/target/release/fleet-host --out smoke-out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: host-smoke-out
+          path: smoke-out/
+          if-no-files-found: warn

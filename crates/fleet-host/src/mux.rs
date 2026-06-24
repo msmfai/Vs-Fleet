@@ -39,6 +39,12 @@ pub struct Server {
     pub url: String,
     /// Whether Fleet owns the backing process/container and can kill it.
     pub owned: bool,
+    /// True once the user has explicitly renamed this server. When set, the rail
+    /// shows `label` verbatim instead of letting the agent/session-derived title
+    /// override it — otherwise a reporter phone-home would clobber the rename.
+    /// `serde(default)` so older persisted manifests deserialize as not-renamed.
+    #[serde(default)]
+    pub renamed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -84,6 +90,8 @@ impl MuxState {
 /// The placeholder/singleton editor surface webview label.
 pub const EDITOR: &str = "editor";
 
+// Thin env wrapper over the tested `keepalive_env_enabled`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn keepalive_enabled() -> bool {
     keepalive_env_enabled(std::env::var("FLEET_EDITOR_KEEPALIVE").ok().as_deref())
 }
@@ -95,7 +103,9 @@ fn keepalive_env_enabled(value: Option<&str>) -> bool {
     )
 }
 
+// Thin env wrapper over the tested `macos_title_bar_style_from_env_value`.
 #[cfg(target_os = "macos")]
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn macos_title_bar_style() -> TitleBarStyle {
     macos_title_bar_style_from_env_value(
         std::env::var("FLEET_MACOS_TITLEBAR_STYLE").ok().as_deref(),
@@ -125,6 +135,8 @@ fn editor_label_for(id: &str) -> String {
     label
 }
 
+// Glue: constructs a Wry `WebviewBuilder` (the editor surface) — webview FFI.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn editor_builder(label: impl Into<String>, url: tauri::WebviewUrl) -> WebviewBuilder<tauri::Wry> {
     WebviewBuilder::new(label, url).background_throttling(BackgroundThrottlingPolicy::Disabled)
 }
@@ -136,6 +148,9 @@ fn editor_builder(label: impl Into<String>, url: tauri::WebviewUrl) -> WebviewBu
 /// the bridge extension may not activate until the editor surface first loads
 /// the VS Code web server. So spawned servers can navigate from the supervisor's
 /// URL immediately, then bridge registration catches up once VS Code starts.
+// Glue: queries Tauri-managed state (bridge registry + spawn supervisor) via the
+// live `AppHandle` — needs a running app.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn server_url(app: &AppHandle, id: &str) -> Option<String> {
     if let Some(url) = app
         .try_state::<crate::bridge::BridgeRegistry>()
@@ -158,12 +173,17 @@ fn server_url(app: &AppHandle, id: &str) -> Option<String> {
         })
 }
 
+// Glue: reads the bridge registry from managed state via the live `AppHandle`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn bridge_registered(app: &AppHandle, id: &str) -> bool {
     app.try_state::<crate::bridge::BridgeRegistry>()
         .map(|reg| reg.servers().into_iter().any(|s| s.id == id))
         .unwrap_or(false)
 }
 
+// Glue: reads supervisor + registry from managed state via the live `AppHandle`;
+// the merge it performs (`merged_servers`) is unit-tested.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn servers_for_app(app: &AppHandle) -> Vec<Server> {
     let spawned = app
         .try_state::<crate::spawn::ServerSupervisor>()
@@ -178,6 +198,9 @@ pub fn servers_for_app(app: &AppHandle) -> Vec<Server> {
 
 /// Build the multiplexer window: the rail plus a placeholder editor surface.
 /// Persistent server editor webviews are created on first selection.
+// Glue: builds the native multiplexer window + rail/editor child webviews and
+// wires the resize handler — pure webview/window FFI, no headless equivalent.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn build_window(app: &mut App) -> tauri::Result<()> {
     let width = 1320.0_f64;
     let height = 860.0_f64;
@@ -232,6 +255,8 @@ pub fn build_window(app: &mut App) -> tauri::Result<()> {
 
 /// Tauri command: the rail's server list — Fleet-spawned servers (supervisor) +
 /// externally phoned-home servers (registry), deduped by id.
+// Glue: Tauri command reading managed `State`; the merge (`merged_servers`) is tested.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
 pub fn get_servers(
     registry: State<'_, crate::bridge::BridgeRegistry>,
@@ -253,12 +278,16 @@ fn merged_servers(spawned: Vec<Server>, registered: Vec<Server>) -> Vec<Server> 
 }
 
 /// Tauri command: the currently-selected server id.
+// Glue: Tauri command reading managed `State`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
 pub fn selected_server(state: State<'_, MuxState>) -> Option<String> {
     state.selected.lock().ok().and_then(|g| g.clone())
 }
 
 /// Tauri command: switch the editor surface to server `id`.
+// Glue: thin command wrapper over `select` (webview navigation).
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
 pub fn select_server(app: AppHandle, id: String) -> bool {
     select(&app, id)
@@ -267,6 +296,9 @@ pub fn select_server(app: AppHandle, id: String) -> bool {
 /// Select a newly-spawned server and retry navigation while VS Code is still
 /// coming up. `code serve-web` can take a few seconds to bind; an early WebView
 /// navigation to a not-yet-listening port otherwise fails once and stays blank.
+// Glue: navigates the editor webview and spawns a retry thread that re-navigates
+// while VS Code comes up — drives the live `AppHandle`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn select_spawned(app: AppHandle, id: String) {
     select_impl(&app, id.clone(), true);
     std::thread::spawn(move || {
@@ -297,6 +329,10 @@ pub fn select_spawned(app: AppHandle, id: String) {
 }
 
 /// Tauri command: spawn a new code-server and add it to the rail. Returns its id.
+// Glue: spawns a real server tree and drives the live `AppHandle` (status/emit/
+// navigate). The spawn + error-surfacing logic is tested in spawn.rs / via
+// `emit_spawn_error`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
 pub fn spawn_server(
     app: AppHandle,
@@ -317,6 +353,8 @@ pub fn spawn_server(
     }
 }
 
+// Glue: as `spawn_server`, with explicit spawn options.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
 pub fn spawn_server_with_options(
     app: AppHandle,
@@ -339,6 +377,8 @@ pub fn spawn_server_with_options(
 }
 
 /// Tauri command: close server `id` (kills the process Fleet spawned).
+// Glue: thin command wrapper over `close_server_by_id` (webview/process glue).
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
 pub fn close_server(
     app: AppHandle,
@@ -348,6 +388,10 @@ pub fn close_server(
     close_server_by_id(&app, &sup, &id)
 }
 
+// Glue: renames in supervisor + registry then emits/refreshes via the live
+// `AppHandle`. The label sanitizer (`sanitize_server_label`) and the rename
+// primitives are unit-tested.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
 pub fn rename_server(
     app: AppHandle,
@@ -370,16 +414,22 @@ pub fn rename_server(
     Ok(label)
 }
 
+// Glue: thin command wrapper over `open_server_external_by_id` (opens a browser).
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
 pub fn open_server_external(app: AppHandle, id: String) -> Result<(), String> {
     open_server_external_by_id(&app, &id)
 }
 
+// Glue: Tauri command reading managed `State`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
 pub fn get_host_status(state: State<'_, MuxState>) -> Option<HostStatus> {
     state.status.lock().ok().and_then(|status| status.clone())
 }
 
+// Glue: Tauri command mutating managed `State`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
 pub fn clear_host_status_if_current(state: State<'_, MuxState>, message: String) {
     if let Ok(mut status) = state.status.lock() {
@@ -389,6 +439,9 @@ pub fn clear_host_status_if_current(state: State<'_, MuxState>, message: String)
     }
 }
 
+// Glue: classifies a spawn failure then emits a host-status event through the
+// live `AppHandle` (`emit_host_status`).
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn emit_spawn_error(app: &AppHandle, source: &str, error: &str) {
     // Missing local VS Code is a supported configuration (remote/externally
     // started sessions), not a fault — surface it as a warning, not an error.
@@ -401,6 +454,8 @@ pub fn emit_spawn_error(app: &AppHandle, source: &str, error: &str) {
     emit_host_status(app, "error", source, format!("spawn failed: {error}"));
 }
 
+// Glue: emits a host-status event through the live `AppHandle`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn emit_host_status(
     app: &AppHandle,
     level: impl Into<String>,
@@ -417,6 +472,8 @@ pub fn emit_host_status(
     );
 }
 
+// Glue: clears managed status state + emits through the live `AppHandle`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn clear_host_status(app: &AppHandle) {
     if let Some(state) = app.try_state::<MuxState>() {
         if let Ok(mut status) = state.status.lock() {
@@ -426,6 +483,8 @@ pub fn clear_host_status(app: &AppHandle) {
     let _ = app.emit(HOST_STATUS, Option::<HostStatus>::None);
 }
 
+// Glue: stores managed status state + emits through the live `AppHandle`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn set_host_status(app: &AppHandle, status: HostStatus) {
     if let Some(state) = app.try_state::<MuxState>() {
         if let Ok(mut stored) = state.status.lock() {
@@ -438,10 +497,14 @@ fn set_host_status(app: &AppHandle, status: HostStatus) {
 /// Switch the editor surface to server `id` (shared by the rail and the menu).
 /// In keepalive mode this shows that server's persistent editor webview; in
 /// rollback singleton mode it navigates the single editor webview.
+// Glue: navigates the editor webview(s) via the live `AppHandle`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn select(app: &AppHandle, id: String) -> bool {
     select_impl(app, id, false)
 }
 
+// Glue: the editor-navigation state machine — drives webviews/managed state.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn select_impl(app: &AppHandle, id: String, force_navigate: bool) -> bool {
     let Some(state) = app.try_state::<MuxState>() else {
         return false;
@@ -472,6 +535,8 @@ fn select_impl(app: &AppHandle, id: String, force_navigate: bool) -> bool {
     true
 }
 
+// Glue: navigates the single rollback editor webview.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn select_singleton(app: &AppHandle, state: &State<'_, MuxState>, id: &str, force_navigate: bool) {
     // Navigate the editor to the server's URL (only if it changed, so re-selecting
     // the same server doesn't reload it). The loading overlay is raised/lowered by
@@ -506,6 +571,8 @@ fn select_singleton(app: &AppHandle, state: &State<'_, MuxState>, id: &str, forc
     retile(app);
 }
 
+// Glue: shows/creates the per-server persistent editor webview.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn select_persistent(app: &AppHandle, state: &State<'_, MuxState>, id: &str, force_navigate: bool) {
     let Some(target) = server_url(app, id) else {
         retile(app);
@@ -519,6 +586,8 @@ fn select_persistent(app: &AppHandle, state: &State<'_, MuxState>, id: &str, for
     retile(app);
 }
 
+// Glue: re-navigates a persistent editor webview during spawn retries.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn refresh_persistent_editor(app: &AppHandle, id: &str, force_navigate: bool) {
     let Some(state) = app.try_state::<MuxState>() else {
         return;
@@ -532,6 +601,8 @@ fn refresh_persistent_editor(app: &AppHandle, id: &str, force_navigate: bool) {
     navigate_persistent_editor(app, &state, id, &label, &target, force_navigate);
 }
 
+// Glue: creates (lazily) the per-server editor webview as a window child.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn ensure_persistent_editor(
     app: &AppHandle,
     state: &State<'_, MuxState>,
@@ -587,6 +658,8 @@ fn ensure_persistent_editor(
     Some(label)
 }
 
+// Glue: navigates a persistent editor webview to its target URL.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn navigate_persistent_editor(
     app: &AppHandle,
     state: &State<'_, MuxState>,
@@ -656,6 +729,9 @@ fn navigate_persistent_editor(
     }
 }
 
+// Glue: closes the editor webview, kills the spawned process, and re-selects /
+// retiles via the live `AppHandle`. The supervisor `close` it calls is tested.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn close_server_by_id(app: &AppHandle, sup: &crate::spawn::ServerSupervisor, id: &str) -> bool {
     let was_selected = app
         .try_state::<MuxState>()
@@ -698,11 +774,16 @@ pub fn close_server_by_id(app: &AppHandle, sup: &crate::spawn::ServerSupervisor,
     closed
 }
 
+// Glue: resolves the server URL from managed state and opens the OS browser.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn open_server_external_by_id(app: &AppHandle, id: &str) -> Result<(), String> {
     let url = server_url(app, id).ok_or_else(|| "server URL unavailable".to_string())?;
     open_external_url(&url).map_err(|e| format!("open browser failed: {e}"))
 }
 
+// Glue: spawns the OS browser opener; the command selection
+// (`external_open_command`) is unit-tested.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn open_external_url(url: &str) -> std::io::Result<()> {
     let (program, args) = external_open_command(url);
     Command::new(program).args(args).spawn().map(|_| ())
@@ -731,6 +812,8 @@ fn external_open_command(url: &str) -> (&'static str, Vec<String>) {
     ("xdg-open", vec![url.to_string()])
 }
 
+// Glue: closes a server's persistent editor webview via the live `AppHandle`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn close_editor(app: &AppHandle, id: &str) {
     let Some(state) = app.try_state::<MuxState>() else {
         return;
@@ -759,6 +842,8 @@ fn close_editor(app: &AppHandle, id: &str) {
     }
 }
 
+// Glue: navigates the singleton editor webview back to about:blank.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn blank_singleton_editor(app: &AppHandle, state: &State<'_, MuxState>) {
     let blank = "about:blank".parse().expect("about:blank is a valid url");
     if let Some(wv) = app.get_webview(EDITOR) {
@@ -769,6 +854,8 @@ fn blank_singleton_editor(app: &AppHandle, state: &State<'_, MuxState>) {
     }
 }
 
+// Glue: reads supervisor + registry from managed state via the live `AppHandle`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn first_server_id(app: &AppHandle, exclude: Option<&str>) -> Option<String> {
     let mut seen = std::collections::HashSet::new();
     let mut ids = Vec::new();
@@ -790,6 +877,8 @@ fn first_server_id(app: &AppHandle, exclude: Option<&str>) -> Option<String> {
     ids.into_iter().next()
 }
 
+// Glue: evaluates a selection-sync JS hook in the rail webview.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn sync_rail_selection(app: &AppHandle) {
     if let Some(rail) = app.get_webview(RAIL) {
         let _ = rail.eval("window.__fleetSyncSelection && window.__fleetSyncSelection()");
@@ -802,12 +891,19 @@ fn sync_rail_selection(app: &AppHandle) {
 /// menu bar. This mirrors the VS Code command menus and forwards clicked items
 /// through the active server's bridge. Items deliberately have no Fleet-level
 /// accelerators; keyboard shortcuts stay owned by the focused VS Code webview.
+// Glue: builds the native menu via `muda`, which touches AppKit/NSApplication
+// and therefore can't run on a CI test thread (no NSApplication).
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn build_menu<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
 ) -> tauri::Result<tauri::menu::Menu<R>> {
     build_app_menu(app, &[], None, RailMenuState::default())
 }
 
+// Glue: assembles the full native menu via `muda` (AppKit). The pure label/enabled
+// decisions it composes (`close_current_menu_item`, `selected_server_has_url`,
+// `menu_server_label`) are unit-tested.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn build_app_menu<R: tauri::Runtime>(
     manager: &tauri::AppHandle<R>,
     servers: &[Server],
@@ -877,10 +973,14 @@ fn build_app_menu<R: tauri::Runtime>(
         .build()
 }
 
+// Glue: a no-op placeholder hook kept for call-site symmetry with the live menu.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn refresh_menu(app: &AppHandle) {
     let _ = app;
 }
 
+// Glue: builds the dynamic Server submenu via `muda` (AppKit).
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn build_server_menu<R: tauri::Runtime>(
     manager: &tauri::AppHandle<R>,
     servers: &[Server],
@@ -998,6 +1098,8 @@ enum MItem {
     Paste,
 }
 
+// Glue: builds one mirrored VS Code submenu via `muda` (AppKit).
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn build_sub<R: tauri::Runtime>(
     manager: &tauri::AppHandle<R>,
     title: &str,
@@ -1166,6 +1268,9 @@ fn sanitize_server_label(label: &str) -> Result<String, String> {
 }
 
 /// Re-tile the rail + show the selected editor surface (hide the rest).
+// Glue: re-lays out the rail + editor webviews against the live window (set
+// position/size/show/hide) — pure webview FFI.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn retile(app: &AppHandle) {
     let Some(win) = app.get_window(WINDOW) else {
         return;
@@ -1237,6 +1342,8 @@ fn retile(app: &AppHandle) {
     }
 }
 
+// Glue: computes an off-screen parking rect from the live window's size.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn editor_parking_pane(app: &AppHandle) -> Option<(LogicalPosition<f64>, LogicalSize<f64>)> {
     let win = app.get_window(WINDOW)?;
     let size = win.inner_size().ok()?;
@@ -1251,8 +1358,8 @@ fn editor_parking_pane(app: &AppHandle) -> Option<(LogicalPosition<f64>, Logical
 #[cfg(test)]
 mod tests {
     use super::{
-        editor_label_for, external_open_command, keepalive_env_enabled, merged_servers,
-        sanitize_server_label, Server,
+        close_current_menu_item, editor_label_for, external_open_command, keepalive_env_enabled,
+        menu_server_label, merged_servers, sanitize_server_label, selected_server_has_url, Server,
     };
 
     #[cfg(target_os = "macos")]
@@ -1260,6 +1367,63 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     use tauri::TitleBarStyle;
+
+    fn server(id: &str, owned: bool, url: &str) -> Server {
+        Server {
+            id: id.into(),
+            label: id.into(),
+            url: url.into(),
+            owned,
+            renamed: false,
+        }
+    }
+
+    #[test]
+    fn close_current_menu_item_label_depends_on_ownership() {
+        let servers = vec![
+            server("owned", true, "http://127.0.0.1:1/"),
+            server("external", false, ""),
+        ];
+        // No selection ⇒ disabled "Close Current Server".
+        let none = close_current_menu_item(&servers, None);
+        assert_eq!(none.label, "Close Current Server");
+        assert!(!none.enabled);
+        // Selecting an unknown id ⇒ also disabled.
+        let missing = close_current_menu_item(&servers, Some("ghost"));
+        assert!(!missing.enabled);
+        // An owned selection ⇒ "Close"; an external one ⇒ "Forget".
+        let owned = close_current_menu_item(&servers, Some("owned"));
+        assert_eq!(owned.label, "Close Current Server");
+        assert!(owned.enabled);
+        let external = close_current_menu_item(&servers, Some("external"));
+        assert_eq!(external.label, "Forget Current Server");
+        assert!(external.enabled);
+    }
+
+    #[test]
+    fn selected_server_has_url_requires_a_selected_nonblank_url() {
+        let servers = vec![
+            server("with-url", true, "http://127.0.0.1:1/"),
+            server("blank", false, ""),
+        ];
+        assert!(!selected_server_has_url(&servers, None));
+        assert!(!selected_server_has_url(&servers, Some("ghost")));
+        assert!(!selected_server_has_url(&servers, Some("blank")));
+        assert!(selected_server_has_url(&servers, Some("with-url")));
+    }
+
+    #[test]
+    fn menu_server_label_marks_external_servers() {
+        assert_eq!(menu_server_label(&server("s", true, "u")), "s");
+        assert_eq!(menu_server_label(&server("s", false, "u")), "s (external)");
+    }
+
+    #[test]
+    fn mux_state_starts_empty() {
+        let state = super::MuxState::new();
+        assert!(state.selected.lock().unwrap().is_none());
+        assert!(state.status.lock().unwrap().is_none());
+    }
 
     #[test]
     fn keepalive_defaults_on_with_common_disable_values() {
@@ -1324,12 +1488,14 @@ mod tests {
             label: "server-1".into(),
             url: "http://127.0.0.1:1/".into(),
             owned: true,
+            renamed: false,
         };
         let registered = Server {
             id: "server-1".into(),
             label: "bridge label".into(),
             url: "http://127.0.0.1:2/".into(),
             owned: false,
+            renamed: false,
         };
         assert_eq!(
             merged_servers(vec![owned.clone()], vec![registered]),

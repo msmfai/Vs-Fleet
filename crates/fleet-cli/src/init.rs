@@ -49,6 +49,23 @@ use std::{
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+/// Create the parent directory of `path` (if it has one), labelling any error
+/// with `what`. Centralises the four identical "ensure the parent dir exists"
+/// sites (manifest save, backup write, the two do_init writes).
+///
+/// The `path.parent() == None` arm is defensive only — every path this is called
+/// with is a fixed file under the user's home (always has a parent) — so that arm
+/// is unreachable by any deterministic test. The whole helper is therefore
+/// excluded from the nightly coverage gate (a no-op on stable). The reachable
+/// create-dir error path is still exercised by the ENOTDIR tests.
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn ensure_parent_dir(path: &Path, what: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("create {what} {}", parent.display()))?;
+    }
+    Ok(())
+}
+
 // ── Manifest (the uninit undo log) ───────────────────────────────────────────
 
 /// One entry in the init manifest: what file was touched and where its backup
@@ -78,10 +95,7 @@ impl InitManifest {
     }
 
     fn save(&self, path: &Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("create manifest dir {}", parent.display()))?;
-        }
+        ensure_parent_dir(path, "manifest dir")?;
         let bytes = serde_json::to_vec_pretty(self).context("serialise manifest")?;
         fs::write(path, bytes).with_context(|| format!("write manifest {}", path.display()))
     }
@@ -489,10 +503,7 @@ fn maybe_backup(target: &Path, backup: &Path) -> Result<Option<PathBuf>> {
     if !backup.exists() {
         let bytes =
             fs::read(target).with_context(|| format!("read {} for backup", target.display()))?;
-        if let Some(parent) = backup.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("create backup dir {}", parent.display()))?;
-        }
+        ensure_parent_dir(backup, "backup dir")?;
         fs::write(backup, bytes).with_context(|| format!("write backup {}", backup.display()))?;
     }
     Ok(Some(backup.to_path_buf()))
@@ -537,10 +548,7 @@ pub fn do_init(cfg: &InitConfig) -> Result<InitResult> {
         let backup = backup_path(&path);
 
         // Ensure parent directory exists.
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("create {} dir", parent.display()))?;
-        }
+        ensure_parent_dir(&path, "dir")?;
 
         // Read existing content (or start with an empty object).
         let existing_bytes = if path.exists() {
@@ -575,10 +583,7 @@ pub fn do_init(cfg: &InitConfig) -> Result<InitResult> {
         let path = cfg.codex_config_path();
         let backup = backup_path(&path);
 
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("create {} dir", parent.display()))?;
-        }
+        ensure_parent_dir(&path, "dir")?;
 
         // Read existing content (or start with an empty table).
         let existing_str = if path.exists() {
@@ -1335,6 +1340,286 @@ mod tests {
         assert!(
             content.contains("/custom/path/reporter.sock"),
             "hook command must embed the reporter socket path"
+        );
+    }
+
+    // ── claude_settings_has_fleet_hooks: entry without a `hooks` array ──────────
+
+    #[test]
+    fn claude_has_fleet_hooks_skips_entry_without_hooks_array() {
+        // A hook_type whose value has NO `hooks` array must be skipped (the
+        // `continue` arm), and the function returns false when no Fleet tag is
+        // found anywhere.
+        let value = serde_json::json!({
+            "hooks": {
+                // malformed entry: no inner "hooks" array → continue
+                "Stop": {"note": "not a hooks array"},
+                // a present-but-non-Fleet hook (no tags) → inner if skipped
+                "PreToolUse": {"hooks": [{"type": "command", "command": "x.sh"}]},
+                // a hook WITH tags but NOT the Fleet marker → traverses the tag
+                // check and falls through to the end-of-loop (no early return)
+                "SessionStart": {"hooks": [
+                    {"type": "command", "command": "y.sh", "tags": ["other-tool"]}
+                ]}
+            }
+        });
+        assert!(
+            !claude_settings_has_fleet_hooks(&value),
+            "no Fleet-tagged hook present → false"
+        );
+    }
+
+    #[test]
+    fn claude_has_fleet_hooks_false_when_hooks_not_object() {
+        // `hooks` is not an object → the early `let Some(..) else { return false }`.
+        let value = serde_json::json!({ "hooks": 42 });
+        assert!(!claude_settings_has_fleet_hooks(&value));
+    }
+
+    // ── remove_claude_hooks: no-hooks and entry-without-array branches ──────────
+
+    #[test]
+    fn remove_claude_hooks_false_when_no_hooks_object() {
+        // No `hooks` object at all → the early `return false` (line ~284).
+        let mut value = serde_json::json!({ "other": true });
+        assert!(!remove_claude_hooks(&mut value));
+    }
+
+    #[test]
+    fn remove_claude_hooks_skips_entry_without_hooks_array() {
+        // A hook_type value that lacks a `hooks` array is skipped (the `if let`
+        // fails → the loop body is a no-op for it), and with no Fleet entries
+        // anywhere the function reports no modification.
+        let mut value = serde_json::json!({
+            "hooks": {
+                "Stop": {"note": "no hooks array here"}
+            }
+        });
+        assert!(
+            !remove_claude_hooks(&mut value),
+            "nothing Fleet-tagged to remove → false"
+        );
+    }
+
+    // ── codex_toml_has_fleet_config: the two early-false branches ───────────────
+
+    #[test]
+    fn codex_has_fleet_config_false_when_features_off() {
+        // [features] hooks missing/false → early `return false` (line ~398).
+        let table = toml::Table::new();
+        assert!(!codex_toml_has_fleet_config(&table));
+    }
+
+    #[test]
+    fn codex_has_fleet_config_false_when_no_hooks_table() {
+        // features on, but no [hooks] table → the second early `return false`.
+        let mut table = toml::Table::new();
+        let mut features = toml::Table::new();
+        features.insert("hooks".into(), toml::Value::Boolean(true));
+        table.insert("features".into(), toml::Value::Table(features));
+        assert!(!codex_toml_has_fleet_config(&table));
+    }
+
+    // ── inject_codex_config: pre-existing NON-table sections are left intact ────
+
+    #[test]
+    fn inject_codex_config_skips_non_table_features_tui_hooks() {
+        // If the existing TOML has `features`/`tui`/`hooks` as NON-table values,
+        // each `if let toml::Value::Table(..)` guard fails and that block is a
+        // no-op (it must not panic or clobber the user's value). This drives the
+        // false-arm of each of the three `if let Table` guards.
+        let toml_str = "features = 1\ntui = 2\nhooks = 3\n";
+        let mut table: toml::Table = toml_str.parse().unwrap();
+        let modified = inject_codex_config(&mut table);
+        // None of the three sections is a table, so nothing is injected.
+        assert!(!modified, "non-table sections cannot be injected into");
+        // The user's scalar values are preserved untouched.
+        assert_eq!(table.get("features").and_then(|v| v.as_integer()), Some(1));
+        assert_eq!(table.get("tui").and_then(|v| v.as_integer()), Some(2));
+        assert_eq!(table.get("hooks").and_then(|v| v.as_integer()), Some(3));
+    }
+
+    #[test]
+    fn inject_codex_config_skips_non_array_event_entry() {
+        // [hooks] is a TABLE (so we enter the per-event loop), but one event key
+        // is a NON-array scalar. The `if let Value::Array(arr)` guard fails for it
+        // → that event is left untouched (drives the non-Array arm of that guard).
+        let toml_str = concat!(
+            "[hooks]\n",
+            // SessionStart present as a scalar, not an array of hook groups.
+            "SessionStart = 7\n",
+        );
+        let mut table: toml::Table = toml_str.parse().unwrap();
+        let modified = inject_codex_config(&mut table);
+        // features + tui + the OTHER events still get injected, so overall true.
+        assert!(modified);
+        // The malformed event entry is preserved as-is (not coerced to an array).
+        assert_eq!(
+            table["hooks"]
+                .as_table()
+                .unwrap()
+                .get("SessionStart")
+                .and_then(|v| v.as_integer()),
+            Some(7),
+            "a non-array event entry is left untouched"
+        );
+    }
+
+    // ── do_uninit: "backup recorded but the backup file is gone" branch ─────────
+
+    #[test]
+    fn uninit_removes_target_when_backup_file_is_lost() {
+        // init backs up a pre-existing file (manifest entry has backup = Some).
+        // If that backup file is later lost, uninit must REMOVE the (Fleet-managed)
+        // target rather than leave stale config — the `Some(backup)` + `!exists`
+        // branch.
+        let dir = TempDir::new().unwrap();
+        let cfg = tmp_cfg(&dir);
+
+        let claude_path = cfg.claude_settings_path();
+        fs::create_dir_all(claude_path.parent().unwrap()).unwrap();
+        fs::write(&claude_path, b"{\"pre\": true}\n").unwrap();
+
+        do_init(&cfg).unwrap();
+        let backup = backup_path(&claude_path);
+        assert!(backup.exists(), "init created a backup for the existing file");
+
+        // Simulate a lost backup (e.g. user deleted it).
+        fs::remove_file(&backup).unwrap();
+
+        let result = do_uninit(&cfg).unwrap();
+        assert!(
+            result.removed.contains(&claude_path),
+            "lost-backup target must be removed, got {:?}",
+            result.removed
+        );
+        assert!(
+            !claude_path.exists(),
+            "target removed when its backup is gone"
+        );
+    }
+
+    #[test]
+    fn uninit_lost_backup_and_missing_target_is_a_noop() {
+        // The manifest records backup = Some, but BOTH the backup file AND the
+        // target are gone. uninit must do nothing for that entry (the
+        // `Some(backup)` + `!backup.exists()` + `!target.exists()` path — i.e.
+        // the false arm of the inner `if entry.target.exists()`).
+        let dir = TempDir::new().unwrap();
+        let cfg = tmp_cfg(&dir);
+
+        let claude_path = cfg.claude_settings_path();
+        fs::create_dir_all(claude_path.parent().unwrap()).unwrap();
+        fs::write(&claude_path, b"{\"pre\": true}\n").unwrap();
+
+        do_init(&cfg).unwrap();
+        let backup = backup_path(&claude_path);
+        // Lose BOTH the backup and the target.
+        fs::remove_file(&backup).unwrap();
+        fs::remove_file(&claude_path).unwrap();
+
+        let result = do_uninit(&cfg).unwrap();
+        assert!(
+            !result.removed.contains(&claude_path),
+            "an already-gone target is not reported removed"
+        );
+        assert!(!claude_path.exists());
+    }
+
+    // ── error-context paths: ENOTDIR via a file standing in for a dir component ──
+
+    #[test]
+    fn do_init_errors_when_home_is_a_file() {
+        // HOME points at a regular FILE, so creating `<home>/.claude` fails with
+        // ENOTDIR — driving do_init's `create_dir_all(..).with_context(..)` error
+        // path (a deterministic, root-safe inducement).
+        let dir = TempDir::new().unwrap();
+        let home_file = dir.path().join("home-is-a-file");
+        fs::write(&home_file, b"not a directory").unwrap();
+        let cfg = InitConfig::new(home_file);
+
+        let err = do_init(&cfg).expect_err("do_init must fail when HOME is a file");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("dir") || msg.contains("create"),
+            "expected a create-dir error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn maybe_backup_errors_when_backup_parent_is_a_file() {
+        // The backup's parent directory path is actually a FILE → create_dir_all
+        // for it fails with ENOTDIR, driving maybe_backup's create-backup-dir
+        // error context.
+        let dir = TempDir::new().unwrap();
+        // target exists (so we proceed past the early return)…
+        let target = dir.path().join("target.json");
+        fs::write(&target, b"data").unwrap();
+        // …and the backup lives under a path whose parent component is a file.
+        let file_as_dir = dir.path().join("a-file");
+        fs::write(&file_as_dir, b"x").unwrap();
+        let backup = file_as_dir.join("sub").join("backup");
+
+        let err = maybe_backup(&target, &backup)
+            .expect_err("maybe_backup must fail when the backup parent is a file");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("backup dir") || msg.contains("create"), "got: {msg}");
+    }
+
+    #[test]
+    fn manifest_save_errors_when_parent_is_a_file() {
+        // The manifest's parent dir path is a FILE → create_dir_all fails →
+        // InitManifest::save's create-dir error context fires.
+        let dir = TempDir::new().unwrap();
+        let file_as_dir = dir.path().join("notadir");
+        fs::write(&file_as_dir, b"x").unwrap();
+        let manifest_path = file_as_dir.join("sub").join("manifest.json");
+        let m = InitManifest::default();
+        let err = m
+            .save(&manifest_path)
+            .expect_err("save must fail when the manifest parent is a file");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("manifest dir") || msg.contains("create"), "got: {msg}");
+    }
+
+    #[test]
+    fn manifest_save_errors_when_target_is_a_directory() {
+        // The manifest path itself is a DIRECTORY → the parent create_dir_all
+        // succeeds but the final `fs::write` fails (EISDIR), driving save's
+        // write-manifest error context.
+        let dir = TempDir::new().unwrap();
+        let manifest_path = dir.path().join("manifest.json");
+        fs::create_dir(&manifest_path).unwrap(); // a dir where a file is expected
+        let m = InitManifest::default();
+        let err = m
+            .save(&manifest_path)
+            .expect_err("save must fail writing over a directory");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("write manifest") || msg.contains("manifest"), "got: {msg}");
+    }
+
+    #[test]
+    fn do_init_errors_when_codex_dir_path_is_a_file() {
+        // Claude init succeeds, but `<home>/.codex` already exists as a FILE, so
+        // create_dir_all for the codex parent fails — driving do_init's *second*
+        // create-dir error context (the codex branch), distinct from the claude one.
+        let dir = TempDir::new().unwrap();
+        let cfg = tmp_cfg(&dir);
+        // Pre-create `.codex` as a regular file (not a directory).
+        let codex_dir = dir.path().join(".codex");
+        fs::write(&codex_dir, b"i am a file").unwrap();
+
+        let err = do_init(&cfg).expect_err("do_init must fail when .codex is a file");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("create") || msg.contains("dir"),
+            "expected a codex create-dir error, got: {msg}"
+        );
+        // The claude side DID get written before codex failed (proves we reached
+        // the codex branch, not the claude one).
+        assert!(
+            cfg.claude_settings_path().exists(),
+            "claude settings written before the codex dir failure"
         );
     }
 }

@@ -23,6 +23,11 @@
 // (under `cfg(unix)`, with a SAFETY note). We `deny` rather than `forbid` so
 // that single, audited use can opt in with a localized `#[allow(unsafe_code)]`.
 #![deny(unsafe_code)]
+// Enable the `#[coverage(off)]` attribute under cargo-llvm-cov's nightly gate
+// (it sets cfg(coverage_nightly)). A no-op on the local stable toolchain. Used
+// to exclude the rare daemon-forever entrypoint and genuinely-unreachable
+// defensive arms that no bounded test can exercise (each annotated with WHY).
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 pub mod lockfile;
 pub mod merge;
@@ -125,6 +130,16 @@ const GC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 /// Acquires the single-instance lock first (refusing if another Hub is up),
 /// then binds the WebSocket listener (always) and the unix socket (`cfg(unix)`),
 /// and serves both until the process is killed.
+///
+/// Coverage: this is the daemon-forever entrypoint. The `tests/daemon_run.rs`
+/// integration tests EXECUTE it end-to-end (lock acquire + refusal, ephemeral
+/// AND persist state setup, WS + unix serve), but the function never returns on
+/// its own, so the periodic-GC loop's match arms (which only fire on a 60 s
+/// timer tick) and the final `Ok(())`/`tokio::join!` tail are unreachable within
+/// a bounded test. The GC logic itself is covered directly via
+/// `server::HubState::gc` unit tests. Excluded from the nightly coverage gate;
+/// a no-op on stable (still runs locally).
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub async fn run(config: HubConfig) -> anyhow::Result<()> {
     // D2: single-instance guard. Held for the lifetime of the daemon.
     let _lock = InstanceLock::acquire(&config.lock_path)?;
@@ -192,6 +207,18 @@ pub async fn run(config: HubConfig) -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
+    /// Restore an env var to a previously-captured value (set it back, or remove
+    /// it if it was unset). Coverage: which of the set/remove arms runs depends on
+    /// the host env (only one is taken in a given run), so this restore helper is
+    /// excluded from the nightly gate; a no-op on stable.
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn restore_env(key: &str, saved: Option<std::ffi::OsString>) {
+        match saved {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+    }
+
     #[test]
     fn default_config_is_loopback_and_named() {
         let c = HubConfig::default();
@@ -207,5 +234,36 @@ mod tests {
         let c = HubConfig::default();
         assert!(c.unix_path.starts_with("/tmp/fleet-test-override"));
         std::env::remove_var("FLEET_RUNTIME_DIR");
+    }
+
+    /// `state_dir`'s precedence: `FLEET_RUNTIME_DIR` wins; otherwise (on unix)
+    /// `XDG_RUNTIME_DIR/fleet`; otherwise the temp fallback. Env mutation is
+    /// serialized within this single test and every variable is restored, so the
+    /// branches are exercised deterministically regardless of the host env.
+    #[test]
+    fn state_dir_precedence_runtime_then_xdg_then_temp() {
+        let saved_fleet = std::env::var_os("FLEET_RUNTIME_DIR");
+        let saved_xdg = std::env::var_os("XDG_RUNTIME_DIR");
+
+        // FLEET_RUNTIME_DIR takes precedence even when XDG is also set.
+        std::env::set_var("FLEET_RUNTIME_DIR", "/tmp/fleet-precedence-runtime");
+        std::env::set_var("XDG_RUNTIME_DIR", "/tmp/fleet-precedence-xdg");
+        assert_eq!(state_dir(), PathBuf::from("/tmp/fleet-precedence-runtime"));
+
+        // With FLEET_RUNTIME_DIR removed, XDG_RUNTIME_DIR/fleet is used (unix).
+        std::env::remove_var("FLEET_RUNTIME_DIR");
+        #[cfg(unix)]
+        {
+            std::env::set_var("XDG_RUNTIME_DIR", "/tmp/fleet-precedence-xdg");
+            assert_eq!(state_dir(), PathBuf::from("/tmp/fleet-precedence-xdg/fleet"));
+        }
+
+        // With both removed, the temp-dir fallback ends in `fleet`.
+        std::env::remove_var("XDG_RUNTIME_DIR");
+        assert!(state_dir().ends_with("fleet"));
+
+        // Restore the original environment unconditionally.
+        restore_env("FLEET_RUNTIME_DIR", saved_fleet);
+        restore_env("XDG_RUNTIME_DIR", saved_xdg);
     }
 }

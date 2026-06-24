@@ -392,6 +392,22 @@ mod tests {
         make_tab(id, TabState::Done, None, false)
     }
 
+    /// The exact `Fire` outcome [`tab_transition`]/[`view_transition`] must
+    /// produce for a waiting tab built by [`make_tab`] (title `"Session {id}"`).
+    /// Built from the production `notification_text` so the expectation tracks
+    /// the source of truth, and used to assert the full intent without a fallible
+    /// `match`/`panic!` arm.
+    fn expect_fire(id: &str, urgency: Urgency) -> NotificationOutcome {
+        let tab = make_tab(id, TabState::Waiting, Some(urgency), false);
+        let (title, body) = notification_text(&tab);
+        NotificationOutcome::Fire(NotificationIntent {
+            session_id: id.into(),
+            title,
+            body,
+            sound: tab_urgency_to_sound(Some(urgency)),
+        })
+    }
+
     // ── urgency_to_sound mapping table ────────────────────────────────────────
 
     /// Approval tier maps to a distinct sound name.
@@ -496,13 +512,17 @@ mod tests {
     fn new_tab_arrives_waiting_fires_notification() {
         let new_tab = waiting("s1", Urgency::Approval);
         let outcome = tab_transition(None, Some(&new_tab));
-        match outcome {
-            NotificationOutcome::Fire(intent) => {
-                assert_eq!(intent.session_id, "s1");
-                assert_eq!(intent.sound, Some(NotificationSound::Approval));
-            }
-            other => panic!("expected Fire, got {other:?}"),
-        }
+        assert_eq!(outcome, expect_fire("s1", Urgency::Approval));
+        // The Approval tier carries its distinct sound.
+        assert_eq!(
+            outcome,
+            NotificationOutcome::Fire(NotificationIntent {
+                session_id: "s1".into(),
+                title: "Approval needed — Session s1".into(),
+                body: "Agent is waiting for your response.".into(),
+                sound: Some(NotificationSound::Approval),
+            })
+        );
     }
 
     /// Transition from Working → Waiting fires a notification.
@@ -511,13 +531,7 @@ mod tests {
         let old = working("s1");
         let new_tab = waiting("s1", Urgency::Approval);
         let outcome = tab_transition(Some(&old), Some(&new_tab));
-        match outcome {
-            NotificationOutcome::Fire(intent) => {
-                assert_eq!(intent.session_id, "s1");
-                assert_eq!(intent.sound, Some(NotificationSound::Approval));
-            }
-            other => panic!("expected Fire, got {other:?}"),
-        }
+        assert_eq!(outcome, expect_fire("s1", Urgency::Approval));
     }
 
     /// Transition from Idle → Waiting fires a notification.
@@ -526,13 +540,7 @@ mod tests {
         let old = idle("s1");
         let new_tab = waiting("s1", Urgency::Question);
         let outcome = tab_transition(Some(&old), Some(&new_tab));
-        match outcome {
-            NotificationOutcome::Fire(intent) => {
-                assert_eq!(intent.session_id, "s1");
-                assert_eq!(intent.sound, Some(NotificationSound::Question));
-            }
-            other => panic!("expected Fire, got {other:?}"),
-        }
+        assert_eq!(outcome, expect_fire("s1", Urgency::Question));
     }
 
     /// Transition from Done → Waiting fires a notification.
@@ -541,8 +549,9 @@ mod tests {
         let old = done("s1");
         let new_tab = waiting("s1", Urgency::Approval);
         let outcome = tab_transition(Some(&old), Some(&new_tab));
-        assert!(
-            matches!(outcome, NotificationOutcome::Fire(_)),
+        assert_eq!(
+            outcome,
+            expect_fire("s1", Urgency::Approval),
             "done→waiting must fire"
         );
     }
@@ -553,15 +562,14 @@ mod tests {
         let old = working("s1");
         let new_tab = waiting("s1", Urgency::IdleDone);
         let outcome = tab_transition(Some(&old), Some(&new_tab));
-        match outcome {
-            NotificationOutcome::Fire(intent) => {
-                assert_eq!(
-                    intent.sound, None,
-                    "IdleDone tier must produce no sound (silent)"
-                );
-            }
-            other => panic!("expected Fire(silent), got {other:?}"),
-        }
+        // Fires, but the IdleDone tier carries no sound (silent tier). The
+        // expected outcome's sound is None (IdleDone maps to silence).
+        assert_eq!(
+            tab_urgency_to_sound(Some(Urgency::IdleDone)),
+            None,
+            "IdleDone tier must produce no sound (silent)"
+        );
+        assert_eq!(outcome, expect_fire("s1", Urgency::IdleDone));
     }
 
     // ── tab_transition — auto-resolve cases ───────────────────────────────────
@@ -627,12 +635,12 @@ mod tests {
     fn auto_resolve_carries_session_id() {
         let old = waiting("my-session-99", Urgency::Approval);
         let new_tab = working("my-session-99");
-        match tab_transition(Some(&old), Some(&new_tab)) {
-            NotificationOutcome::AutoResolve { session_id } => {
-                assert_eq!(session_id, "my-session-99");
+        assert_eq!(
+            tab_transition(Some(&old), Some(&new_tab)),
+            NotificationOutcome::AutoResolve {
+                session_id: "my-session-99".into()
             }
-            other => panic!("expected AutoResolve, got {other:?}"),
-        }
+        );
     }
 
     // ── tab_transition — noop cases ───────────────────────────────────────────
@@ -749,12 +757,8 @@ mod tests {
         let old = waiting("s1", Urgency::Question);
         let new_tab = waiting("s1", Urgency::Approval);
         let outcome = tab_transition(Some(&old), Some(&new_tab));
-        match outcome {
-            NotificationOutcome::Fire(intent) => {
-                assert_eq!(intent.sound, Some(NotificationSound::Approval));
-            }
-            other => panic!("expected Fire on urgency escalation, got {other:?}"),
-        }
+        // Escalation Question → Approval re-fires with the Approval sound.
+        assert_eq!(outcome, expect_fire("s1", Urgency::Approval));
     }
 
     /// Same urgency while already Waiting: no new fire.
@@ -774,30 +778,42 @@ mod tests {
     #[test]
     fn fire_intent_has_non_empty_title_and_body() {
         let new_tab = waiting("s1", Urgency::Approval);
-        match tab_transition(None, Some(&new_tab)) {
-            NotificationOutcome::Fire(intent) => {
-                assert!(!intent.title.is_empty(), "title must not be empty");
-                assert!(!intent.body.is_empty(), "body must not be empty");
-            }
-            other => panic!("expected Fire, got {other:?}"),
-        }
+        // The intent the transition fires equals our fully-built expectation,
+        // whose title and body are both non-empty.
+        let intent = NotificationIntent {
+            session_id: "s1".into(),
+            title: "Approval needed — Session s1".into(),
+            body: "Agent is waiting for your response.".into(),
+            sound: Some(NotificationSound::Approval),
+        };
+        assert!(!intent.title.is_empty(), "title must not be empty");
+        assert!(!intent.body.is_empty(), "body must not be empty");
+        assert_eq!(
+            tab_transition(None, Some(&new_tab)),
+            NotificationOutcome::Fire(intent)
+        );
     }
 
     /// Approval notification title contains the session title.
     #[test]
     fn fire_intent_title_contains_session_title() {
         let new_tab = waiting("s1", Urgency::Approval);
-        match tab_transition(None, Some(&new_tab)) {
-            NotificationOutcome::Fire(intent) => {
-                assert!(
-                    intent.title.contains(&new_tab.title),
-                    "title '{}' should contain session title '{}'",
-                    intent.title,
-                    new_tab.title
-                );
-            }
-            other => panic!("expected Fire, got {other:?}"),
-        }
+        let intent = NotificationIntent {
+            session_id: "s1".into(),
+            title: "Approval needed — Session s1".into(),
+            body: "Agent is waiting for your response.".into(),
+            sound: Some(NotificationSound::Approval),
+        };
+        assert!(
+            intent.title.contains(&new_tab.title),
+            "title '{}' should contain session title '{}'",
+            intent.title,
+            new_tab.title
+        );
+        assert_eq!(
+            tab_transition(None, Some(&new_tab)),
+            NotificationOutcome::Fire(intent)
+        );
     }
 
     // ── exhaustive: every pinging state entry fires exactly once ─────────────
@@ -814,8 +830,9 @@ mod tests {
         for old_tab in &non_waiting_states {
             let new_tab = waiting("s", Urgency::Approval);
             let outcome = tab_transition(Some(old_tab), Some(&new_tab));
-            assert!(
-                matches!(outcome, NotificationOutcome::Fire(_)),
+            assert_eq!(
+                outcome,
+                expect_fire("s", Urgency::Approval),
                 "transition from {:?} → Waiting must Fire",
                 old_tab.state
             );
@@ -835,8 +852,11 @@ mod tests {
         for new_tab in &non_waiting_new {
             let old = waiting("s", Urgency::Approval);
             let outcome = tab_transition(Some(&old), Some(new_tab));
-            assert!(
-                matches!(outcome, NotificationOutcome::AutoResolve { .. }),
+            assert_eq!(
+                outcome,
+                NotificationOutcome::AutoResolve {
+                    session_id: "s".into()
+                },
                 "transition from Waiting → {:?} must AutoResolve",
                 new_tab.state
             );
@@ -897,14 +917,9 @@ mod tests {
         };
 
         let outcomes = view_transition(&old, &new);
-        assert_eq!(outcomes.len(), 1);
-        match &outcomes[0] {
-            NotificationOutcome::Fire(intent) => {
-                assert_eq!(intent.session_id, "other");
-                assert_eq!(intent.sound, Some(NotificationSound::Question));
-            }
-            other => panic!("expected Fire for unsuppressed waiting tab, got {other:?}"),
-        }
+        // Unsoloing "solo" leaves "other" the one still-waiting unsuppressed tab,
+        // which fires with its Question-tier sound.
+        assert_eq!(outcomes, vec![expect_fire("other", Urgency::Question)]);
     }
 
     #[test]
@@ -917,5 +932,93 @@ mod tests {
         let new = InboxView { tabs: vec![soloed] };
 
         assert_eq!(view_transition(&old, &new), Vec::new());
+    }
+
+    /// A brand-new waiting tab (no prior entry) fires through `view_transition`'s
+    /// `(None, _, true)` arm.
+    #[test]
+    fn view_transition_new_waiting_tab_fires() {
+        let old = InboxView { tabs: Vec::new() };
+        let new = InboxView {
+            tabs: vec![waiting("fresh", Urgency::Approval)],
+        };
+        assert_eq!(
+            view_transition(&old, &new),
+            vec![expect_fire("fresh", Urgency::Approval)]
+        );
+    }
+
+    /// Removing a still-notifying waiting tab auto-resolves its ping through the
+    /// second loop's `should_notify` true branch.
+    #[test]
+    fn view_transition_removed_notifying_waiting_tab_auto_resolves() {
+        let old = InboxView {
+            tabs: vec![waiting("gone", Urgency::Approval)],
+        };
+        let new = InboxView { tabs: Vec::new() };
+        assert_eq!(
+            view_transition(&old, &new),
+            vec![NotificationOutcome::AutoResolve {
+                session_id: "gone".into()
+            }]
+        );
+    }
+
+    /// A still-notifying waiting tab whose urgency changes re-fires through
+    /// `view_transition`'s `(Some, true, true) if urgency changed` arm.
+    #[test]
+    fn view_transition_urgency_change_while_notifying_fires() {
+        let old = InboxView {
+            tabs: vec![waiting("s1", Urgency::Question)],
+        };
+        let new = InboxView {
+            tabs: vec![waiting("s1", Urgency::Approval)],
+        };
+        assert_eq!(
+            view_transition(&old, &new),
+            vec![expect_fire("s1", Urgency::Approval)]
+        );
+    }
+
+    /// A still-notifying waiting tab with UNCHANGED urgency is a Noop (the guard
+    /// `urgency != urgency` is false → falls through to the `_` arm).
+    #[test]
+    fn view_transition_same_urgency_while_notifying_is_noop() {
+        let old = InboxView {
+            tabs: vec![waiting("s1", Urgency::Approval)],
+        };
+        let new = InboxView {
+            tabs: vec![waiting("s1", Urgency::Approval)],
+        };
+        assert_eq!(view_transition(&old, &new), Vec::new());
+    }
+
+    /// A muted tab whose urgency escalates while still waiting stays Noop (the
+    /// still-waiting `muted` guard in `tab_transition`).
+    #[test]
+    fn muted_urgency_escalation_while_waiting_is_noop() {
+        let old = waiting_muted("s1", Urgency::Question);
+        let new_tab = waiting_muted("s1", Urgency::Approval);
+        assert_eq!(
+            tab_transition(Some(&old), Some(&new_tab)),
+            NotificationOutcome::Noop
+        );
+    }
+
+    /// A waiting tab with no urgency (`None`) still fires, using the generic
+    /// "Waiting" label (the `Some(Urgency::None) | None` arm of notification_text)
+    /// and a silent (no-sound) intent.
+    #[test]
+    fn waiting_tab_without_urgency_fires_generic_label() {
+        let new_tab = make_tab("s1", TabState::Waiting, None, false);
+        assert_eq!(
+            tab_transition(None, Some(&new_tab)),
+            NotificationOutcome::Fire(NotificationIntent {
+                session_id: "s1".into(),
+                title: "Waiting — Session s1".into(),
+                body: "Agent is waiting for your response.".into(),
+                sound: None,
+            })
+        );
     }
 }

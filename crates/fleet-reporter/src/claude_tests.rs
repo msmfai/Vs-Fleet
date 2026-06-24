@@ -693,3 +693,121 @@ fn pre_tool_use_parses_tool_use_id() {
     let e = ClaudeHookEvent::parse(json).unwrap();
     assert_eq!(e.tool_use_id.as_deref(), Some("toolu_016FQ3SN7uLEwwQEkQxU2nMA"));
 }
+
+// ── ClaudeHookKind::name() canonical wire token, every variant ────────────────
+
+#[test]
+fn hook_kind_name_is_canonical_for_every_variant() {
+    // name() must round-trip the on-wire token for each modelled variant, and an
+    // Other(_) must echo back the raw drift name verbatim. This is the inverse of
+    // from_name and is what the adapter writes back onto the wire.
+    let cases = [
+        (ClaudeHookKind::SessionStart, "SessionStart"),
+        (ClaudeHookKind::UserPromptSubmit, "UserPromptSubmit"),
+        (ClaudeHookKind::PreToolUse, "PreToolUse"),
+        (ClaudeHookKind::PostToolUse, "PostToolUse"),
+        (ClaudeHookKind::Stop, "Stop"),
+        (ClaudeHookKind::SubagentStop, "SubagentStop"),
+        (ClaudeHookKind::SessionEnd, "SessionEnd"),
+        (ClaudeHookKind::PreCompact, "PreCompact"),
+    ];
+    for (kind, token) in cases {
+        assert_eq!(kind.name(), token, "name() must equal canonical token");
+        // round-trip: from_name(name()) is the identity on modelled variants.
+        assert_eq!(ClaudeHookKind::from_name(kind.name()), kind);
+    }
+    // Other(_) preserves the unknown name verbatim (schema-drift forward-compat).
+    let other = ClaudeHookKind::Other("Notification".to_string());
+    assert_eq!(other.name(), "Notification");
+}
+
+// ── ClaudeHookEvent::from_value — parse from a serde_json::Value ──────────────
+
+#[test]
+fn from_value_parses_ok_like_parse() {
+    // The socket layer may hand us a pre-deserialized Value; from_value must yield
+    // the same parsed event as the string parser.
+    let v: serde_json::Value = serde_json::json!({
+        "session_id": "sV",
+        "cwd": "/proj",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_use_id": "toolu_abc"
+    });
+    let e = ClaudeHookEvent::from_value(v).unwrap();
+    assert_eq!(e.kind, ClaudeHookKind::PreToolUse);
+    assert_eq!(e.session_id, "sV");
+    assert_eq!(e.cwd.as_deref(), Some("/proj"));
+    assert_eq!(e.tool_name.as_deref(), Some("Bash"));
+    assert_eq!(e.tool_use_id.as_deref(), Some("toolu_abc"));
+}
+
+#[test]
+fn from_value_wrong_type_is_invalid_json_error() {
+    // A Value whose field shape can't deserialize into RawClaudeHook (here a
+    // numeric hook_event_name) hits the InvalidJson error arm of from_value.
+    let v: serde_json::Value = serde_json::json!({
+        "session_id": "sV",
+        "hook_event_name": 42
+    });
+    assert!(matches!(
+        ClaudeHookEvent::from_value(v),
+        Err(ClaudeParseError::InvalidJson(_))
+    ));
+}
+
+// ── inbox preview: states that carry no preview (the `_ => None` arm) ─────────
+
+#[test]
+fn working_state_without_tool_has_no_preview() {
+    // The Working arm maps last_tool → "Running …"; with no tool seen yet the
+    // map yields None. This exercises a Working run with no preview line.
+    let mut m = machine();
+    let mut e = ev(ClaudeHookKind::UserPromptSubmit);
+    e.cwd = None; // keep default cwd; no tool_name set ⇒ last_tool stays None
+    m.apply(&e);
+    assert_eq!(m.state(), State::Working);
+    assert!(
+        m.to_run("r", "t").last_message.is_none(),
+        "Working with no tool seen yields no preview"
+    );
+}
+
+#[test]
+fn waiting_like_state_has_no_inbox_preview_fallthrough_arm() {
+    // The preview match in `last_message()` special-cases Working/Idle/Done/Dead
+    // and has a `_ => None` fall-through for any other State (only Waiting remains
+    // in the six-variant model). S15 never *enters* Waiting through a transition,
+    // so to exercise the fall-through we put a machine into Waiting directly (the
+    // test module is inside claude.rs, so it can touch the private `state` field)
+    // and assert the run snapshot carries no preview line for that state.
+    let mut m = machine();
+    m.apply(&ev(ClaudeHookKind::UserPromptSubmit)); // Working, with a real message set below
+    m.last_assistant_message = Some("ignored while waiting".to_string());
+    m.state = State::Waiting;
+    let run = m.to_run("r", "t");
+    assert_eq!(run.state, State::Waiting);
+    assert!(
+        run.last_message.is_none(),
+        "a non-modelled state falls through the preview match to None"
+    );
+}
+
+// ── ClaudeAdapter::machine_of accessor ───────────────────────────────────────
+
+#[test]
+fn adapter_machine_of_borrows_tracked_session() {
+    let mut a = ClaudeAdapter::new();
+    assert!(
+        a.machine_of(SESSION).is_none(),
+        "no machine before any event"
+    );
+    a.ingest(&ev(ClaudeHookKind::UserPromptSubmit));
+    let m = a.machine_of(SESSION).expect("machine after first event");
+    assert_eq!(m.session_id(), SESSION);
+    assert_eq!(m.state(), State::Working);
+    assert!(
+        a.machine_of("nope").is_none(),
+        "unknown session has no machine"
+    );
+}

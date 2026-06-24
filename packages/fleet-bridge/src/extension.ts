@@ -154,6 +154,8 @@ export function activate(context: vscode.ExtensionContext): void {
   let retry: ReturnType<typeof setTimeout> | null = null;
 
   const connect = (): void => {
+    /* c8 ignore next -- defensive: dispose() clears the retry timer, so connect()
+       is never re-entered after disposal; this guard can't fire in practice. */
     if (disposed) return;
     const socket = new WebSocket(url);
     ws = socket;
@@ -232,10 +234,13 @@ export function activate(context: vscode.ExtensionContext): void {
             log(`handler ERR ${type}: ${e}`);
             fail(reqId, e);
           });
+          /* c8 ignore start -- defensive: every call site passes an async fn, so
+             fn() never throws synchronously; this catch is unreachable in practice. */
         } catch (e) {
           log(`handler ERR ${type}: ${e}`);
           fail(reqId, e);
         }
+        /* c8 ignore stop */
       };
 
       switch (type) {

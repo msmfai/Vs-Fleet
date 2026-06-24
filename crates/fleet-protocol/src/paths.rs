@@ -100,5 +100,32 @@ mod tests {
             .parent()
             .map(|p| p.ends_with(RUNTIME_SUBDIR))
             .unwrap_or(false));
+
+        // 2. On unix, a non-empty XDG_RUNTIME_DIR is used verbatim as the
+        //    parent of fleet/reporter.sock; an empty one falls through to temp.
+        #[cfg(unix)]
+        {
+            // This is the only test that touches XDG_RUNTIME_DIR (the file's
+            // env-mutating tests are deliberately consolidated), so it sets a
+            // deterministic value and clears it unconditionally at the end —
+            // no machine-dependent save/restore branch to leave uncovered.
+            std::env::set_var("XDG_RUNTIME_DIR", "/run/user/4242");
+            assert_eq!(
+                default_reporter_socket(),
+                PathBuf::from("/run/user/4242")
+                    .join(RUNTIME_SUBDIR)
+                    .join(REPORTER_SOCKET_NAME),
+                "non-empty XDG_RUNTIME_DIR must root the reporter socket"
+            );
+
+            std::env::set_var("XDG_RUNTIME_DIR", "");
+            let temp_fallback = default_reporter_socket();
+            assert!(
+                temp_fallback.starts_with(std::env::temp_dir()),
+                "empty XDG_RUNTIME_DIR falls through to the temp dir, got {temp_fallback:?}"
+            );
+
+            std::env::remove_var("XDG_RUNTIME_DIR");
+        }
     }
 }

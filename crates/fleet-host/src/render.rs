@@ -322,6 +322,34 @@ mod tests {
     }
 
     #[test]
+    fn state_label_covers_every_terminal_state() {
+        // The renderer must produce a distinct lowercase token for every
+        // TabState the reducer can emit (error/dead are the rarely-hit arms).
+        assert_eq!(state_label(TabState::Working), "working");
+        assert_eq!(state_label(TabState::Waiting), "waiting");
+        assert_eq!(state_label(TabState::Idle), "idle");
+        assert_eq!(state_label(TabState::Done), "done");
+        assert_eq!(state_label(TabState::Error), "error");
+        assert_eq!(state_label(TabState::Dead), "dead");
+    }
+
+    #[test]
+    fn renders_error_and_dead_states_with_their_glyphs() {
+        let mut model = InboxModel::new();
+        model.apply(Event::snapshot(vec![
+            session_with_run("err", "broke", State::Error),
+            session_with_run("gone", "exited", State::Dead),
+        ]));
+        let r = render(&model.view(), true);
+        let err = r.tabs.iter().find(|t| t.session_id == "err").unwrap();
+        let gone = r.tabs.iter().find(|t| t.session_id == "gone").unwrap();
+        assert_eq!(err.state, "error");
+        assert_eq!(gone.state, "dead");
+        assert!(!err.attention);
+        assert!(!gone.attention);
+    }
+
+    #[test]
     fn render_sorts_unread_then_urgency_then_waiting_age() {
         let view = InboxView {
             tabs: vec![

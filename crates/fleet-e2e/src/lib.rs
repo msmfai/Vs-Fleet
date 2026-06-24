@@ -33,6 +33,12 @@
 //! unix-only path for its assertions.
 
 #![forbid(unsafe_code)]
+// Enable `#[coverage(off)]` under cargo-llvm-cov's nightly gate (it sets
+// cfg(coverage_nightly)); a no-op on stable. Mirrors fleet-hub. Used to exclude
+// the daemon-style / real-binary-subprocess paths that no in-sandbox test can
+// deterministically drive (e.g. the `fleet ls` subprocess when the binary is
+// not built on the runner).
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 pub mod fixtures;
 pub mod harness;

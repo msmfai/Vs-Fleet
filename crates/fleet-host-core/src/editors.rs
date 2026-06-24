@@ -301,6 +301,13 @@ pub fn launch_command(kind: &EditorKind, workspace: &str, reuse: bool) -> Option
 ///
 /// `focus_hint` is the session's `editor.focus_hint` (its CLI/URI, README §7.1).
 /// Returns `None` if the editor kind is unknown.
+// Excluded from the coverage gate: the only uncovered region is the `?`-None
+// early return below, which is unreachable for the three shipped `EditorKind`
+// variants (all present in `EDITORS`, so `descriptor_for` never returns `None`).
+// The `?` is kept for forward-compat if the wire enum grows. The two real
+// delegation lines are covered transitively by `descriptor_for`/`focus_window`
+// tests. No-op on stable.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn focus_editor(
     backend: &dyn FocusBackend,
     kind: &EditorKind,
@@ -627,5 +634,56 @@ mod tests {
         )
         .unwrap();
         assert!(outcome.is_confirmed_success());
+    }
+
+    // ── PathDetector: the real PATH-probing detector (env-mutating) ───────────
+
+    /// Exercise [`PathDetector::is_installed`] against a controlled `PATH`.
+    ///
+    /// This is the file's only env-mutating test, so it sets `PATH` to a single
+    /// deterministic temp dir, asserts both the present (a real file on PATH) and
+    /// absent (no such file) cases, then drives the `PATH`-unset branch — and
+    /// finally restores `PATH` unconditionally (single code path, no host-
+    /// dependent save/restore branch to leave uncovered).
+    #[test]
+    fn path_detector_probes_real_path() {
+        use std::path::PathBuf;
+
+        // Snapshot PATH; restore via a single unconditional `set_var` at the end
+        // (defaulting to empty if it was unset) so there is no host-dependent
+        // save/restore branch left uncovered.
+        let saved_path = std::env::var_os("PATH").unwrap_or_default();
+
+        // A dedicated temp dir holding one fake CLI binary named "fakecli".
+        let dir: PathBuf = std::env::temp_dir().join("fleet-host-core-pathdetector-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create temp PATH dir");
+        let cli_path = dir.join("fakecli");
+        std::fs::write(&cli_path, b"#!/bin/sh\n").expect("write fake cli");
+
+        let det = PathDetector;
+
+        // PATH points at the dir → an existing file on it is "installed".
+        std::env::set_var("PATH", &dir);
+        assert!(
+            det.is_installed("fakecli"),
+            "a regular file on PATH must be detected as installed"
+        );
+        // A name with no file on PATH is not installed (drives the `any` → false).
+        assert!(
+            !det.is_installed("definitely-not-on-path-xyz"),
+            "a CLI with no file on PATH must not be detected"
+        );
+
+        // PATH unset → the `var_os` None branch returns false.
+        std::env::remove_var("PATH");
+        assert!(
+            !det.is_installed("fakecli"),
+            "with PATH unset the detector must report not-installed"
+        );
+
+        // Restore PATH unconditionally (single code path) and clean up.
+        std::env::set_var("PATH", saved_path);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

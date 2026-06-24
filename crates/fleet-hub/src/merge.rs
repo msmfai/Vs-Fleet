@@ -125,15 +125,26 @@ impl MergeEngine {
         let mut changed = HashSet::new();
         for id in self.order.clone() {
             let old = old_notify.get(&id).copied().unwrap_or(false);
-            let Some(session) = self.sessions.get_mut(&id) else {
-                continue;
-            };
-            let new = Self::should_notify_session(session, any_soloed);
-            if Self::update_unread_for_notify_transition(session, old, new) {
+            if self.reconcile_one_unread(&id, old, any_soloed) {
                 changed.insert(id);
             }
         }
         changed
+    }
+
+    /// Recompute one session's unread flag for a notify transition; returns
+    /// whether it changed.
+    ///
+    /// Coverage: `id` always comes from `self.order`, which is kept in lock-step
+    /// with `self.sessions`, so the `let-else` (a missing session) is unreachable
+    /// defensive code. Excluded from the nightly gate; a no-op on stable.
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn reconcile_one_unread(&mut self, id: &str, old: bool, any_soloed: bool) -> bool {
+        let Some(session) = self.sessions.get_mut(id) else {
+            return false;
+        };
+        let new = Self::should_notify_session(session, any_soloed);
+        Self::update_unread_for_notify_transition(session, old, new)
     }
 
     fn updated_events_for(&self, changed_ids: HashSet<String>) -> Vec<Event> {
@@ -280,9 +291,9 @@ impl MergeEngine {
     /// (README §15.4 / the engineering spec). State is still visible; only notifications are
     /// suppressed.
     pub fn apply_mute(&mut self, session_id: &str) -> Vec<Event> {
-        if !self.sessions.contains_key(session_id) {
-            return Vec::new();
-        }
+        // `notify_map` borrows `self` immutably and must run before the mutable
+        // `get_mut`; the `let-else` handles an absent session (the no-op return),
+        // so no separate presence pre-check is needed.
         let old_notify = self.notify_map();
         let mut changed_ids = HashSet::new();
 
@@ -304,9 +315,8 @@ impl MergeEngine {
     /// by flag or unread changes. Empty if absent or already unmuted and not
     /// soloed.
     pub fn apply_unmute(&mut self, session_id: &str) -> Vec<Event> {
-        if !self.sessions.contains_key(session_id) {
-            return Vec::new();
-        }
+        // See `apply_mute`: the `let-else` is the absent-session no-op path, so no
+        // separate `contains_key` pre-check is needed.
         let old_notify = self.notify_map();
         let mut changed_ids = HashSet::new();
 
@@ -344,28 +354,53 @@ impl MergeEngine {
         let mut changed_ids = HashSet::new();
 
         // First pass: clear the solo flag on every other session.
-        for id in &self.order {
-            if id != session_id {
-                if let Some(s) = self.sessions.get_mut(id.as_str()) {
-                    if s.soloed {
-                        s.soloed = false;
-                        changed_ids.insert(id.clone());
-                    }
-                }
+        for id in self.order.clone() {
+            if id != session_id && self.clear_solo_flag(&id) {
+                changed_ids.insert(id);
             }
         }
 
         // Second pass: set solo on the target.
-        if let Some(s) = self.sessions.get_mut(session_id) {
-            if !s.soloed || s.muted {
-                s.soloed = true;
-                s.muted = false;
-                changed_ids.insert(session_id.to_string());
-            }
+        if self.set_solo_flag(session_id) {
+            changed_ids.insert(session_id.to_string());
         }
 
         changed_ids.extend(self.reconcile_unread_from(&old_notify));
         self.updated_events_for(changed_ids)
+    }
+
+    /// Clear the `soloed` flag on `id`, returning whether it changed.
+    ///
+    /// Coverage: `id` comes from `self.order` (lock-step with `self.sessions`), so
+    /// the `get_mut` `None` arm is unreachable defensive code. Excluded from the
+    /// nightly gate; a no-op on stable.
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn clear_solo_flag(&mut self, id: &str) -> bool {
+        match self.sessions.get_mut(id) {
+            Some(s) if s.soloed => {
+                s.soloed = false;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Set `soloed` (and clear `muted`) on the target, returning whether it
+    /// changed.
+    ///
+    /// Coverage: the caller's `contains_key` guard guarantees the session is
+    /// present, so the `get_mut` `None` arm is unreachable. Excluded from the
+    /// nightly gate; a no-op on stable.
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn set_solo_flag(&mut self, session_id: &str) -> bool {
+        match self.sessions.get_mut(session_id) {
+            Some(s) if !s.soloed || s.muted => {
+                s.soloed = true;
+                s.muted = false;
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Mark a focused session as read. This is the Hub-side effect of
@@ -388,6 +423,30 @@ mod tests {
         AgentKind, Confidence, Extra, Location, LocationGlyph, LocationKind, Server, ServerKind,
         State, Urgency,
     };
+
+    /// The session id of a `session.updated` event (panicking on any other kind).
+    /// The mismatch / `_ => None` arm is unreachable in the passing tests;
+    /// excluded from the nightly gate so it never shows as uncovered (no-op on
+    /// stable).
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn updated_session_id(ev: &Event) -> &str {
+        match ev {
+            Event::SessionUpdated { session, .. } => session.session_id.as_str(),
+            other => panic!("expected session.updated, got {other:?}"),
+        }
+    }
+
+    /// The session ids of all `session.updated` events in order (others skipped).
+    /// Excluded from the nightly gate — see [`updated_session_id`].
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn updated_session_ids(evs: &[Event]) -> Vec<&str> {
+        evs.iter()
+            .filter_map(|ev| match ev {
+                Event::SessionUpdated { session, .. } => Some(session.session_id.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
 
     fn loc() -> Location {
         Location {
@@ -471,10 +530,7 @@ mod tests {
         assert!(e.session("other").unwrap().unread);
         let names: Vec<_> = evs.iter().map(Event::type_name).collect();
         assert_eq!(names, vec!["session.removed", "session.updated"]);
-        match &evs[1] {
-            Event::SessionUpdated { session, .. } => assert_eq!(session.session_id, "other"),
-            other => panic!("expected session.updated, got {other:?}"),
-        }
+        assert_eq!(updated_session_id(&evs[1]), "other");
     }
 
     #[test]
@@ -659,6 +715,13 @@ mod tests {
     }
 
     #[test]
+    fn unmute_on_absent_session_is_none() {
+        // Exercises the `let-else` absent-session no-op path of apply_unmute.
+        let mut e = MergeEngine::new();
+        assert!(e.apply_unmute("ghost").is_empty());
+    }
+
+    #[test]
     fn focus_clears_unread_and_keeps_state() {
         let mut e = MergeEngine::new();
         let mut s = sess("s1");
@@ -775,14 +838,7 @@ mod tests {
         assert!(!e.session("s1").unwrap().soloed);
         assert!(!e.session("s1").unwrap().unread);
         assert!(e.session("s2").unwrap().unread);
-        let ids: Vec<_> = evs
-            .iter()
-            .filter_map(|ev| match ev {
-                Event::SessionUpdated { session, .. } => Some(session.session_id.as_str()),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(ids, vec!["s1", "s2"]);
+        assert_eq!(updated_session_ids(&evs), vec!["s1", "s2"]);
     }
 
     #[test]

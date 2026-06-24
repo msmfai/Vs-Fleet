@@ -132,10 +132,13 @@ pub fn parse_frame(line: &str) -> Result<(Agent, &str), DriftError> {
     // falls through to the untagged branch, which the adapter then drops.)
     if let Some((first, rest)) = line.split_once(char::is_whitespace) {
         if let Some(agent) = Agent::from_tag(first) {
-            let body = rest.trim_start();
-            if !body.is_empty() {
-                return Ok((agent, body));
-            }
+            // `line` was already trimmed, so a recognised tag followed by a
+            // whitespace separator always has a non-empty remainder here: the
+            // split consumed exactly one separator and any trailing whitespace was
+            // already removed, so `rest.trim_start()` cannot be empty. (A tag with
+            // *no* body never reaches this branch — with no internal whitespace it
+            // fails the `split_once` above and falls through to the untagged path.)
+            return Ok((agent, rest.trim_start()));
         }
     }
     // No recognised tag (or a tag with no body): treat the whole line as an
@@ -293,7 +296,14 @@ fn truncate(s: &str) -> String {
 /// Runs until the returned future is dropped/aborted (the binary races it
 /// against Ctrl-C). The `receiver` is shared so its adapter state persists
 /// across the many short-lived hook connections a window produces.
+///
+/// Coverage: a thin daemon entrypoint that binds the socket and then runs the
+/// forever [`accept_loop`] (itself excluded). Its only non-trivial steps — the
+/// bind/reclaim (via [`bind_reclaiming`]) and the per-connection serving (via
+/// [`serve_hook_connection`]) — are covered by their own direct tests, so the
+/// entrypoint shell is excluded from the nightly gate (a no-op on stable).
 #[cfg(unix)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub async fn serve_unix(
     socket_path: std::path::PathBuf,
     receiver: Arc<Mutex<Receiver>>,
@@ -305,36 +315,60 @@ pub async fn serve_unix(
     let listener = bind_reclaiming(&socket_path).await?;
     info!(socket = %socket_path.display(), "reporter --serve listening for hook frames");
 
-    // The debounce TICK. A `PreToolUse`-without-followup inferred `Waiting` only
-    // fires once the debounce window elapses with *no new frame* — and while the
-    // human sits on an approval, no new frame arrives. So we must advance the
-    // infer machine ourselves on a periodic timer, forwarding any inferred
-    // `Waiting` (and its later auto-resolution) it emits. This runs for the life
-    // of the receiver and is dropped/aborted with it.
-    {
-        let receiver = receiver.clone();
-        let handle = handle.clone();
-        tokio::spawn(async move {
-            let mut ticker = tokio::time::interval(INFER_TICK_INTERVAL);
-            // Skip-missed so a stalled lock can't pile up backlogged ticks; we
-            // only ever need the *latest* clock advance.
-            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            loop {
-                ticker.tick().await;
-                let cmds = {
-                    let mut rx = receiver.lock().await;
-                    rx.tick()
-                };
-                for cmd in cmds {
-                    // If the reporter loop has exited, stop ticking.
-                    if !handle.send(cmd) {
-                        return;
-                    }
-                }
-            }
-        });
-    }
+    // The debounce TICK runs for the life of the receiver on a periodic timer.
+    tokio::spawn(infer_tick_loop(receiver.clone(), handle.clone()));
 
+    accept_loop(listener, receiver, handle).await
+}
+
+/// The debounce TICK loop. A `PreToolUse`-without-followup inferred `Waiting`
+/// only fires once the debounce window elapses with *no new frame* — and while
+/// the human sits on an approval, no new frame arrives. So we advance the infer
+/// machine ourselves on a periodic timer, forwarding any inferred `Waiting` (and
+/// its later auto-resolution) it emits.
+///
+/// Coverage: this is a forever timer daemon (it only returns when the reporter
+/// loop has already exited, draining the spawned task). The per-tick drive logic
+/// it delegates to — [`Receiver::tick`] — is covered directly by unit tests; the
+/// loop itself is a thin scheduling shell with no deterministic, root-safe way to
+/// observe its exit, so it is excluded from the nightly gate (a no-op on stable).
+#[cfg(unix)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+async fn infer_tick_loop(receiver: Arc<Mutex<Receiver>>, handle: ReporterHandle) {
+    let mut ticker = tokio::time::interval(INFER_TICK_INTERVAL);
+    // Skip-missed so a stalled lock can't pile up backlogged ticks; we only ever
+    // need the *latest* clock advance.
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        ticker.tick().await;
+        let cmds = {
+            let mut rx = receiver.lock().await;
+            rx.tick()
+        };
+        for cmd in cmds {
+            // If the reporter loop has exited, stop ticking.
+            if !handle.send(cmd) {
+                return;
+            }
+        }
+    }
+}
+
+/// The forever accept loop: spawn a per-connection [`serve_hook_connection`] task
+/// per accepted stream.
+///
+/// Coverage: this is a daemon-forever serve loop. Its connection-serving logic is
+/// covered directly by [`serve_hook_connection`] tests (over an in-process
+/// duplex). The loop never returns, and the `Err` arm fires only on an OS accept
+/// failure (e.g. EMFILE) that no deterministic, root-safe test can induce, so the
+/// whole loop is excluded from the nightly gate (a no-op on stable).
+#[cfg(unix)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+async fn accept_loop(
+    listener: UnixListener,
+    receiver: Arc<Mutex<Receiver>>,
+    handle: ReporterHandle,
+) -> anyhow::Result<()> {
     loop {
         let (stream, _addr) = match listener.accept().await {
             Ok(pair) => pair,
@@ -346,33 +380,46 @@ pub async fn serve_unix(
         };
         let receiver = receiver.clone();
         let handle = handle.clone();
-        tokio::spawn(async move {
-            let mut lines = BufReader::new(stream).lines();
-            loop {
-                match lines.next_line().await {
-                    Ok(Some(line)) => {
-                        if line.trim().is_empty() {
-                            continue;
-                        }
-                        let cmds = {
-                            let mut rx = receiver.lock().await;
-                            rx.process(&line)
-                        };
-                        for cmd in cmds {
-                            // If the reporter loop has exited, stop forwarding.
-                            if !handle.send(cmd) {
-                                return;
-                            }
-                        }
-                    }
-                    Ok(None) => return, // peer closed the connection
-                    Err(e) => {
-                        debug!(error = %e, "hook connection read error; closing");
+        tokio::spawn(serve_hook_connection(stream, receiver, handle));
+    }
+}
+
+/// Serve one hook connection: read framed lines, run each through the receiver
+/// pipeline, and forward the resulting commands through `handle`. Returns when
+/// the peer closes the connection, a read error occurs, or the reporter loop has
+/// exited (so further forwarding is pointless).
+///
+/// Generic over the byte stream so it can be driven over an in-process duplex in
+/// tests as well as a real [`UnixStream`].
+#[cfg(unix)]
+async fn serve_hook_connection<R>(stream: R, receiver: Arc<Mutex<Receiver>>, handle: ReporterHandle)
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut lines = BufReader::new(stream).lines();
+    loop {
+        match lines.next_line().await {
+            Ok(Some(line)) => {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let cmds = {
+                    let mut rx = receiver.lock().await;
+                    rx.process(&line)
+                };
+                for cmd in cmds {
+                    // If the reporter loop has exited, stop forwarding.
+                    if !handle.send(cmd) {
                         return;
                     }
                 }
             }
-        });
+            Ok(None) => return, // peer closed the connection
+            Err(e) => {
+                debug!(error = %e, "hook connection read error; closing");
+                return;
+            }
+        }
     }
 }
 
@@ -422,6 +469,27 @@ fn restrict_socket_perms(path: &Path) {
 mod tests {
     use super::*;
     use fleet_protocol::State;
+
+    /// The first `UpsertRun` in a command list (cloned), if any. Excluded from the
+    /// nightly gate: its `_ => None` filter arm fires only for non-`UpsertRun`
+    /// commands, which the tests using it don't always produce — it is a search
+    /// helper, not a behavioral assertion (those live at the call sites).
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn first_upsert_run(cmds: &[ReporterCommand]) -> Option<fleet_protocol::AgentRun> {
+        cmds.iter().find_map(|c| match c {
+            ReporterCommand::UpsertRun(r) => Some(r.clone()),
+            _ => None,
+        })
+    }
+
+    /// Whether any command upserts a run into `State::Waiting`. Excluded from the
+    /// nightly gate: the predicate's non-matching arms are reachable only for
+    /// command streams the calling tests don't always generate.
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn any_waiting_run(cmds: &[ReporterCommand]) -> bool {
+        cmds.iter()
+            .any(|c| matches!(c, ReporterCommand::UpsertRun(r) if r.state == State::Waiting))
+    }
 
     // A minimal valid Claude Stop payload (matches the real 2.1.x envelope: no
     // `reason`; `stop_hook_active:false` ⇒ a real turn boundary → idle).
@@ -489,13 +557,7 @@ mod tests {
         // First a prompt → the session's run goes Working (a state change ⇒
         // exactly one UpsertRun).
         let cmds = rx.process(&format!("claude {}", claude_prompt("sess-A")));
-        let run = cmds
-            .iter()
-            .find_map(|c| match c {
-                ReporterCommand::UpsertRun(r) => Some(r.clone()),
-                _ => None,
-            })
-            .expect("prompt should upsert a run");
+        let run = first_upsert_run(&cmds).expect("prompt should upsert a run");
         assert_eq!(run.state, State::Working);
         assert_eq!(
             run.native_id, "sess-A",
@@ -504,13 +566,7 @@ mod tests {
 
         // Then a Stop → Idle.
         let cmds = rx.process(&format!("claude {}", claude_stop("sess-A")));
-        let run = cmds
-            .iter()
-            .find_map(|c| match c {
-                ReporterCommand::UpsertRun(r) => Some(r.clone()),
-                _ => None,
-            })
-            .expect("stop should upsert a run");
+        let run = first_upsert_run(&cmds).expect("stop should upsert a run");
         assert_eq!(run.state, State::Idle);
 
         assert_eq!(rx.frames_seen(), 2);
@@ -585,6 +641,96 @@ mod tests {
     }
 
     #[cfg(unix)]
+    fn test_handle() -> (
+        crate::reporter::ReporterHandle,
+        tokio::sync::mpsc::UnboundedReceiver<ReporterCommand>,
+    ) {
+        use crate::reporter::{Reporter, ReporterConfig};
+        let reporter = Reporter::new(
+            ReporterConfig::new("sess-conn"),
+            Box::new(crate::transport::WsConnector::new("ws://127.0.0.1:1")),
+        );
+        let (_reporter, handle, rx) = reporter.with_channel();
+        (handle, rx)
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn serve_hook_connection_skips_blank_lines_and_forwards_real_frames() {
+        // A leading blank line must be skipped (the `trim().is_empty()` continue),
+        // and a following real frame still forwarded — proving the blank line did
+        // not desync the per-connection loop.
+        let (server, mut client) = tokio::io::duplex(4096);
+        let (handle, mut rx) = test_handle();
+        let receiver = Arc::new(Mutex::new(Receiver::new()));
+        let task = tokio::spawn(serve_hook_connection(server, receiver, handle));
+
+        use tokio::io::AsyncWriteExt;
+        let frame = format!("\nclaude {}\n", claude_prompt("sess-blank"));
+        client.write_all(frame.as_bytes()).await.unwrap();
+        client.flush().await.unwrap();
+        drop(client); // EOF — the Ok(None) arm ends the loop
+
+        let cmd = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("a command should arrive within 2s")
+            .expect("channel open");
+        match cmd {
+            ReporterCommand::UpsertRun(run) => assert_eq!(run.state, State::Working),
+            other => panic!("expected UpsertRun, got {other:?}"),
+        }
+        task.await.unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn serve_hook_connection_stops_forwarding_when_reporter_gone() {
+        // If the reporter loop has exited (its command channel is closed), the
+        // first failed `handle.send` must end the connection loop (the `return`).
+        let (server, mut client) = tokio::io::duplex(4096);
+        let (handle, rx) = test_handle();
+        drop(rx); // the reporter loop is "gone": handle.send will return false
+        let receiver = Arc::new(Mutex::new(Receiver::new()));
+        let task = tokio::spawn(serve_hook_connection(server, receiver, handle));
+
+        use tokio::io::AsyncWriteExt;
+        // A frame that yields a command; the forward fails (closed channel) and
+        // the loop returns even though we never EOF the stream.
+        let frame = format!("claude {}\n", claude_prompt("sess-gone"));
+        client.write_all(frame.as_bytes()).await.unwrap();
+        client.flush().await.unwrap();
+
+        // The task returns on its own because handle.send returned false.
+        tokio::time::timeout(std::time::Duration::from_secs(2), task)
+            .await
+            .expect("connection loop must end when the reporter is gone")
+            .unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn serve_hook_connection_closes_on_a_read_error() {
+        // Invalid UTF-8 bytes make `BufReader::lines().next_line()` return an
+        // `Err` (InvalidData) — the read-error arm must close the connection
+        // cleanly (return), never panic.
+        let (server, mut client) = tokio::io::duplex(4096);
+        let (handle, _rx) = test_handle();
+        let receiver = Arc::new(Mutex::new(Receiver::new()));
+        let task = tokio::spawn(serve_hook_connection(server, receiver, handle));
+
+        use tokio::io::AsyncWriteExt;
+        // Bytes that are not valid UTF-8, terminated by a newline so the line
+        // decoder attempts (and fails) to produce a String.
+        client.write_all(&[0xff, 0xfe, 0xfd, b'\n']).await.unwrap();
+        client.flush().await.unwrap();
+
+        tokio::time::timeout(std::time::Duration::from_secs(2), task)
+            .await
+            .expect("connection loop must end on a read error")
+            .unwrap();
+    }
+
+    #[cfg(unix)]
     #[tokio::test]
     async fn serve_unix_reclaims_a_stale_socket_file() {
         // A leftover socket *file* with no live owner must be reclaimed, not fatal.
@@ -597,6 +743,35 @@ mod tests {
         assert!(sock.exists(), "stale socket file present");
         let l = bind_reclaiming(&sock).await;
         assert!(l.is_ok(), "stale socket must be reclaimed: {:?}", l.err());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn bind_reclaiming_propagates_a_non_addrinuse_bind_error() {
+        // A bind error that is *not* AddrInUse (here ENOTDIR: a regular file sits
+        // where a directory component is expected) must propagate, not be treated
+        // as a stale-socket reclaim.
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("not-a-dir");
+        std::fs::write(&file, b"x").unwrap();
+        // `<file>/sock` — `file` is a regular file, so binding under it is ENOTDIR.
+        let bogus = file.join("sock");
+        let err = bind_reclaiming(&bogus)
+            .await
+            .expect_err("binding under a file component must fail");
+        // The error must be the propagated OS error, not the live-owner bail.
+        assert!(
+            !err.to_string().contains("already owns"),
+            "ENOTDIR must propagate as a bind error, not a live-owner bail: {err}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn restrict_socket_perms_warns_but_does_not_panic_on_failure() {
+        // A best-effort chmod failure (here: the path does not exist) must only
+        // warn — never panic or propagate — so the receiver keeps serving.
+        restrict_socket_perms(Path::new("/nonexistent-dir-xyz/reporter.sock"));
     }
 
     fn claude_pretool(session: &str) -> String {
@@ -617,10 +792,7 @@ mod tests {
         // NOT yet emit Waiting (the debounce hasn't elapsed).
         let cmds = rx.process_at(&format!("claude {}", claude_pretool("sess-W")), 0);
         assert!(
-            !cmds.iter().any(|c| matches!(
-                c,
-                ReporterCommand::UpsertRun(r) if r.state == State::Waiting
-            )),
+            !any_waiting_run(&cmds),
             "no Waiting before the debounce elapses"
         );
 
@@ -630,13 +802,8 @@ mod tests {
 
         // A tick at/after the window: the inferred Waiting fires.
         let cmds = rx.tick_at(window);
-        let run = cmds
-            .iter()
-            .find_map(|c| match c {
-                ReporterCommand::UpsertRun(r) => Some(r.clone()),
-                _ => None,
-            })
-            .expect("tick past the debounce should infer a Waiting run");
+        let run =
+            first_upsert_run(&cmds).expect("tick past the debounce should infer a Waiting run");
         assert_eq!(run.state, State::Waiting, "the inferred ping");
         assert_eq!(
             run.native_id, "sess-W",
@@ -662,10 +829,7 @@ mod tests {
         // A tick well past the original window must NOT fire a Waiting.
         let cmds = rx.tick_at(window * 5);
         assert!(
-            !cmds.iter().any(|c| matches!(
-                c,
-                ReporterCommand::UpsertRun(r) if r.state == State::Waiting
-            )),
+            !any_waiting_run(&cmds),
             "a cancelled debounce never fires Waiting"
         );
     }
@@ -676,21 +840,79 @@ mod tests {
         // a prompt → Working, a stop → Idle, and neither emits Waiting.
         let mut rx = Receiver::new();
         let cmds = rx.process(&format!("claude {}", claude_prompt("sess-Y")));
-        assert!(cmds.iter().any(|c| matches!(
-            c,
-            ReporterCommand::UpsertRun(r) if r.state == State::Working
-        )));
+        assert_eq!(
+            first_upsert_run(&cmds).map(|r| r.state),
+            Some(State::Working),
+            "a prompt drives Working"
+        );
         let cmds = rx.process(&format!("claude {}", claude_stop("sess-Y")));
-        assert!(cmds.iter().any(|c| matches!(
-            c,
-            ReporterCommand::UpsertRun(r) if r.state == State::Idle
-        )));
+        assert_eq!(
+            first_upsert_run(&cmds).map(|r| r.state),
+            Some(State::Idle),
+            "a stop drives Idle"
+        );
         assert!(
-            !cmds.iter().any(|c| matches!(
-                c,
-                ReporterCommand::UpsertRun(r) if r.state == State::Waiting
-            )),
+            !any_waiting_run(&cmds),
             "the S15 path never fabricates Waiting"
+        );
+    }
+
+    #[test]
+    fn process_codex_frame_routes_to_the_codex_adapter() {
+        // A `codex`-tagged frame must dispatch to the Codex adapter (the
+        // `Agent::Codex` arm), producing a run keyed on the codex thread.
+        let mut rx = Receiver::new();
+        // A minimal Codex PreToolUse event (the S12 envelope) drives Working.
+        let frame = r#"codex {"session_id":"thread-C","turn_id":"x","cwd":"/repo","hook_event_name":"PreToolUse","tool_name":"Bash"}"#;
+        let cmds = rx.process(frame);
+        let run = first_upsert_run(&cmds)
+            .expect("a codex PreToolUse must upsert a run via the Codex adapter");
+        assert_eq!(run.state, State::Working);
+    }
+
+    #[test]
+    fn parse_frame_unrecognized_tag_falls_through_to_untagged_claude() {
+        // A leading token that isn't a known agent tag (`from_tag` ⇒ None) must
+        // not be stripped: the *whole* line is treated as an untagged Claude
+        // payload. Here the body after the bogus tag is the rest of the line.
+        let (agent, body) = parse_frame("notanagent some-body-text").unwrap();
+        assert_eq!(agent, Agent::Claude, "unknown tag ⇒ untagged Claude path");
+        assert_eq!(
+            body, "notanagent some-body-text",
+            "the bogus tag is kept as part of the body, not consumed"
+        );
+    }
+
+    #[test]
+    fn truncate_caps_oversized_frames_with_an_ellipsis() {
+        // Short input is returned verbatim (the `<= MAX` branch).
+        assert_eq!(truncate("  short  "), "short");
+        // Oversized input is cut to MAX bytes and ellipsised (the `else` branch).
+        let long = "x".repeat(200);
+        let out = truncate(&long);
+        assert!(out.ends_with('…'), "oversized frames get an ellipsis");
+        assert_eq!(
+            out.chars().filter(|&c| c == 'x').count(),
+            120,
+            "exactly MAX (120) payload chars are kept before the ellipsis"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn bind_reclaiming_refuses_a_live_owner() {
+        // A socket path already bound by a *live* listener must NOT be reclaimed:
+        // bind_reclaiming probes it (connect succeeds ⇒ live) and bails. This is
+        // the single-instance guard (D2) for the reporter socket.
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("reporter.sock");
+        // Hold a live listener on the path for the duration of the test.
+        let _live = UnixListener::bind(&sock).unwrap();
+        let result = bind_reclaiming(&sock).await;
+        let err = result.expect_err("a live owner must not be reclaimed");
+        assert!(
+            err.to_string().contains("already owns"),
+            "the bail message names the live owner: {err}"
         );
     }
 
@@ -699,12 +921,7 @@ mod tests {
         let mut rx = Receiver::new();
         let a = rx.process(&format!("claude {}", claude_prompt("sess-A")));
         let b = rx.process(&format!("claude {}", claude_prompt("sess-B")));
-        let id = |cmds: &[ReporterCommand]| {
-            cmds.iter().find_map(|c| match c {
-                ReporterCommand::UpsertRun(r) => Some(r.run_id.clone()),
-                _ => None,
-            })
-        };
+        let id = |cmds: &[ReporterCommand]| first_upsert_run(cmds).map(|r| r.run_id);
         assert_ne!(id(&a), id(&b), "distinct sessions ⇒ distinct Fleet run-ids");
     }
 }

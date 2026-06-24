@@ -184,6 +184,17 @@ mod tests {
     }
 
     #[test]
+    fn default_trait_matches_default_policy() {
+        // `Backoff::default()` must be identical to `default_policy()`: same
+        // starting delay and same first-failure progression.
+        let mut d = Backoff::default();
+        let mut p = Backoff::default_policy();
+        assert_eq!(d.current_delay(), p.current_delay());
+        assert_eq!(d.record_failure(), p.record_failure());
+        assert_eq!(d.record_failure(), p.record_failure());
+    }
+
+    #[test]
     fn pathological_factor_does_not_overflow() {
         let mut b = Backoff::new(Duration::from_millis(1), Duration::from_secs(60), u32::MAX);
         // Should saturate at max without panicking on overflow.

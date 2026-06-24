@@ -14,6 +14,12 @@
 //!   for every live update. The static frontend (no bundler — `withGlobalTauri`)
 //!   invokes `get_inbox` then `listen("inbox", …)`.
 
+// Enable the `#[coverage(off)]` attribute under cargo-llvm-cov's nightly gate
+// (a no-op on stable). Lets genuine GUI/FFI/daemon glue — the Tauri builder, the
+// forever event loop, webview/IPC FFI — drop out of the line-coverage bar while
+// the pure logic stays fully tested.
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+
 mod bridge;
 mod hub_client;
 mod mux;
@@ -37,6 +43,10 @@ fn default_hub_addr() -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], fleet_hub::DEFAULT_WS_PORT))
 }
 
+// Thin env wrapper around the tested `embedded_hub_runtime_dir_from`; reading
+// process env (HOME/FLEET_RUNTIME_DIR) can't be done without racing the other
+// HOME-mutating tests, so the pure resolver carries the logic.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn embedded_hub_runtime_dir() -> PathBuf {
     embedded_hub_runtime_dir_from(
         std::env::var_os("FLEET_RUNTIME_DIR").map(PathBuf::from),
@@ -56,6 +66,9 @@ fn embedded_hub_runtime_dir_from(override_dir: Option<PathBuf>, home: Option<Pat
         .join("run")
 }
 
+// Thin env wrapper; derives from the env-reading `embedded_hub_runtime_dir`
+// (excluded). The pure join is covered via `host_log_path_from_runtime_dir`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn host_log_path() -> PathBuf {
     embedded_hub_runtime_dir().join("fleet-host.log")
 }
@@ -102,6 +115,10 @@ impl<'a> MakeWriter<'a> for FleetLogWriter {
     }
 }
 
+// Glue: installs the global tracing subscriber (a process-wide singleton that
+// can only be initialized once, so it can't be exercised per-test) and opens the
+// host log file. The log tee it wires up (`FleetLogWriter`) is tested directly.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn init_logging() {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into());
     let path = host_log_path();
@@ -136,6 +153,8 @@ fn init_logging() {
     }
 }
 
+// Thin env wrapper over the tested `embedded_hub_persist_enabled_from`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn embedded_hub_persist_enabled() -> bool {
     embedded_hub_persist_enabled_from(std::env::var("FLEET_EMBEDDED_HUB_PERSIST").ok().as_deref())
 }
@@ -153,11 +172,16 @@ const BRIDGE_PORT: u16 = 51778;
 
 /// The webview's initial pull of current inbox state (live updates arrive via the
 /// `inbox` event). App-defined command — not gated by the v2 capability ACL.
+// Glue: a Tauri command reading managed `State`, which needs a running app.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
 fn get_inbox(state: tauri::State<'_, hub_client::Shared>) -> RenderedInbox {
     state.lock().map(|g| g.clone()).unwrap_or_default()
 }
 
+// Glue: evaluates JS in the rail webview through the `AppHandle` — needs a live
+// webview.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn run_rail_action(app: &tauri::AppHandle, function_name: &str) {
     if let Some(rail) = app.get_webview(mux::RAIL) {
         let _ = rail.eval(format!(
@@ -166,6 +190,11 @@ fn run_rail_action(app: &tauri::AppHandle, function_name: &str) {
     }
 }
 
+// Glue: the entire Tauri application — builder, managed state, command handlers,
+// menu/window-event callbacks, the background runtime thread, and the forever
+// event loop (`.run`). Needs a real webview/event loop, so it can't run headless;
+// every pure helper it wires up is tested individually.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn main() {
     // TCC disclaim trampoline (see `spawn::fleet_command`): replace this process
     // with the target before any logging/Tauri init so the short-lived hop has
@@ -384,6 +413,8 @@ fn main() {
         .expect("error while running Fleet host");
 }
 
+// Thin env wrapper over the tested `probe_control_port_from_value`.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn probe_control_port() -> Option<u16> {
     let raw = std::env::var("FLEET_PROBE_CONTROL_PORT").ok();
     probe_control_port_from_value(raw.as_deref())
@@ -395,6 +426,10 @@ fn probe_control_port_from_value(value: Option<&str>) -> Option<u16> {
         .filter(|port| *port > 0)
 }
 
+// Glue: spawns a TCP control listener (test harness hook) that drives the
+// `AppHandle` (server list/select/close) per request. Needs a live app and a
+// bound socket; the HTTP response builder (`probe_http_response`) is tested.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn start_probe_control(app: tauri::AppHandle) {
     let Some(port) = probe_control_port() else {
         return;
@@ -420,6 +455,9 @@ fn start_probe_control(app: tauri::AppHandle) {
         .expect("spawn probe control thread");
 }
 
+// Glue: parses a probe HTTP request and dispatches it against the live `AppHandle`
+// (mux server list/select/close) — needs a running app + a real socket.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn handle_probe_control(app: tauri::AppHandle, mut stream: TcpStream) {
     let mut buf = [0_u8; 2048];
     let Ok(n) = stream.read(&mut buf) else {
@@ -459,33 +497,136 @@ fn handle_probe_control(app: tauri::AppHandle, mut stream: TcpStream) {
             .unwrap_or(false);
         let body = serde_json::json!({ "closed": closed, "server": id }).to_string();
         let _ = write_probe_json(&mut stream, 200, &body);
+    } else if let Some(rest) = path.strip_prefix("/rename/") {
+        // `/rename/<id>?label=<urlencoded label>` — the only State-mutating probe
+        // command that reduces purely to supervisor + registry mutation (no live
+        // window). Run the headless dispatch, then add the window side effects.
+        let (id, query) = match rest.split_once('?') {
+            Some((id, query)) => (id, Some(query)),
+            None => (rest, None),
+        };
+        let id = id.split('#').next().unwrap_or(id).to_string();
+        let label = query.and_then(probe_query_label);
+        let result = match (
+            app.try_state::<spawn::ServerSupervisor>(),
+            app.try_state::<bridge::BridgeRegistry>(),
+        ) {
+            (Some(sup), Some(registry)) => {
+                apply_state_probe_command("rename", &id, label.as_deref(), &sup, &registry)
+            }
+            _ => None,
+        };
+        match result {
+            Some(body) => {
+                // Mirror the rail rename path: notify the rail to re-render.
+                let _ = app.emit(bridge::SERVERS_CHANGED, ());
+                let _ = write_probe_json(&mut stream, 200, &body.to_string());
+            }
+            None => {
+                let _ = write_probe_response(&mut stream, 404, "not found");
+            }
+        }
     } else {
         let _ = write_probe_response(&mut stream, 404, "not found");
     }
 }
 
+/// Apply a State-mutating probe command against the live managed State objects
+/// (supervisor + bridge registry) and return the JSON response body. Headless and
+/// AppHandle-free so it is unit-testable without a window; `handle_probe_control`
+/// only adds the `app.emit`/window glue around it.
+///
+/// Currently the only such command is `rename`, which renames the server in BOTH
+/// the supervisor (Fleet-spawned servers) and the registry (phone-home servers) —
+/// whichever holds the id — exactly like the `rename_server` Tauri command. The
+/// mute/solo/dismiss/focus actions are NOT here: they dispatch over the Hub
+/// command channel (`hub_client::HubCommandSender`), not supervisor/registry
+/// State, so they need the live link and are covered only by the CI smoke.
+fn apply_state_probe_command(
+    action: &str,
+    id: &str,
+    label: Option<&str>,
+    sup: &spawn::ServerSupervisor,
+    registry: &bridge::BridgeRegistry,
+) -> Option<serde_json::Value> {
+    match action {
+        "rename" => {
+            let label = label.unwrap_or("");
+            let renamed_spawned = sup.rename(id, label);
+            let renamed_registered = registry.rename(id, label);
+            Some(serde_json::json!({
+                "renamed": renamed_spawned || renamed_registered,
+                "server": id,
+                "label": label,
+            }))
+        }
+        _ => None,
+    }
+}
+
+/// Extract and percent-decode the `label` parameter from a probe query string
+/// (`label=My%20Project&…`). Pure. Returns `None` when absent.
+fn probe_query_label(query: &str) -> Option<String> {
+    query
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .find(|(key, _)| *key == "label")
+        .map(|(_, value)| percent_decode(value))
+}
+
+/// Minimal percent-decoder for probe query values: turns `%XX` escapes back into
+/// bytes and `+` into a space (form-url-encoded form). Invalid escapes pass
+/// through verbatim. Pure.
+fn percent_decode(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' if i + 2 < bytes.len() => {
+                let hi = (bytes[i + 1] as char).to_digit(16);
+                let lo = (bytes[i + 2] as char).to_digit(16);
+                if let (Some(hi), Some(lo)) = (hi, lo) {
+                    out.push((hi * 16 + lo) as u8);
+                    i += 3;
+                    continue;
+                }
+                out.push(b'%');
+                i += 1;
+            }
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+// Glue: writes the pure `probe_http_response` to a live TCP stream.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn write_probe_json(stream: &mut TcpStream, status: u16, body: &str) -> std::io::Result<()> {
-    write_probe_response_with_type(stream, status, "application/json; charset=utf-8", body)
+    stream.write_all(probe_http_response(status, "application/json; charset=utf-8", body).as_bytes())
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn write_probe_response(stream: &mut TcpStream, status: u16, body: &str) -> std::io::Result<()> {
-    write_probe_response_with_type(stream, status, "text/plain; charset=utf-8", body)
+    stream.write_all(probe_http_response(status, "text/plain; charset=utf-8", body).as_bytes())
 }
 
-fn write_probe_response_with_type(
-    stream: &mut TcpStream,
-    status: u16,
-    content_type: &str,
-    body: &str,
-) -> std::io::Result<()> {
+/// Build the full HTTP/1.1 probe response (status line + headers + body). Pure.
+fn probe_http_response(status: u16, content_type: &str, body: &str) -> String {
     let reason = match status {
         200 => "OK",
         400 => "Bad Request",
         404 => "Not Found",
         _ => "Error",
     };
-    write!(
-        stream,
+    format!(
         "HTTP/1.1 {status} {reason}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
         body.len()
     )
@@ -519,6 +660,13 @@ mod tests {
     }
 
     #[test]
+    fn default_hub_addr_is_loopback_on_the_hub_port() {
+        let addr = default_hub_addr();
+        assert!(addr.ip().is_loopback());
+        assert_eq!(addr.port(), fleet_hub::DEFAULT_WS_PORT);
+    }
+
+    #[test]
     fn embedded_hub_persistence_defaults_off_and_can_be_enabled() {
         assert!(!embedded_hub_persist_enabled_from(None));
         assert!(!embedded_hub_persist_enabled_from(Some("")));
@@ -533,11 +681,209 @@ mod tests {
     }
 
     #[test]
+    fn fleet_log_writer_tees_to_its_backing_file() {
+        let dir = std::env::temp_dir().join(format!("fleet-host-log-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("fleet-host.log");
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .unwrap();
+
+        let writer = FleetLogWriter {
+            file: Arc::new(Mutex::new(file)),
+        };
+        // The MakeWriter impl hands out a guard that writes to the same file.
+        let mut guard = writer.make_writer();
+        let n = guard.write(b"hello fleet\n").unwrap();
+        assert_eq!(n, "hello fleet\n".len());
+        guard.flush().unwrap();
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("hello fleet"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn fleet_log_guard_tolerates_a_poisoned_file_lock() {
+        let dir = std::env::temp_dir().join(format!("fleet-host-log-poison-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = std::fs::File::create(dir.join("fleet-host.log")).unwrap();
+        let shared = Arc::new(Mutex::new(file));
+
+        // Poison the file mutex from a panicking thread.
+        let poison = shared.clone();
+        let result = std::thread::spawn(move || {
+            let _guard = poison.lock().unwrap();
+            panic!("poison the log file lock");
+        })
+        .join();
+        assert!(result.is_err());
+        assert!(shared.is_poisoned());
+
+        // Writes and flushes must NOT panic; write reports the bytes as accepted
+        // (tee to stderr still happened), flush is a no-op on the poisoned file.
+        let mut guard = FleetLogGuard {
+            file: shared.clone(),
+        };
+        assert_eq!(guard.write(b"dropped\n").unwrap(), "dropped\n".len());
+        guard.flush().unwrap();
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn probe_http_response_builds_status_line_headers_and_body() {
+        let ok = probe_http_response(200, "application/json; charset=utf-8", r#"{"ok":true}"#);
+        assert!(ok.starts_with("HTTP/1.1 200 OK\r\n"));
+        assert!(ok.contains("content-type: application/json; charset=utf-8\r\n"));
+        assert!(ok.contains("content-length: 11\r\n"));
+        assert!(ok.contains("connection: close\r\n"));
+        assert!(ok.ends_with("\r\n\r\n{\"ok\":true}"));
+
+        // Each mapped status renders its reason phrase; unknown ones fall back.
+        assert!(probe_http_response(400, "text/plain", "x").starts_with("HTTP/1.1 400 Bad Request"));
+        assert!(probe_http_response(404, "text/plain", "x").starts_with("HTTP/1.1 404 Not Found"));
+        assert!(probe_http_response(503, "text/plain", "x").starts_with("HTTP/1.1 503 Error"));
+    }
+
+    #[test]
     fn probe_control_port_requires_positive_integer() {
         assert_eq!(probe_control_port_from_value(None), None);
         assert_eq!(probe_control_port_from_value(Some("")), None);
         assert_eq!(probe_control_port_from_value(Some("0")), None);
         assert_eq!(probe_control_port_from_value(Some("not-a-port")), None);
         assert_eq!(probe_control_port_from_value(Some("51776")), Some(51776));
+    }
+
+    fn probe_supervisor() -> spawn::ServerSupervisor {
+        spawn::ServerSupervisor::new(51778, "ws://127.0.0.1:51777".into(), "token".into())
+    }
+
+    #[test]
+    fn probe_query_label_decodes_only_the_label_param() {
+        assert_eq!(probe_query_label("label=Renamed%20Session").as_deref(), Some("Renamed Session"));
+        assert_eq!(probe_query_label("x=1&label=My+Project&y=2").as_deref(), Some("My Project"));
+        // No label param ⇒ None; a label of the literal text passes through.
+        assert_eq!(probe_query_label("foo=bar"), None);
+        assert_eq!(probe_query_label("label=plain").as_deref(), Some("plain"));
+    }
+
+    #[test]
+    fn percent_decode_handles_escapes_plus_and_invalid_sequences() {
+        assert_eq!(percent_decode("a%20b"), "a b");
+        assert_eq!(percent_decode("a+b"), "a b");
+        assert_eq!(percent_decode("%41%42%43"), "ABC");
+        // A dangling/invalid escape is emitted verbatim rather than dropped.
+        assert_eq!(percent_decode("100%"), "100%");
+        assert_eq!(percent_decode("%zz"), "%zz");
+    }
+
+    // The rename probe command performs a REAL round-trip through the dispatch:
+    // it renames the server in whichever State (supervisor or registry) holds the
+    // id, pins `.renamed`, and returns the {"renamed":true,...} body.
+    #[test]
+    fn apply_state_probe_rename_round_trips_through_supervisor_and_registry() {
+        let sup = probe_supervisor();
+        let registry = bridge::BridgeRegistry::new();
+        sup.push_test_server("server-sup");
+        registry.register_test_server("server-reg", "http://127.0.0.1:9/", "auto-reported");
+
+        // Renaming a supervisor-held server.
+        let body = apply_state_probe_command(
+            "rename",
+            "server-sup",
+            Some("Spawned Renamed"),
+            &sup,
+            &registry,
+        )
+        .expect("rename returns a body");
+        assert_eq!(body["renamed"], true);
+        assert_eq!(body["server"], "server-sup");
+        assert_eq!(body["label"], "Spawned Renamed");
+        let server = sup.servers().into_iter().find(|s| s.id == "server-sup").unwrap();
+        assert_eq!(server.label, "Spawned Renamed");
+        assert!(server.renamed);
+
+        // Renaming a registry-held server.
+        let body = apply_state_probe_command(
+            "rename",
+            "server-reg",
+            Some("Bridge Renamed"),
+            &sup,
+            &registry,
+        )
+        .expect("rename returns a body");
+        assert_eq!(body["renamed"], true);
+        let server = registry.servers().into_iter().find(|s| s.id == "server-reg").unwrap();
+        assert_eq!(server.label, "Bridge Renamed");
+        assert!(server.renamed);
+    }
+
+    // An unknown id mutates nothing and reports {"renamed":false}.
+    #[test]
+    fn apply_state_probe_rename_unknown_id_reports_not_renamed() {
+        let sup = probe_supervisor();
+        let registry = bridge::BridgeRegistry::new();
+        sup.push_test_server("server-1");
+
+        let body =
+            apply_state_probe_command("rename", "ghost", Some("Nope"), &sup, &registry).unwrap();
+        assert_eq!(body["renamed"], false);
+        assert_eq!(body["server"], "ghost");
+        // The real server is untouched.
+        let server = &sup.servers()[0];
+        assert_eq!(server.label, "server-1");
+        assert!(!server.renamed);
+    }
+
+    // Regression-lock at the PROBE-DISPATCH seam: a rename driven through
+    // `apply_state_probe_command` must survive a subsequent reporter re-register
+    // with the auto label (the exact bug that motivated the `renamed` flag).
+    #[test]
+    fn apply_state_probe_rename_survives_reporter_reregister() {
+        let sup = probe_supervisor();
+        let registry = bridge::BridgeRegistry::new();
+        registry.register_test_server("server-reg", "http://127.0.0.1:9/", "auto-reported");
+
+        let body = apply_state_probe_command(
+            "rename",
+            "server-reg",
+            Some("My Project"),
+            &sup,
+            &registry,
+        )
+        .expect("rename returns a body");
+        assert_eq!(body["renamed"], true);
+
+        // The reporter reconnects and re-registers with its auto label again.
+        registry.register_test_server("server-reg", "http://127.0.0.1:9/", "auto-reported");
+
+        let server = registry.servers().into_iter().find(|s| s.id == "server-reg").unwrap();
+        assert_eq!(server.label, "My Project", "reconnect must not clobber the probe rename");
+        assert!(server.renamed);
+    }
+
+    // Actions that are NOT State-only (mute/solo/dismiss/focus dispatch over the
+    // Hub command channel, not supervisor/registry State) return None here, so the
+    // probe handler falls through to 404 rather than silently succeeding.
+    #[test]
+    fn apply_state_probe_rejects_non_state_actions() {
+        let sup = probe_supervisor();
+        let registry = bridge::BridgeRegistry::new();
+        sup.push_test_server("server-1");
+
+        for action in ["mute", "solo", "dismiss", "focus", "unknown"] {
+            assert!(
+                apply_state_probe_command(action, "server-1", None, &sup, &registry).is_none(),
+                "{action} must not be a State-only probe command"
+            );
+        }
+        // The server is untouched by any of those.
+        assert!(!sup.servers()[0].renamed);
     }
 }

@@ -131,3 +131,110 @@ pub fn claude_transcript_resolved(tool_use_id: &str) -> String {
     );
     format!("{dispatch}\n{result}")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+
+    /// Parse a fixture line as JSON, asserting it is well-formed and returning it.
+    fn parse(line: &str) -> Value {
+        serde_json::from_str(line).unwrap_or_else(|e| panic!("invalid fixture JSON: {e}\n{line}"))
+    }
+
+    #[test]
+    fn codex_lifecycle_fixtures_have_expected_shape() {
+        let v = parse(&codex_session_start("th-1", "/work"));
+        assert_eq!(v["hook_event_name"], "SessionStart");
+        assert_eq!(v["session_id"], "th-1");
+        assert_eq!(v["cwd"], "/work");
+
+        let v = parse(&codex_prompt("th-1", "/work"));
+        assert_eq!(v["hook_event_name"], "UserPromptSubmit");
+        assert_eq!(v["turn_id"], "t1");
+
+        let v = parse(&codex_pre_tool("th-1", "/work", "shell"));
+        assert_eq!(v["hook_event_name"], "PreToolUse");
+        assert_eq!(v["tool_name"], "shell");
+
+        let v = parse(&codex_stop("th-1", "/work"));
+        assert_eq!(v["hook_event_name"], "Stop");
+
+        // codex_session_end — previously uncovered.
+        let v = parse(&codex_session_end("th-1", "/work"));
+        assert_eq!(v["hook_event_name"], "SessionEnd");
+        assert_eq!(v["session_id"], "th-1");
+        assert_eq!(v["cwd"], "/work");
+    }
+
+    #[test]
+    fn codex_permission_fixtures_carry_decision() {
+        let v = parse(&codex_permission_request("th", "/w", "shell"));
+        assert_eq!(v["hook_event_name"], "PermissionRequest");
+        assert!(v.get("decision").is_none(), "the request carries no decision");
+
+        let allow = parse(&codex_permission_response("th", "/w", "shell", true));
+        assert_eq!(allow["decision"], "allow");
+        let deny = parse(&codex_permission_response("th", "/w", "shell", false));
+        assert_eq!(deny["decision"], "deny");
+    }
+
+    #[test]
+    fn claude_lifecycle_fixtures_have_expected_shape() {
+        let v = parse(&claude_session_start("s-1", "/ui"));
+        assert_eq!(v["hook_event_name"], "SessionStart");
+        assert_eq!(v["session_id"], "s-1");
+
+        let v = parse(&claude_prompt("s-1", "/ui"));
+        assert_eq!(v["hook_event_name"], "UserPromptSubmit");
+
+        let v = parse(&claude_pre_tool("s-1", "/ui", "Edit"));
+        assert_eq!(v["hook_event_name"], "PreToolUse");
+        assert_eq!(v["tool_name"], "Edit");
+
+        // claude_stop — previously uncovered; carries the completion marker.
+        let v = parse(&claude_stop("s-1", "/ui"));
+        assert_eq!(v["hook_event_name"], "Stop");
+        assert_eq!(v["stop_hook_active"], false);
+
+        // claude_session_end — previously uncovered.
+        let v = parse(&claude_session_end("s-1", "/ui"));
+        assert_eq!(v["hook_event_name"], "SessionEnd");
+        assert_eq!(v["session_id"], "s-1");
+        assert_eq!(v["cwd"], "/ui");
+    }
+
+    #[test]
+    fn claude_permission_fixtures_carry_permission() {
+        let req = parse(&claude_permission_request("s", "/ui", "Edit"));
+        assert_eq!(req["hook_event_name"], "PermissionRequest");
+        assert!(req.get("permission").is_none(), "the request has no verdict yet");
+
+        // claude_permission_response — previously uncovered (both verdicts).
+        let allow = parse(&claude_permission_response("s", "/ui", "Edit", true));
+        assert_eq!(allow["permission"], "allow");
+        assert_eq!(allow["tool_name"], "Edit");
+        let deny = parse(&claude_permission_response("s", "/ui", "Edit", false));
+        assert_eq!(deny["permission"], "deny");
+    }
+
+    #[test]
+    fn claude_transcript_fixtures_round_trip_as_jsonl() {
+        // The stuck transcript is a single assistant line whose tool_use has an id.
+        let stuck = claude_transcript_stuck("tu-9");
+        let v = parse(&stuck);
+        assert_eq!(v["type"], "assistant");
+        let content = v["message"]["content"].as_array().unwrap();
+        assert!(content.iter().any(|c| c["type"] == "tool_use" && c["id"] == "tu-9"));
+
+        // The resolved transcript is TWO JSONL lines: a tool_use then a tool_result.
+        let resolved = claude_transcript_resolved("tu-9");
+        let mut lines = resolved.lines();
+        let dispatch = parse(lines.next().unwrap());
+        assert_eq!(dispatch["type"], "assistant");
+        let result = parse(lines.next().unwrap());
+        assert_eq!(result["type"], "user");
+        assert_eq!(result["message"]["content"][0]["tool_use_id"], "tu-9");
+        assert!(lines.next().is_none(), "exactly two JSONL lines");
+    }
+}
