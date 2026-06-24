@@ -548,7 +548,9 @@ mod tests {
         let (sender, mut rx) = command_channel();
 
         // muted=true emits a mute for that exact session id.
-        sender.send(mute_toggle_command("alpha".into(), true)).unwrap();
+        sender
+            .send(mute_toggle_command("alpha".into(), true))
+            .unwrap();
         assert_eq!(rx.try_recv().unwrap(), Command::mute("alpha"));
 
         // muted=false emits an unmute for that exact session id.
@@ -563,7 +565,9 @@ mod tests {
         let (sender, mut rx) = command_channel();
 
         // soloed=true emits solo; the per-session id is preserved.
-        sender.send(solo_toggle_command("beta".into(), true)).unwrap();
+        sender
+            .send(solo_toggle_command("beta".into(), true))
+            .unwrap();
         assert_eq!(rx.try_recv().unwrap(), Command::solo("beta"));
 
         // soloed=false clears solo via unmute (the protocol has no unsolo).
@@ -577,7 +581,9 @@ mod tests {
     fn dismiss_session_round_trips_a_session_targeted_dismiss_over_the_hub_channel() {
         let (sender, mut rx) = command_channel();
 
-        sender.send(dismiss_session_command("gamma".into())).unwrap();
+        sender
+            .send(dismiss_session_command("gamma".into()))
+            .unwrap();
         assert_eq!(
             rx.try_recv().unwrap(),
             Command::dismiss(Target::session("gamma"))
@@ -591,7 +597,10 @@ mod tests {
         sender.send(focus_command("delta")).unwrap();
         assert_eq!(rx.try_recv().unwrap(), focus_command("delta"));
         // The seam carries a session-targeted focus for the requested id.
-        assert_eq!(focus_command("delta"), Command::focus(Target::session("delta")));
+        assert_eq!(
+            focus_command("delta"),
+            Command::focus(Target::session("delta"))
+        );
     }
 
     #[test]
