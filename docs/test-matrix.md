@@ -27,15 +27,15 @@ Legend: ✅ done · 🔸 partial · ⬜ gap · — n/a
 | Command | UI flow / invoke site | B contract | C vitest | E round-trip | D E2E |
 |---|---|---|---|---|---|
 | `rename_server` | row menu → Rename (`renameRow`) | ✅ | ✅✅ regressions | ✅ `/rename/<id>` | ✅ `rename.e2e.js` |
-| `select_server` | click row / Open (`activateServer`) | ✅ | ✅ | ✅ `/select/<id>` | ⬜ |
+| `select_server` | click row / Open (`activateServer`) | ✅ | ✅ | ✅ `/select/<id>` | ✅ `select.e2e.js` |
 | `close_server` | row menu → Close (`closeServer`) | ✅ | ✅ | ✅ `/close/<id>` | ⬜ |
-| `get_servers` | `refreshServers` (bootstrap) | ✅ | ✅ render rows | ✅ `/servers` | (indirect) |
-| `selected_server` | `refreshServers`/sync | ✅ | ✅ | ✅ `/selected` | (indirect) |
-| `spawn_server_with_options` | create menu (home / open-folder) | ✅ | ✅ open-folder spawns | ✅ pure routing (`resolve_spawn_route`) + smoke-only live spawn | ⬜ |
+| `get_servers` | `refreshServers` (bootstrap) | ✅ | ✅ render rows | ✅ `/servers` | (indirect: every D spec) |
+| `selected_server` | `refreshServers`/sync | ✅ | ✅ | ✅ `/selected` | (indirect: `select.e2e.js`) |
+| `spawn_server_with_options` | create menu (home / open-folder) | ✅ | ✅ open-folder spawns | ✅ pure routing (`resolve_spawn_route`) + smoke-only live spawn | ✅ `open-folder.e2e.js` (spawn-attempt status) |
 | `open_server_external` | row menu → Open in Browser | ✅ | ✅ `openRowInBrowser` | ✅ pure URL→open (`external_open_command`) + smoke-only live open | ⬜ |
-| `set_session_muted` | row menu → Mute (`toggleMuteRow`) | ✅ | ✅ | ✅ Hub harness | ⬜ |
-| `set_session_soloed` | row menu → Solo (`toggleSoloRow`) | ✅ | ✅ | ✅ Hub harness | ⬜ |
-| `dismiss_session` | row menu → Dismiss (`dismissRow`) | ✅ | ✅ | ✅ Hub harness | ⬜ |
+| `set_session_muted` | row menu → Mute (`toggleMuteRow`) | ✅ | ✅ | ✅ Hub harness | ✅ `agent-state.e2e.js` (optimistic `muted-state`) |
+| `set_session_soloed` | row menu → Solo (`toggleSoloRow`) | ✅ | ✅ | ✅ Hub harness | ✅ `agent-state.e2e.js` (optimistic `soloed-state`) |
+| `dismiss_session` | row menu → Dismiss (`dismissRow`) | ✅ | ✅ | ✅ Hub harness | ✅ `agent-state.e2e.js` (row removed) |
 | `focus_session` | `focusSession` | ✅ | ✅ | ✅ Hub harness | ⬜ |
 | `get_inbox` | `refreshInbox` (bootstrap) | ✅ | ✅ inbox events | ✅ `/inbox` | — |
 | `get_host_status` | `refreshStatus` (bootstrap) | ✅ | ✅ host-status | ✅ `/host-status` | — |
@@ -49,11 +49,12 @@ dead-command check now guards against reintroducing one.)
 | Flow | C vitest | D E2E |
 |---|---|---|
 | Palette: open / search-filter / choose / jump-next-unread / cycle-unread | ✅ | ⬜ |
-| Create menu: open / spawn-home / open-folder (domPrompt) | ✅ | 🔸 (open-folder via E2E owed) |
+| Create menu: open / spawn-home / open-folder (domPrompt) | ✅ | ✅ open-folder (`open-folder.e2e.js`) |
 | Unread jump button enable/disable | ✅ | ⬜ |
-| Row context menu render (Open/Rename/Close/…) | ✅ | 🔸 (rename only) |
-| Status / error override render + auto-clear | ✅ | — |
-| Unread / waiting / attention indicators | ✅ | ⬜ |
+| Row context menu render (Open/Rename/Close/…) | ✅ | 🔸 (rename + mute/solo/dismiss items exercised) |
+| Status / error override render + auto-clear | ✅ | 🔸 (spawn-error override shown in `open-folder.e2e.js`) |
+| Waiting / attention indicators | ✅ | ✅ `agent-state.e2e.js` (attention class + badge + status pill) |
+| Unread-dot reconciliation (focus/transition) | ✅ `deriveInboxTabs`/`reconcileUnread` | — (reducer-internal; covered by C + host-core reducer tests, not D) |
 
 ## Outstanding work (drives the goal)
 
