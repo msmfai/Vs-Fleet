@@ -96,6 +96,11 @@ export const config = {
           FLEET_RUNTIME_DIR: runtimeDir,
           FLEET_PROBE_CONTROL_PORT: String(PROBE_PORT),
           RUST_LOG: process.env.RUST_LOG ?? "info",
+          // WebKitGTK under Xvfb has no GPU: force software GL + disable compositing
+          // to quiet the `libEGL/DRI3` warnings. The spec is DOM-driven and does NOT
+          // depend on rendering, so this is noise reduction, not a correctness dep.
+          LIBGL_ALWAYS_SOFTWARE: "1",
+          WEBKIT_DISABLE_COMPOSITING_MODE: "1",
         },
       },
     },
