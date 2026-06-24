@@ -483,6 +483,59 @@ fn handle_probe_control(app: tauri::AppHandle, mut stream: TcpStream) {
             .and_then(|state| state.selected.lock().ok().and_then(|g| g.clone()));
         let body = serde_json::json!({ "selected": selected }).to_string();
         let _ = write_probe_json(&mut stream, 200, &body);
+    } else if path == "/inbox" {
+        // Read command (`get_inbox`): the webview's initial pull of inbox state.
+        // Mirror the command — clone the latest rendered inbox out of `Shared`.
+        let inbox = app
+            .try_state::<hub_client::Shared>()
+            .map(|shared| shared.lock().map(|g| g.clone()).unwrap_or_default())
+            .unwrap_or_default();
+        let body = serde_json::to_string(&inbox).unwrap_or_else(|_| "null".to_string());
+        let _ = write_probe_json(&mut stream, 200, &body);
+    } else if path == "/host-status" {
+        // Read command (`get_host_status`): the current host-status override.
+        let status = app
+            .try_state::<mux::MuxState>()
+            .and_then(|state| mux::read_host_status(&state));
+        let body = serde_json::json!({ "status": status }).to_string();
+        let _ = write_probe_json(&mut stream, 200, &body);
+    } else if let Some(rest) = path.strip_prefix("/host-status/set") {
+        // Seed a host-status override so the GET + conditional-clear round-trips
+        // have observable state to act on (`?message=<urlencoded>`). Headless: it
+        // mutates `MuxState` directly, not via the live emit path.
+        let message = rest
+            .strip_prefix('?')
+            .and_then(probe_query_message)
+            .unwrap_or_default();
+        let set = app
+            .try_state::<mux::MuxState>()
+            .map(|state| {
+                mux::set_host_status_state(
+                    &state,
+                    mux::HostStatus {
+                        level: "warning".into(),
+                        source: "probe".into(),
+                        message: message.clone(),
+                    },
+                );
+                true
+            })
+            .unwrap_or(false);
+        let body = serde_json::json!({ "set": set, "message": message }).to_string();
+        let _ = write_probe_json(&mut stream, 200, &body);
+    } else if let Some(rest) = path.strip_prefix("/host-status/clear") {
+        // `clear_host_status_if_current`: clears ONLY if the stored message still
+        // matches the one the caller raised (`?message=<urlencoded>`).
+        let message = rest
+            .strip_prefix('?')
+            .and_then(probe_query_message)
+            .unwrap_or_default();
+        let cleared = app
+            .try_state::<mux::MuxState>()
+            .map(|state| mux::clear_host_status_if_message(&state, &message))
+            .unwrap_or(false);
+        let body = serde_json::json!({ "cleared": cleared, "message": message }).to_string();
+        let _ = write_probe_json(&mut stream, 200, &body);
     } else if let Some(id) = path.strip_prefix("/select/") {
         let id = id.split(['?', '#']).next().unwrap_or(id).to_string();
         mux::select(&app, id.clone());
@@ -535,12 +588,20 @@ fn handle_probe_control(app: tauri::AppHandle, mut stream: TcpStream) {
 /// AppHandle-free so it is unit-testable without a window; `handle_probe_control`
 /// only adds the `app.emit`/window glue around it.
 ///
-/// Currently the only such command is `rename`, which renames the server in BOTH
-/// the supervisor (Fleet-spawned servers) and the registry (phone-home servers) —
-/// whichever holds the id — exactly like the `rename_server` Tauri command. The
-/// mute/solo/dismiss/focus actions are NOT here: they dispatch over the Hub
+/// The State-mutating probe commands reduce to supervisor + registry mutation:
+/// - `rename` renames the server in BOTH the supervisor (Fleet-spawned servers)
+///   and the registry (phone-home servers) — whichever holds the id — exactly like
+///   the `rename_server` Tauri command.
+/// - `close` drops the server from BOTH stores (the supervisor `close` kill +
+///   `registry.forget`) — the headless core of `close_server` / `close_server_by_id`.
+///   The live `/close/<id>` probe wraps this with the window glue (re-tile, blank /
+///   re-select the editor surface), which needs the `AppHandle`; here we assert the
+///   observable store effect.
+///
+/// The mute/solo/dismiss/focus actions are NOT here: they dispatch over the Hub
 /// command channel (`hub_client::HubCommandSender`), not supervisor/registry
-/// State, so they need the live link and are covered only by the CI smoke.
+/// State, so they need the live link and are covered by the in-process Hub harness
+/// (`hub_client` tests) + the CI smoke.
 fn apply_state_probe_command(
     action: &str,
     id: &str,
@@ -559,18 +620,36 @@ fn apply_state_probe_command(
                 "label": label,
             }))
         }
+        "close" => {
+            let closed_spawned = sup.close(id);
+            let forgot_registered = registry.forget(id);
+            Some(serde_json::json!({
+                "closed": closed_spawned || forgot_registered,
+                "server": id,
+            }))
+        }
         _ => None,
     }
 }
 
-/// Extract and percent-decode the `label` parameter from a probe query string
-/// (`label=My%20Project&…`). Pure. Returns `None` when absent.
-fn probe_query_label(query: &str) -> Option<String> {
+/// Extract and percent-decode the named parameter from a probe query string
+/// (`key=My%20Project&…`). Pure. Returns `None` when absent.
+fn probe_query_value(query: &str, key: &str) -> Option<String> {
     query
         .split('&')
         .filter_map(|pair| pair.split_once('='))
-        .find(|(key, _)| *key == "label")
+        .find(|(k, _)| *k == key)
         .map(|(_, value)| percent_decode(value))
+}
+
+/// The `label` probe query parameter (`/rename/<id>?label=…`).
+fn probe_query_label(query: &str) -> Option<String> {
+    probe_query_value(query, "label")
+}
+
+/// The `message` probe query parameter (`/host-status/{set,clear}?message=…`).
+fn probe_query_message(query: &str) -> Option<String> {
+    probe_query_value(query, "message")
 }
 
 /// Minimal percent-decoder for probe query values: turns `%XX` escapes back into
@@ -902,5 +981,67 @@ mod tests {
         }
         // The server is untouched by any of those.
         assert!(!sup.servers()[0].renamed);
+        assert_eq!(sup.servers().len(), 1);
+    }
+
+    // The close probe command performs a REAL round-trip through the dispatch: it
+    // drops the server from whichever store (supervisor or registry) holds the id
+    // and reports {"closed":true}. This is the headless State core of the
+    // `close_server` Tauri command (the live `/close/<id>` adds only window glue).
+    #[test]
+    fn apply_state_probe_close_round_trips_through_supervisor_and_registry() {
+        let sup = probe_supervisor();
+        let registry = bridge::BridgeRegistry::new();
+        sup.push_test_server("server-sup");
+        registry.register_test_server("server-reg", "http://127.0.0.1:9/", "auto-reported");
+        assert_eq!(sup.servers().len(), 1);
+        assert_eq!(registry.servers().len(), 1);
+
+        // Closing a supervisor-held server drops it from the supervisor list. (The
+        // `closed` bool reflects whether real child processes were killed; the
+        // synthetic test server has none, so the OBSERVABLE store removal — not the
+        // bool — is the signal here, exactly as `close_server_by_id` reports it.)
+        let body = apply_state_probe_command("close", "server-sup", None, &sup, &registry)
+            .expect("close returns a body");
+        assert_eq!(body["server"], "server-sup");
+        assert!(
+            sup.servers().iter().all(|s| s.id != "server-sup"),
+            "the closed server is gone from the supervisor list"
+        );
+
+        // Closing a registry-held server forgets it from the registry and reports
+        // closed=true (forget reports presence).
+        let body = apply_state_probe_command("close", "server-reg", None, &sup, &registry)
+            .expect("close returns a body");
+        assert_eq!(body["closed"], true);
+        assert!(registry.servers().is_empty());
+    }
+
+    // Closing an unknown id mutates nothing and reports {"closed":false}.
+    #[test]
+    fn apply_state_probe_close_unknown_id_reports_not_closed() {
+        let sup = probe_supervisor();
+        let registry = bridge::BridgeRegistry::new();
+        sup.push_test_server("server-1");
+
+        let body = apply_state_probe_command("close", "ghost", None, &sup, &registry).unwrap();
+        assert_eq!(body["closed"], false);
+        assert_eq!(body["server"], "ghost");
+        // The real server is untouched.
+        assert_eq!(sup.servers().len(), 1);
+        assert_eq!(sup.servers()[0].id, "server-1");
+    }
+
+    #[test]
+    fn probe_query_message_decodes_only_the_message_param() {
+        assert_eq!(
+            probe_query_message("message=spawn%20failed%3A%20boom").as_deref(),
+            Some("spawn failed: boom")
+        );
+        assert_eq!(
+            probe_query_message("x=1&message=No+VS+Code&y=2").as_deref(),
+            Some("No VS Code")
+        );
+        assert_eq!(probe_query_message("label=plain"), None);
     }
 }

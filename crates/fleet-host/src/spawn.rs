@@ -159,18 +159,23 @@ impl ServerSupervisor {
             .as_deref()
             .map(str::trim)
             .filter(|mode| !mode.is_empty());
-        match spawn_mode() {
-            _ if mode == Some("container") => self.spawn_container(),
-            _ if mode == Some("local") => self.spawn_local(Some(
+        match resolve_spawn_route(mode, spawn_mode()) {
+            SpawnRoute::Container => self.spawn_container(),
+            SpawnRoute::Ssh => self.spawn_ssh(),
+            // An explicit `mode == "local"` request forces a concrete folder
+            // (defaulting it) so an explicit local create never lands on the
+            // env-default folder path; the env-driven local route keeps the
+            // request's optional folder as-is.
+            SpawnRoute::LocalExplicit => self.spawn_local(Some(
                 request
                     .folder
                     .as_deref()
                     .map(expand_user_path)
                     .unwrap_or_else(default_spawn_folder),
             )),
-            SpawnMode::Container => self.spawn_container(),
-            SpawnMode::Ssh => self.spawn_ssh(),
-            SpawnMode::Local => self.spawn_local(request.folder.as_deref().map(expand_user_path)),
+            SpawnRoute::Local => {
+                self.spawn_local(request.folder.as_deref().map(expand_user_path))
+            }
         }
     }
 
@@ -1017,6 +1022,34 @@ fn spawn_mode() -> SpawnMode {
         Ok("container") => SpawnMode::Container,
         Ok("ssh") => SpawnMode::Ssh,
         _ => SpawnMode::Local,
+    }
+}
+
+/// The concrete spawn path `spawn_with` dispatches to, decided purely from the
+/// request's `mode` override (already trimmed + non-blank-filtered) and the
+/// env-derived [`SpawnMode`]. Split out so the routing — the testable decision
+/// logic of `spawn_server_with_options` — is verifiable without launching a
+/// process tree (the live spawn itself is covered only by the CI smoke/E2E).
+#[derive(Debug, PartialEq, Eq)]
+enum SpawnRoute {
+    Container,
+    Ssh,
+    /// `mode == "local"` was requested explicitly (force a concrete folder).
+    LocalExplicit,
+    /// The env default chose local (carry the request's optional folder).
+    Local,
+}
+
+fn resolve_spawn_route(mode_override: Option<&str>, env_mode: SpawnMode) -> SpawnRoute {
+    // An explicit request mode wins over the env knob.
+    match mode_override {
+        Some("container") => SpawnRoute::Container,
+        Some("local") => SpawnRoute::LocalExplicit,
+        _ => match env_mode {
+            SpawnMode::Container => SpawnRoute::Container,
+            SpawnMode::Ssh => SpawnRoute::Ssh,
+            SpawnMode::Local => SpawnRoute::Local,
+        },
     }
 }
 
@@ -3399,6 +3432,76 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
             let _g = EnvGuard::unset("FLEET_SPAWN_MODE");
             assert!(matches!(spawn_mode(), SpawnMode::Local));
         }
+    }
+
+    // The pure routing decision of `spawn_server_with_options` → `spawn_with`.
+    // The live spawn (a real code-server/docker/ssh tree) is CI-smoke-only, but
+    // its dispatch — which path each (request mode, env mode) lands on — is fully
+    // deterministic and asserted here.
+    #[test]
+    fn spawn_route_dispatches_request_mode_over_env_mode() {
+        use super::{resolve_spawn_route, SpawnMode, SpawnRoute};
+
+        // An explicit request mode wins over the env knob.
+        assert_eq!(
+            resolve_spawn_route(Some("container"), SpawnMode::Local),
+            SpawnRoute::Container
+        );
+        assert_eq!(
+            resolve_spawn_route(Some("container"), SpawnMode::Ssh),
+            SpawnRoute::Container
+        );
+        // An explicit `local` request forces the explicit-folder local path even
+        // when the env knob says container/ssh.
+        assert_eq!(
+            resolve_spawn_route(Some("local"), SpawnMode::Container),
+            SpawnRoute::LocalExplicit
+        );
+        assert_eq!(
+            resolve_spawn_route(Some("local"), SpawnMode::Ssh),
+            SpawnRoute::LocalExplicit
+        );
+
+        // No request mode ⇒ the env knob decides.
+        assert_eq!(
+            resolve_spawn_route(None, SpawnMode::Container),
+            SpawnRoute::Container
+        );
+        assert_eq!(resolve_spawn_route(None, SpawnMode::Ssh), SpawnRoute::Ssh);
+        assert_eq!(resolve_spawn_route(None, SpawnMode::Local), SpawnRoute::Local);
+
+        // An unrecognized request mode falls through to the env knob (not an error).
+        assert_eq!(
+            resolve_spawn_route(Some("bogus"), SpawnMode::Local),
+            SpawnRoute::Local
+        );
+        assert_eq!(
+            resolve_spawn_route(Some("bogus"), SpawnMode::Container),
+            SpawnRoute::Container
+        );
+    }
+
+    // `SpawnRequest` is what the `spawn_server_with_options` command deserializes
+    // from the frontend invoke; its camelCase parsing + the trim/non-blank
+    // filtering `spawn_with` applies to `mode` are part of the command's contract.
+    #[test]
+    fn spawn_request_parses_camel_case_and_trims_mode() {
+        let req: SpawnRequest =
+            serde_json::from_value(serde_json::json!({ "mode": "container", "folder": "~/code" }))
+                .unwrap();
+        assert_eq!(req.mode.as_deref(), Some("container"));
+        assert_eq!(req.folder.as_deref(), Some("~/code"));
+
+        // Absent fields default to None (the home-folder create path).
+        let empty: SpawnRequest = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(empty.mode.is_none());
+        assert!(empty.folder.is_none());
+
+        // A blank/whitespace mode is filtered to None by `spawn_with`, so it routes
+        // by the env knob rather than as an explicit mode.
+        let blank = Some("   ");
+        let trimmed = blank.map(str::trim).filter(|m| !m.is_empty());
+        assert_eq!(trimmed, None);
     }
 
     #[test]

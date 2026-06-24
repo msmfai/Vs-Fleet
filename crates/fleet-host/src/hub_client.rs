@@ -173,6 +173,13 @@ fn solo_toggle_command(session_id: String, soloed: bool) -> Command {
     }
 }
 
+/// The dismiss command for a session id. Pure. Split out from the thin
+/// `dismiss_session` Tauri wrapper so the frontend→command seam is testable
+/// without constructing tauri `State`.
+fn dismiss_session_command(session_id: String) -> Command {
+    Command::dismiss(Target::session(session_id))
+}
+
 // Thin Tauri command wrapper: gate on connection, then send the pure command on
 // the live Hub socket. The State plumbing needs a running app; the command
 // selection (`mute_toggle_command`) and the gate (`ensure_connected`) are tested.
@@ -208,7 +215,7 @@ pub fn dismiss_session(
     session_id: String,
 ) -> Result<(), String> {
     ensure_connected(&shared)?;
-    commands.send(Command::dismiss(Target::session(session_id)))
+    commands.send(dismiss_session_command(session_id))
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -526,6 +533,65 @@ mod tests {
             sender.send(Command::mute("s1")),
             Err("hub command channel closed".to_string())
         );
+    }
+
+    // In-process Hub-channel round-trip harness: this is the real seam for the
+    // mute/solo/dismiss/focus Tauri commands. Each command fn's core is
+    // (build a `Command`) → `HubCommandSender.send` → the live link forwards it on
+    // the Hub socket. We wire a `HubCommandSender` to a receiver, drive the
+    // extracted helper exactly as the command fn does, and assert the EXACT
+    // `Command` enum value lands on the receiver (the frontend invoke → emitted
+    // Command round-trip), bypassing only the tauri `State` adapter.
+
+    #[test]
+    fn set_session_muted_round_trips_mute_then_unmute_over_the_hub_channel() {
+        let (sender, mut rx) = command_channel();
+
+        // muted=true emits a mute for that exact session id.
+        sender.send(mute_toggle_command("alpha".into(), true)).unwrap();
+        assert_eq!(rx.try_recv().unwrap(), Command::mute("alpha"));
+
+        // muted=false emits an unmute for that exact session id.
+        sender
+            .send(mute_toggle_command("alpha".into(), false))
+            .unwrap();
+        assert_eq!(rx.try_recv().unwrap(), Command::unmute("alpha"));
+    }
+
+    #[test]
+    fn set_session_soloed_round_trips_solo_then_unmute_over_the_hub_channel() {
+        let (sender, mut rx) = command_channel();
+
+        // soloed=true emits solo; the per-session id is preserved.
+        sender.send(solo_toggle_command("beta".into(), true)).unwrap();
+        assert_eq!(rx.try_recv().unwrap(), Command::solo("beta"));
+
+        // soloed=false clears solo via unmute (the protocol has no unsolo).
+        sender
+            .send(solo_toggle_command("beta".into(), false))
+            .unwrap();
+        assert_eq!(rx.try_recv().unwrap(), Command::unmute("beta"));
+    }
+
+    #[test]
+    fn dismiss_session_round_trips_a_session_targeted_dismiss_over_the_hub_channel() {
+        let (sender, mut rx) = command_channel();
+
+        sender.send(dismiss_session_command("gamma".into())).unwrap();
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            Command::dismiss(Target::session("gamma"))
+        );
+    }
+
+    #[test]
+    fn focus_session_round_trips_a_focus_command_over_the_hub_channel() {
+        let (sender, mut rx) = command_channel();
+
+        sender.send(focus_command("delta")).unwrap();
+        assert_eq!(rx.try_recv().unwrap(), focus_command("delta"));
+        // The seam carries a session-targeted focus for the requested id.
+        assert_eq!(focus_command("delta"), Command::focus(Target::session("delta")));
     }
 
     #[test]

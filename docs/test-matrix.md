@@ -30,15 +30,15 @@ Legend: ✅ done · 🔸 partial · ⬜ gap · — n/a
 | `close_server` | row menu → Close (`closeServer`) | ✅ | ✅ | ✅ `/close/<id>` | ⬜ |
 | `get_servers` | `refreshServers` (bootstrap) | ✅ | ✅ render rows | ✅ `/servers` | (indirect) |
 | `selected_server` | `refreshServers`/sync | ✅ | ✅ | ✅ `/selected` | (indirect) |
-| `spawn_server_with_options` | create menu (home / open-folder) | ✅ | ✅ open-folder spawns | ⬜ probe `/spawn` | ⬜ |
-| `open_server_external` | row menu → Open in Browser | ✅ | ✅ `openRowInBrowser` | ⬜ probe | ⬜ |
-| `set_session_muted` | row menu → Mute (`toggleMuteRow`) | ✅ | ✅ | ⬜ Hub harness | ⬜ |
-| `set_session_soloed` | row menu → Solo (`toggleSoloRow`) | ✅ | ✅ | ⬜ Hub harness | ⬜ |
-| `dismiss_session` | row menu → Dismiss (`dismissRow`) | ✅ | ✅ | ⬜ Hub harness | ⬜ |
-| `focus_session` | `focusSession` | ✅ | ✅ | ⬜ Hub harness | ⬜ |
-| `get_inbox` | `refreshInbox` (bootstrap) | ✅ | ✅ inbox events | ⬜ probe | — |
-| `get_host_status` | `refreshStatus` (bootstrap) | ✅ | ✅ host-status | ⬜ probe | — |
-| `clear_host_status_if_current` | `clearStatusOverride` (auto) | ✅ | ✅ | ⬜ probe | — |
+| `spawn_server_with_options` | create menu (home / open-folder) | ✅ | ✅ open-folder spawns | ✅ pure routing (`resolve_spawn_route`) + smoke-only live spawn | ⬜ |
+| `open_server_external` | row menu → Open in Browser | ✅ | ✅ `openRowInBrowser` | ✅ pure URL→open (`external_open_command`) + smoke-only live open | ⬜ |
+| `set_session_muted` | row menu → Mute (`toggleMuteRow`) | ✅ | ✅ | ✅ Hub harness | ⬜ |
+| `set_session_soloed` | row menu → Solo (`toggleSoloRow`) | ✅ | ✅ | ✅ Hub harness | ⬜ |
+| `dismiss_session` | row menu → Dismiss (`dismissRow`) | ✅ | ✅ | ✅ Hub harness | ⬜ |
+| `focus_session` | `focusSession` | ✅ | ✅ | ✅ Hub harness | ⬜ |
+| `get_inbox` | `refreshInbox` (bootstrap) | ✅ | ✅ inbox events | ✅ `/inbox` | — |
+| `get_host_status` | `refreshStatus` (bootstrap) | ✅ | ✅ host-status | ✅ `/host-status` | — |
+| `clear_host_status_if_current` | `clearStatusOverride` (auto) | ✅ | ✅ | ✅ `/host-status/clear` | — |
 | `spawn_server` | **no frontend caller** | ⚠️ dead? | — | ⬜ | — |
 
 ## UI-only flows (no 1:1 command)
