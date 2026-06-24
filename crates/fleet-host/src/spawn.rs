@@ -1899,6 +1899,18 @@ mod tests {
         assert!(prefix.is_empty());
     }
 
+    // Off macOS there is no TCC-disclaim concern, so `server_spawn_target` is a
+    // pass-through: it spawns the serve-web wrapper as-is (the direct-node rewrite
+    // is macOS-only, cfg'd out here). Covers the non-macOS fallback path.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn server_spawn_target_is_passthrough_off_macos() {
+        let bin = PathBuf::from("/opt/serve-web/bin/code-server");
+        let (target, prefix) = server_spawn_target(&bin);
+        assert_eq!(target, bin);
+        assert!(prefix.is_empty());
+    }
+
     #[test]
     fn editor_resolved_accepts_files_and_path_hits_only() {
         let empty_path = OsString::new();

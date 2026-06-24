@@ -672,6 +672,29 @@ mod tests {
         assert_eq!(FocusPlatform::detect(), FocusPlatform::MacOs);
     }
 
+    // Linux session detection: Wayland (via XDG_SESSION_TYPE or a non-empty
+    // WAYLAND_DISPLAY) else X11. This test mutates process-global env, so it keeps
+    // both keys controlled and clears them unconditionally at the end (no
+    // machine-dependent restore branch). detect_linux_session is the only reader.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn detect_linux_session_picks_wayland_else_x11() {
+        std::env::set_var("XDG_SESSION_TYPE", "wayland");
+        std::env::remove_var("WAYLAND_DISPLAY");
+        assert_eq!(detect_linux_session(), FocusPlatform::Wayland);
+
+        std::env::set_var("XDG_SESSION_TYPE", "x11");
+        std::env::set_var("WAYLAND_DISPLAY", "wayland-0");
+        assert_eq!(detect_linux_session(), FocusPlatform::Wayland);
+
+        std::env::set_var("XDG_SESSION_TYPE", "x11");
+        std::env::remove_var("WAYLAND_DISPLAY");
+        assert_eq!(detect_linux_session(), FocusPlatform::LinuxX11);
+
+        std::env::remove_var("XDG_SESSION_TYPE");
+        std::env::remove_var("WAYLAND_DISPLAY");
+    }
+
     /// A backend that does not override `notify_fallback` exercises the trait's
     /// default impl (no fallback available), so a Failed activation → Failed.
     #[test]
