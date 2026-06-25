@@ -10,29 +10,33 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// The captured fake WebSocket instances, in creation order.
-const instances: FakeWS[] = [];
-
-class FakeWS {
-  handlers = new Map<string, (...a: any[]) => void>();
-  closed = false;
-  constructor(public readonly target: string) {
-    instances.push(this);
+// FakeWS + its instance log live inside vi.hoisted so they exist when the hoisted
+// vi.mock("ws") factory runs (a plain top-level class would be in the TDZ →
+// "Cannot access 'FakeWS' before initialization").
+const { FakeWS, instances } = vi.hoisted(() => {
+  const instances: any[] = [];
+  class FakeWS {
+    handlers = new Map<string, (...a: any[]) => void>();
+    closed = false;
+    constructor(public readonly target: string) {
+      instances.push(this);
+    }
+    on(ev: string, cb: (...a: any[]) => void): this {
+      this.handlers.set(ev, cb);
+      return this;
+    }
+    send(): void {
+      /* swallow the hello frame */
+    }
+    close(): void {
+      this.closed = true;
+    }
+    fire(ev: string, ...a: any[]): void {
+      this.handlers.get(ev)?.(...a);
+    }
   }
-  on(ev: string, cb: (...a: any[]) => void): this {
-    this.handlers.set(ev, cb);
-    return this;
-  }
-  send(): void {
-    /* swallow the hello frame */
-  }
-  close(): void {
-    this.closed = true;
-  }
-  fire(ev: string, ...a: any[]): void {
-    this.handlers.get(ev)?.(...a);
-  }
-}
+  return { FakeWS, instances };
+});
 
 // `import WebSocket from "ws"` resolves to the module's default export (the class
 // itself), so the mock's default must BE the constructor.
