@@ -285,7 +285,10 @@ impl ServerSupervisor {
         // Local spawns prefer the bridge's unix socket; the TCP URL stays as a
         // fallback the extension uses only when the socket env is absent.
         #[cfg(unix)]
-        let bridge_socket = self.bridge_socket.as_ref().map(|p| p.to_string_lossy().into_owned());
+        let bridge_socket = self
+            .bridge_socket
+            .as_ref()
+            .map(|p| p.to_string_lossy().into_owned());
         #[cfg(not(unix))]
         let bridge_socket: Option<String> = None;
         let env = fleet_env(
