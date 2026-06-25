@@ -67,6 +67,11 @@ pub struct ServerSupervisor {
     counter: AtomicU64,
     launch_id: String,
     bridge_port: u16,
+    /// The bridge's unix-domain socket path (unix only). Local spawns advertise
+    /// it via `FLEET_BRIDGE_SOCKET` so the extension dials a filesystem socket
+    /// instead of the TCP loopback port (no macOS local-network TCC prompt).
+    #[cfg(unix)]
+    bridge_socket: Option<PathBuf>,
     hub_url: String,
     bridge_token: String,
 }
@@ -79,12 +84,25 @@ pub struct SpawnRequest {
 }
 
 impl ServerSupervisor {
-    pub fn new(bridge_port: u16, hub_url: String, bridge_token: String) -> Self {
-        Self::new_with_launch_id(bridge_port, hub_url, bridge_token, launch_id())
+    pub fn new(
+        bridge_port: u16,
+        #[cfg(unix)] bridge_socket: Option<PathBuf>,
+        hub_url: String,
+        bridge_token: String,
+    ) -> Self {
+        Self::new_with_launch_id(
+            bridge_port,
+            #[cfg(unix)]
+            bridge_socket,
+            hub_url,
+            bridge_token,
+            launch_id(),
+        )
     }
 
     fn new_with_launch_id(
         bridge_port: u16,
+        #[cfg(unix)] bridge_socket: Option<PathBuf>,
         hub_url: String,
         bridge_token: String,
         launch_id: String,
@@ -96,6 +114,8 @@ impl ServerSupervisor {
             counter: AtomicU64::new(1),
             launch_id,
             bridge_port,
+            #[cfg(unix)]
+            bridge_socket,
             hub_url,
             bridge_token,
         }
@@ -262,11 +282,18 @@ impl ServerSupervisor {
         };
 
         let args = local_server_args(&server_bin, "127.0.0.1", port, &user_data, &folder);
+        // Local spawns prefer the bridge's unix socket; the TCP URL stays as a
+        // fallback the extension uses only when the socket env is absent.
+        #[cfg(unix)]
+        let bridge_socket = self.bridge_socket.as_ref().map(|p| p.to_string_lossy().into_owned());
+        #[cfg(not(unix))]
+        let bridge_socket: Option<String> = None;
         let env = fleet_env(
             &reporter_socket.to_string_lossy(),
             &id,
             &label,
             &format!("ws://127.0.0.1:{}", self.bridge_port),
+            bridge_socket.as_deref(),
             &url,
             &self.bridge_token,
             &base.to_string_lossy(),
@@ -651,6 +678,9 @@ fn ssh_remote_command(
         id,
         label,
         &format!("ws://127.0.0.1:{r_bridge}"),
+        // Remote: the bridge socket lives on Fleet's host, unreachable from the
+        // remote, so the remote bridge dials home over the reverse-tunneled URL.
+        None,
         &url,
         bridge_token,
         ".fleet",
@@ -1753,16 +1783,24 @@ fn code_server_args(host: &str, port: u16, server_data: &str, default_folder: &s
 /// `FLEET_BRIDGE_URL`, the reporter writes `FLEET_REPORTER_SOCKET`, and the rail tab is
 /// keyed by `FLEET_SERVER_ID`/`FLEET_SESSION_ID`. Identical keys for local and remote;
 /// only the values (paths/ports) differ by location.
+///
+/// `bridge_socket` (local spawns only) advertises the bridge's unix-domain socket
+/// via `FLEET_BRIDGE_SOCKET`; the extension prefers it over the TCP
+/// `FLEET_BRIDGE_URL`, so the local reconnect loop never opens a network socket
+/// (no macOS local-network TCC prompt). Remote/container spawns pass `None`
+/// (a host unix socket isn't reachable from them) and keep using the URL.
+#[allow(clippy::too_many_arguments)]
 fn fleet_env(
     reporter_socket: &str,
     id: &str,
     label: &str,
     bridge_url: &str,
+    bridge_socket: Option<&str>,
     server_url: &str,
     bridge_token: &str,
     bridge_log_dir: &str,
 ) -> Vec<(String, String)> {
-    vec![
+    let mut env = vec![
         ("FLEET_REPORTER_SOCKET".into(), reporter_socket.into()),
         ("FLEET_SESSION_ID".into(), id.into()),
         ("FLEET_BRIDGE_URL".into(), bridge_url.into()),
@@ -1771,7 +1809,11 @@ fn fleet_env(
         ("FLEET_SERVER_ID".into(), id.into()),
         ("FLEET_SERVER_LABEL".into(), label.into()),
         ("FLEET_SERVER_URL".into(), server_url.into()),
-    ]
+    ];
+    if let Some(socket) = bridge_socket.filter(|s| !s.is_empty()) {
+        env.push(("FLEET_BRIDGE_SOCKET".into(), socket.into()));
+    }
+    env
 }
 
 /// POSIX single-quote a string for safe interpolation into a remote `ssh` shell command.
@@ -2045,6 +2087,8 @@ mod tests {
 
         let supervisor = ServerSupervisor::new_with_launch_id(
             51778,
+            #[cfg(unix)]
+            None,
             "ws://127.0.0.1:51777".into(),
             "token".into(),
             "testlaunch".into(),
@@ -2329,6 +2373,7 @@ mod tests {
             "server-testlaunch-1",
             "server-1",
             "ws://127.0.0.1:51778",
+            None,
             "http://127.0.0.1:9000/",
             "token-1",
             "/Users/example/.fleet/mux",
@@ -2340,6 +2385,53 @@ mod tests {
         assert_eq!(map["FLEET_BRIDGE_URL"], "ws://127.0.0.1:51778");
         assert_eq!(map["FLEET_SERVER_ID"], "server-testlaunch-1");
         assert_eq!(map["FLEET_SERVER_LABEL"], "server-1");
+        // With no unix socket advertised, the local-only key is absent (remote /
+        // container spawns keep dialing the TCP URL).
+        assert!(!map.contains_key("FLEET_BRIDGE_SOCKET"));
+    }
+
+    #[test]
+    fn fleet_env_advertises_the_bridge_socket_when_present() {
+        // A local spawn passes the bridge's unix socket path; the extension then
+        // prefers it over the TCP URL, so the macOS reconnect loop opens a
+        // filesystem socket (no local-network TCC prompt) — the TCP URL stays as
+        // the documented fallback.
+        let env = fleet_env(
+            "/tmp/reporter.sock",
+            "server-testlaunch-1",
+            "server-1",
+            "ws://127.0.0.1:51778",
+            Some("/Users/example/.fleet/run/bridge.sock"),
+            "http://127.0.0.1:9000/",
+            "token-1",
+            "/Users/example/.fleet/mux",
+        );
+        let map: std::collections::HashMap<_, _> = env.into_iter().collect();
+
+        assert_eq!(
+            map["FLEET_BRIDGE_SOCKET"],
+            "/Users/example/.fleet/run/bridge.sock"
+        );
+        // The TCP URL fallback is still present alongside the socket.
+        assert_eq!(map["FLEET_BRIDGE_URL"], "ws://127.0.0.1:51778");
+    }
+
+    #[test]
+    fn fleet_env_omits_an_empty_bridge_socket() {
+        // An empty socket string is treated as "not advertised" (so a blank env
+        // override can't smuggle in an empty FLEET_BRIDGE_SOCKET).
+        let env = fleet_env(
+            "/tmp/reporter.sock",
+            "server-testlaunch-1",
+            "server-1",
+            "ws://127.0.0.1:51778",
+            Some(""),
+            "http://127.0.0.1:9000/",
+            "token-1",
+            "/Users/example/.fleet/mux",
+        );
+        let map: std::collections::HashMap<_, _> = env.into_iter().collect();
+        assert!(!map.contains_key("FLEET_BRIDGE_SOCKET"));
     }
 
     #[test]
@@ -2626,6 +2718,8 @@ wait
 
         let supervisor = ServerSupervisor::new_with_launch_id(
             51778,
+            #[cfg(unix)]
+            None,
             "ws://127.0.0.1:51777".into(),
             "token".into(),
             "testlaunch".into(),
@@ -2682,6 +2776,8 @@ wait
         {
             let supervisor = ServerSupervisor::new_with_launch_id(
                 51778,
+                #[cfg(unix)]
+                None,
                 "ws://127.0.0.1:51777".into(),
                 "token".into(),
                 "testlaunch".into(),
@@ -3024,6 +3120,8 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
     fn test_supervisor() -> ServerSupervisor {
         ServerSupervisor::new_with_launch_id(
             51778,
+            #[cfg(unix)]
+            None,
             "ws://127.0.0.1:51777".into(),
             "token".into(),
             "testlaunch".into(),
@@ -3132,7 +3230,13 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
     fn new_constructs_supervisor_with_a_real_launch_id() {
         // Exercises the public `new` (which derives a real launch id) rather than
         // the test-only `new_with_launch_id`.
-        let sup = ServerSupervisor::new(51778, "ws://127.0.0.1:51777".into(), "token".into());
+        let sup = ServerSupervisor::new(
+            51778,
+            #[cfg(unix)]
+            None,
+            "ws://127.0.0.1:51777".into(),
+            "token".into(),
+        );
         let (n, id) = sup.allocate_server_id();
         assert_eq!(n, 1);
         assert!(id.starts_with("server-"));

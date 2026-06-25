@@ -76,8 +76,47 @@ const CAPS = [
   "selection",
 ];
 
+/**
+ * Where the bridge should dial Fleet.
+ *
+ * On macOS/Linux local spawns Fleet advertises `FLEET_BRIDGE_SOCKET` (a unix
+ * domain socket under its runtime dir). We dial it via the `ws` library's IPC
+ * support — `ws+unix://<absolute-socket-path>:<http-path>` — so reconnects open a
+ * *filesystem* socket, not a TCP loopback connection. That avoids macOS's "node
+ * wants to interact with your other apps" / local-network prompt, which the old
+ * fixed-interval TCP reconnect loop triggered repeatedly.
+ *
+ * Containers/remote sessions can't reach a host unix socket, so Fleet leaves
+ * `FLEET_BRIDGE_SOCKET` unset there and the bridge falls back to the TCP
+ * `FLEET_BRIDGE_URL` exactly as before.
+ *
+ * Returns `null` when neither is set (the dormant, never-launched-by-Fleet case).
+ */
+export function bridgeTarget(env: NodeJS.ProcessEnv): string | null {
+  const socket = env.FLEET_BRIDGE_SOCKET;
+  if (socket) {
+    // The socket path is absolute, so the URL pathname is "<sock>:/" — ws splits
+    // it on ":" into socketPath + HTTP path. A trailing ":/" gives the required
+    // non-empty HTTP path.
+    return `ws+unix://${socket}:/`;
+  }
+  return env.FLEET_BRIDGE_URL || null;
+}
+
+// Reconnect backoff: start fast so a transient drop reconnects snappily, then
+// double each consecutive failure up to a ceiling so a Fleet-less server probes
+// rarely (instead of hammering a closed port every second). A successful `open`
+// resets the delay back to the fast start.
+const BACKOFF_START_MS = 1000;
+const BACKOFF_MAX_MS = 30000;
+
+/** The next backoff delay: double the previous, capped at the ceiling. Pure. */
+export function nextBackoff(prevMs: number): number {
+  return Math.min(prevMs * 2, BACKOFF_MAX_MS);
+}
+
 export function activate(context: vscode.ExtensionContext): void {
-  const url = process.env.FLEET_BRIDGE_URL;
+  const target = bridgeTarget(process.env);
   const serverId = process.env.FLEET_SERVER_ID;
 
   // Diagnostic log file so Fleet can verify activation/receipt/execution.
@@ -91,7 +130,7 @@ export function activate(context: vscode.ExtensionContext): void {
       /* best-effort */
     }
   };
-  log(`activate: url=${url} serverId=${serverId}`);
+  log(`activate: target=${target} serverId=${serverId}`);
 
   // ─── Terminal buffer capture ────────────────────────────────────────────────
   // VS Code exposes no API to read a terminal's scrollback. We approximate it via
@@ -144,7 +183,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   }
 
-  if (!url || !serverId) {
+  if (!target || !serverId) {
     // Not launched by Fleet — stay dormant (pure pass-through, never intrusive).
     return;
   }
@@ -152,15 +191,19 @@ export function activate(context: vscode.ExtensionContext): void {
   let ws: WebSocket | null = null;
   let disposed = false;
   let retry: ReturnType<typeof setTimeout> | null = null;
+  // Current reconnect delay; reset to BACKOFF_START_MS on every successful open.
+  let backoffMs = BACKOFF_START_MS;
 
   const connect = (): void => {
     /* c8 ignore next -- defensive: dispose() clears the retry timer, so connect()
        is never re-entered after disposal; this guard can't fire in practice. */
     if (disposed) return;
-    const socket = new WebSocket(url);
+    const socket = new WebSocket(target);
     ws = socket;
 
     socket.on("open", () => {
+      // A live connection resets the backoff, so the next drop reconnects fast.
+      backoffMs = BACKOFF_START_MS;
       // Phone home: the server PUSHES its registration to Fleet (id + the URL
       // Fleet should embed + a label + the capabilities it supports). Fleet
       // never pulls a server list.
@@ -425,10 +468,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
     const reconnect = (): void => {
       if (disposed || retry || ws !== socket) return;
+      const delay = backoffMs;
+      // Grow the delay for the NEXT attempt; a successful open resets it.
+      backoffMs = nextBackoff(backoffMs);
+      log(`reconnect in ${delay}ms`);
       retry = setTimeout(() => {
         retry = null;
         connect();
-      }, 1000);
+      }, delay);
     };
     socket.on("close", reconnect);
     socket.on("error", () => socket.close());
