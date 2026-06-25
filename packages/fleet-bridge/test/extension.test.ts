@@ -1,3 +1,4 @@
+import * as http from "http";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -5,7 +6,7 @@ import * as path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer, type WebSocket as WS } from "ws";
 
-import { activate, deactivate } from "../src/extension";
+import { activate, bridgeTarget, deactivate, nextBackoff } from "../src/extension";
 import * as vscodeMock from "./vscode-mock";
 
 const { state, resetVscodeMock, makeTerminal, Uri } = vscodeMock;
@@ -23,6 +24,7 @@ function fakeContext(): Fake {
 const savedEnv: Record<string, string | undefined> = {};
 const ENV_KEYS = [
   "FLEET_BRIDGE_URL",
+  "FLEET_BRIDGE_SOCKET",
   "FLEET_SERVER_ID",
   "FLEET_SERVER_URL",
   "FLEET_SERVER_LABEL",
@@ -66,6 +68,8 @@ async function startBridge(opts: { logDir?: string } = {}): Promise<{
   await new Promise<void>((r) => wss.once("listening", r));
   const port = (wss.address() as any).port;
 
+  // TCP path: ensure no leaked socket env shadows the URL.
+  delete process.env.FLEET_BRIDGE_SOCKET;
   process.env.FLEET_BRIDGE_URL = `ws://127.0.0.1:${port}`;
   process.env.FLEET_SERVER_ID = "srv-test";
   if (opts.logDir !== undefined) process.env.FLEET_BRIDGE_LOG_DIR = opts.logDir;
@@ -116,6 +120,7 @@ async function startBridge(opts: { logDir?: string } = {}): Promise<{
 describe("activation", () => {
   it("stays dormant when url/serverId unset (no socket, no subscriptions)", () => {
     delete process.env.FLEET_BRIDGE_URL;
+    delete process.env.FLEET_BRIDGE_SOCKET;
     delete process.env.FLEET_SERVER_ID;
     const ctx = fakeContext();
     activate(ctx as any);
@@ -777,6 +782,7 @@ describe("shell integration capture", () => {
     try {
       const ctx = fakeContext();
       delete process.env.FLEET_BRIDGE_URL;
+      delete process.env.FLEET_BRIDGE_SOCKET;
       delete process.env.FLEET_SERVER_ID;
       activate(ctx as any);
       // no shell-integration subscription registered → 0 subscriptions
@@ -877,5 +883,86 @@ describe("connection lifecycle", () => {
     for (const s of h.ctx.subscriptions) s.dispose();
     await new Promise((r) => setTimeout(r, 50));
     await new Promise<void>((res) => h.wss.close(() => res()));
+  });
+});
+
+// ─── transport selection (unix socket vs TCP) ─────────────────────────────────
+
+describe("bridgeTarget", () => {
+  it("prefers the unix socket as a ws+unix URL when FLEET_BRIDGE_SOCKET is set", () => {
+    // Even with a TCP URL also present, the socket wins — that's the whole point:
+    // the local case avoids the network socket + macOS local-network prompt.
+    const t = bridgeTarget({
+      FLEET_BRIDGE_SOCKET: "/run/fleet/bridge.sock",
+      FLEET_BRIDGE_URL: "ws://127.0.0.1:51778",
+    } as any);
+    expect(t).toBe("ws+unix:///run/fleet/bridge.sock:/");
+  });
+
+  it("falls back to the TCP URL when no socket is set", () => {
+    const t = bridgeTarget({ FLEET_BRIDGE_URL: "ws://127.0.0.1:51778" } as any);
+    expect(t).toBe("ws://127.0.0.1:51778");
+  });
+
+  it("is null when neither socket nor URL is set", () => {
+    expect(bridgeTarget({} as any)).toBeNull();
+  });
+
+  it("ignores an empty socket value and uses the URL", () => {
+    const t = bridgeTarget({
+      FLEET_BRIDGE_SOCKET: "",
+      FLEET_BRIDGE_URL: "ws://127.0.0.1:51778",
+    } as any);
+    expect(t).toBe("ws://127.0.0.1:51778");
+  });
+});
+
+describe("unix socket transport", () => {
+  it("connects + sends hello over FLEET_BRIDGE_SOCKET (ws+unix), not TCP", async () => {
+    // Stand up a ws server bound to a UNIX socket; the bridge must dial it via
+    // the ws+unix URL form and register over the filesystem socket (no TCP).
+    const sockPath = path.join(
+      os.tmpdir(),
+      `fb-sock-${process.pid}-${Date.now()}.sock`
+    );
+    const httpServer = http.createServer();
+    const wss = new WebSocketServer({ server: httpServer });
+    await new Promise<void>((r) => httpServer.listen(sockPath, r));
+
+    delete process.env.FLEET_BRIDGE_URL; // prove the socket path is taken, not TCP
+    process.env.FLEET_BRIDGE_SOCKET = sockPath;
+    process.env.FLEET_SERVER_ID = "srv-unix";
+    process.env.FLEET_SERVER_LABEL = "Unix Srv";
+
+    const ctx = fakeContext();
+    const connP = new Promise<WS>((resolve) => wss.once("connection", resolve));
+    activate(ctx as any);
+    const serverSocket = await connP;
+    const hello = await new Promise<any>((resolve) => {
+      serverSocket.once("message", (d) => resolve(JSON.parse(d.toString())));
+    });
+
+    expect(hello.type).toBe("hello");
+    expect(hello.server_id).toBe("srv-unix");
+    expect(hello.label).toBe("Unix Srv");
+
+    for (const s of ctx.subscriptions) s.dispose();
+    await new Promise<void>((res) => wss.close(() => res()));
+    await new Promise<void>((res) => httpServer.close(() => res()));
+    fs.rmSync(sockPath, { force: true });
+  });
+});
+
+// ─── reconnect backoff schedule (pure math) ───────────────────────────────────
+
+describe("nextBackoff", () => {
+  it("doubles each step and caps at 30s", () => {
+    expect(nextBackoff(1000)).toBe(2000);
+    expect(nextBackoff(2000)).toBe(4000);
+    expect(nextBackoff(4000)).toBe(8000);
+    expect(nextBackoff(8000)).toBe(16000);
+    // 16000 * 2 = 32000 → clamped to the 30000 ceiling, and stays there.
+    expect(nextBackoff(16000)).toBe(30000);
+    expect(nextBackoff(30000)).toBe(30000);
   });
 });

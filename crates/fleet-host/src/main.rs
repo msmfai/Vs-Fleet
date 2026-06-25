@@ -66,6 +66,16 @@ fn embedded_hub_runtime_dir_from(override_dir: Option<PathBuf>, home: Option<Pat
         .join("run")
 }
 
+/// The unix-domain socket the command bridge listens on (unix only), under the
+/// Fleet runtime dir. Local spawns dial this instead of the TCP loopback port so
+/// the `fleet-bridge` extension never opens a network socket on macOS — which
+/// avoids the recurring "node wants to interact with your other apps" TCC prompt.
+#[cfg(unix)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn bridge_socket_path() -> PathBuf {
+    embedded_hub_runtime_dir().join("bridge.sock")
+}
+
 // Thin env wrapper; derives from the env-reading `embedded_hub_runtime_dir`
 // (excluded). The pure join is covered via `host_log_path_from_runtime_dir`.
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -231,6 +241,8 @@ fn main() {
         .manage(registry.clone())
         .manage(spawn::ServerSupervisor::new(
             BRIDGE_PORT,
+            #[cfg(unix)]
+            Some(bridge_socket_path()),
             ws_url.clone(),
             bridge_token.clone(),
         ))
@@ -372,8 +384,15 @@ fn main() {
                         // disconnected state on normal launches.
                         tokio::time::sleep(Duration::from_millis(100)).await;
                     }
-                    if let Err(e) =
-                        bridge::serve(bridge_handle, registry, BRIDGE_PORT, bridge_token).await
+                    if let Err(e) = bridge::serve(
+                        bridge_handle,
+                        registry,
+                        BRIDGE_PORT,
+                        bridge_token,
+                        #[cfg(unix)]
+                        Some(bridge_socket_path()),
+                    )
+                    .await
                     {
                         tracing::error!(error = %e, "bridge server failed to bind");
                     }
@@ -841,7 +860,13 @@ mod tests {
     }
 
     fn probe_supervisor() -> spawn::ServerSupervisor {
-        spawn::ServerSupervisor::new(51778, "ws://127.0.0.1:51777".into(), "token".into())
+        spawn::ServerSupervisor::new(
+            51778,
+            #[cfg(unix)]
+            None,
+            "ws://127.0.0.1:51777".into(),
+            "token".into(),
+        )
     }
 
     #[test]

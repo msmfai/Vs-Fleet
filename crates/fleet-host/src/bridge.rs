@@ -17,6 +17,7 @@ use std::sync::{
 
 use futures_util::{SinkExt, StreamExt};
 use tauri::{AppHandle, Emitter};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
 use tokio::time::{sleep, Duration};
 use tokio_tungstenite::tungstenite::Message;
@@ -322,44 +323,133 @@ fn current_time_nanos() -> u128 {
 
 /// Start the bridge WS server on `127.0.0.1:port`. `app` is used to emit
 /// [`SERVERS_CHANGED`] so the rail re-renders as servers come and go.
-// Glue: binds a real TCP listener and drives the Tauri `AppHandle` (window
+///
+/// On unix we ALSO bind a `UnixListener` at `socket_path` (when provided) and
+/// accept WS connections over it with the SAME per-connection logic. Local
+/// spawns prefer the unix socket so the `fleet-bridge` extension never opens a
+/// TCP connection to a loopback port — which on macOS triggers the recurring
+/// "node wants to interact with your other apps" / local-network TCC prompt as
+/// the extension reconnects. The TCP listener stays for containers/remote
+/// (`FLEET_BRIDGE_ADDR=0.0.0.0`), where a host unix socket isn't reachable.
+// Glue: binds a real TCP/unix listener and drives the Tauri `AppHandle` (window
 // emits, menu refresh) per accepted WS connection — needs a live webview, so
 // it can't run headless in CI. The wire decisions it delegates to (`parse_hello`)
-// and the registry mutations (`register`/`unregister`) are unit-tested.
+// and the registry mutations (`register`/`unregister`) are unit-tested, and the
+// generic per-connection loop (`serve_ws_connection`) has a unix round-trip test.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub async fn serve(
     app: AppHandle,
     registry: BridgeRegistry,
     port: u16,
     expected_token: String,
+    #[cfg(unix)] socket_path: Option<std::path::PathBuf>,
 ) -> std::io::Result<()> {
     // Loopback by default; `FLEET_BRIDGE_ADDR=0.0.0.0` lets containerized servers
     // reach the bridge over the host gateway.
     let addr = std::env::var("FLEET_BRIDGE_ADDR").unwrap_or_else(|_| "127.0.0.1".into());
     let listener = TcpListener::bind((addr.as_str(), port)).await?;
-    tokio::spawn(async move {
-        while let Ok((stream, _)) = listener.accept().await {
-            let app = app.clone();
-            let registry = registry.clone();
-            let expected_token = expected_token.clone();
-            tokio::spawn(handle_conn(app, stream, registry, expected_token));
-        }
-    });
+    {
+        let app = app.clone();
+        let registry = registry.clone();
+        let expected_token = expected_token.clone();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                tokio::spawn(serve_ws_connection(
+                    app.clone(),
+                    stream,
+                    registry.clone(),
+                    expected_token.clone(),
+                ));
+            }
+        });
+    }
     tracing::info!(port, "command-bridge / phone-home WS server listening");
+
+    #[cfg(unix)]
+    if let Some(path) = socket_path {
+        // A stale socket file from a previous run would make `bind` fail with
+        // EADDRINUSE, so clear it first; the parent dir is the runtime/mux dir.
+        let _ = std::fs::remove_file(&path);
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let unix_listener = tokio::net::UnixListener::bind(&path)?;
+        tracing::info!(socket = %path.display(), "command-bridge phone-home unix socket listening");
+        tokio::spawn(async move {
+            // The socket lives as long as this accept loop; drop removes the file.
+            let _guard = SocketFileGuard { path };
+            while let Ok((stream, _)) = unix_listener.accept().await {
+                tokio::spawn(serve_ws_connection(
+                    app.clone(),
+                    stream,
+                    registry.clone(),
+                    expected_token.clone(),
+                ));
+            }
+        });
+    }
+
     Ok(())
 }
 
-// Glue: the per-connection WS loop — accepts the upgrade, folds the hello/command
-// frames, and emits SERVERS_CHANGED / refreshes the menu through the `AppHandle`.
-// Needs a live webview; the pure decisions (`parse_hello`) and registry mutations
-// it calls are unit-tested separately.
+/// Removes the bridge unix socket file when the accept loop ends (best-effort).
+#[cfg(unix)]
+struct SocketFileGuard {
+    path: std::path::PathBuf,
+}
+
+#[cfg(unix)]
+impl Drop for SocketFileGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+// Glue: the per-connection WS loop bound to the Tauri `AppHandle` — accepts the
+// upgrade, registers the server, and emits SERVERS_CHANGED / refreshes the menu
+// as servers come and go. Needs a live webview, so it's untestable headless; the
+// transport-and-registry core it wraps (`run_bridge_connection`) is generic over
+// the stream type and exercised by a unix round-trip test, and the pure decisions
+// (`parse_hello`) + registry mutations (`register`/`unregister`) are unit-tested.
 #[cfg_attr(coverage_nightly, coverage(off))]
-async fn handle_conn(
+async fn serve_ws_connection<S>(
     app: AppHandle,
-    stream: tokio::net::TcpStream,
+    stream: S,
     registry: BridgeRegistry,
     expected_token: String,
-) {
+) where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let app_changed = app.clone();
+    let registry_changed = registry.clone();
+    let on_change = move || {
+        let _ = app_changed.emit(SERVERS_CHANGED, registry_changed.servers());
+        crate::mux::refresh_menu(&app_changed);
+    };
+    run_bridge_connection(stream, registry, expected_token, on_change).await;
+}
+
+/// The transport-and-registry core of a bridge connection, generic over both the
+/// stream type (`TcpStream` for containers/remote, `UnixStream` for local) and a
+/// `on_change` callback fired whenever the visible server set changes — so the
+/// production path can drive the Tauri window while a test can simply observe the
+/// registry. Accepts the WS upgrade, folds the hello/command frames, and on drop
+/// schedules a grace-period deregister.
+// Glue: the raw WS transport loop. Its happy path (accept → hello → register →
+// drop) and the token-reject path are exercised by the unix round-trip tests, but
+// the defensive transport arms (handshake failure, malformed/early-EOF frames,
+// mid-send socket errors) can't be induced deterministically, so coverage is off
+// for the whole loop — the same treatment the TCP `serve`/`handle_conn` had.
+#[cfg_attr(coverage_nightly, coverage(off))]
+async fn run_bridge_connection<S, F>(
+    stream: S,
+    registry: BridgeRegistry,
+    expected_token: String,
+    on_change: F,
+) where
+    S: AsyncRead + AsyncWrite + Unpin,
+    F: Fn() + Clone + Send + 'static,
+{
     let ws = match tokio_tungstenite::accept_async(stream).await {
         Ok(ws) => ws,
         Err(_) => return,
@@ -397,8 +487,7 @@ async fn handle_conn(
         hello.label.clone(),
     );
     if registration.changed {
-        let _ = app.emit(SERVERS_CHANGED, registry.servers());
-        crate::mux::refresh_menu(&app);
+        on_change();
     }
 
     loop {
@@ -417,8 +506,7 @@ async fn handle_conn(
     tokio::spawn(async move {
         sleep(BRIDGE_DROP_GRACE).await;
         if registry.unregister(&hello.server_id, registration.generation) {
-            let _ = app.emit(SERVERS_CHANGED, registry.servers());
-            crate::mux::refresh_menu(&app);
+            on_change();
         }
     });
 }
@@ -807,6 +895,159 @@ mod tests {
         // verbatim instead of letting the agent/session title override it.
         assert!(registry.servers()[0].renamed);
         assert!(!registry.rename("missing", "Nope"));
+    }
+
+    // End-to-end over a UNIX socket: the same generic connection core that serves
+    // local spawns. A client `UnixStream` does the WS handshake and pushes a
+    // `hello`; the server must register it in the BridgeRegistry — mirroring the
+    // TCP/duplex bridge tests but over the macOS-friendly unix transport (no
+    // loopback TCP, hence no local-network TCC prompt on reconnect).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn unix_bridge_round_trip_registers_the_server() {
+        use futures_util::SinkExt;
+        use tokio::net::{UnixListener, UnixStream};
+
+        // A SHORT path: macOS caps `sun_path` (SUN_LEN ≈ 104), and the system
+        // temp dir (`/var/folders/...`) alone can blow that budget, so bind
+        // directly under `/tmp` with a compact unique name.
+        let dir = short_socket_dir("fb-unix");
+        std::fs::create_dir_all(&dir).unwrap();
+        let sock = dir.join("b.sock");
+
+        let listener = UnixListener::bind(&sock).unwrap();
+        let registry = BridgeRegistry::new();
+
+        // Server side: accept one connection and run the generic core. The
+        // `on_change` callback bumps a counter so the test can assert the
+        // registration fired a visible-change notification (what the production
+        // path turns into a SERVERS_CHANGED emit).
+        let server_registry = registry.clone();
+        let changes = Arc::new(AtomicU64::new(0));
+        let server_changes = changes.clone();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("client connects");
+            let changes = server_changes.clone();
+            run_bridge_connection(
+                stream,
+                server_registry,
+                "tok".into(),
+                move || {
+                    changes.fetch_add(1, Ordering::SeqCst);
+                },
+            )
+            .await;
+        });
+
+        // Client side: connect the unix socket and complete the WS handshake the
+        // same way the `fleet-bridge` extension's `ws+unix://` dial does.
+        let client = UnixStream::connect(&sock).await.unwrap();
+        let (mut ws, _resp) = tokio_tungstenite::client_async("ws://localhost/", client)
+            .await
+            .expect("ws handshake over unix socket");
+
+        let hello = serde_json::json!({
+            "type": "hello",
+            "server_id": "unix-server-1",
+            "url": "http://127.0.0.1:9100/",
+            "label": "Unix Server",
+            "token": "tok",
+        });
+        ws.send(Message::Text(hello.to_string().into()))
+            .await
+            .unwrap();
+
+        // Poll the registry until the async server task has registered the hello.
+        let registered = loop_until(|| {
+            registry
+                .servers()
+                .iter()
+                .find(|s| s.id == "unix-server-1")
+                .cloned()
+        })
+        .await;
+        assert_eq!(registered.url, "http://127.0.0.1:9100/");
+        assert_eq!(registered.label, "Unix Server");
+        assert_eq!(
+            changes.load(Ordering::SeqCst),
+            1,
+            "the first registration fires exactly one visible-change callback"
+        );
+
+        // Close the client; the server core exits its loop cleanly.
+        let _ = ws.close(None).await;
+        let _ = server.await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // A wrong launch token over the unix transport must be rejected: the server
+    // never registers it (the same `parse_hello` gate as the TCP path).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn unix_bridge_rejects_a_foreign_token() {
+        use futures_util::SinkExt;
+        use tokio::net::{UnixListener, UnixStream};
+
+        let dir = short_socket_dir("fb-rej");
+        std::fs::create_dir_all(&dir).unwrap();
+        let sock = dir.join("b.sock");
+        let listener = UnixListener::bind(&sock).unwrap();
+        let registry = BridgeRegistry::new();
+
+        let server_registry = registry.clone();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("client connects");
+            run_bridge_connection(stream, server_registry, "expected".into(), || {}).await;
+        });
+
+        let client = UnixStream::connect(&sock).await.unwrap();
+        let (mut ws, _resp) = tokio_tungstenite::client_async("ws://localhost/", client)
+            .await
+            .expect("ws handshake over unix socket");
+        ws.send(Message::Text(
+            serde_json::json!({
+                "type": "hello",
+                "server_id": "intruder",
+                "token": "wrong",
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .unwrap();
+
+        // The server rejects + returns, so the connection drops with the intruder
+        // never registered. Wait for the server task to finish, then assert.
+        let _ = server.await;
+        assert!(
+            registry.servers().is_empty(),
+            "a foreign token must not register a server"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A short, unique scratch dir under `/tmp` for binding a unix socket whose
+    /// path must fit in `sun_path` (the system temp dir can be too long on macOS).
+    #[cfg(unix)]
+    fn short_socket_dir(tag: &str) -> std::path::PathBuf {
+        std::path::PathBuf::from("/tmp").join(format!(
+            "{tag}-{}-{}",
+            std::process::id(),
+            current_time_nanos()
+        ))
+    }
+
+    /// Poll `f` until it yields `Some`, with a short sleep between tries. Used to
+    /// await the async bridge server task registering a connection.
+    #[cfg(unix)]
+    async fn loop_until<T>(mut f: impl FnMut() -> Option<T>) -> T {
+        for _ in 0..200 {
+            if let Some(v) = f() {
+                return v;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("condition never became true within the timeout");
     }
 
     // Regression: a user rename must survive a reporter reconnect. Previously a
