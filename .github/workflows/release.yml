@@ -14,6 +14,12 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # CI hardening against transient crates.io fetch flakes (the six release lanes
+  # each download the full tauri tree, so a single HTTP2 hiccup fails a lane and
+  # skips Publish). Disable HTTP/2 multiplexing — the known fix for the
+  # "[16] Error in the HTTP2 framing layer" curl failure — and retry network ops.
+  CARGO_HTTP_MULTIPLEXING: "false"
+  CARGO_NET_RETRY: "10"
 
 jobs:
   # The bridge VSIX is platform-independent; build it once (its packer needs
@@ -119,7 +125,20 @@ jobs:
       - name: Build Fleet bundles (Tauri)
         working-directory: crates/fleet-host
         shell: bash
-        run: npx --yes @tauri-apps/cli@^2 build --config tauri.release.conf.json --bundles ${{ matrix.bundles }}
+        # Retry the whole build: across six lanes the bundlers flake independently
+        # (macOS bundle_dmg.sh AppleScript layout, NSIS download, crates.io fetch),
+        # and any one lane failing skips Publish. Up to 3 attempts per lane —
+        # cargo skips already-built deps, so a retry mostly re-runs the bundler.
+        run: |
+          for attempt in 1 2 3; do
+            if npx --yes @tauri-apps/cli@^2 build --config tauri.release.conf.json --bundles ${{ matrix.bundles }}; then
+              exit 0
+            fi
+            echo "::warning::tauri build attempt $attempt failed; retrying in 15s" >&2
+            sleep 15
+          done
+          echo "::error::tauri build failed after 3 attempts" >&2
+          exit 1
 
       # The launch smoke: boot the built binary, phone home one session over the
       # bridge, assert a rail tab appears + selects, capture a screenshot. This
