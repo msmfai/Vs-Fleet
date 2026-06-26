@@ -35,7 +35,7 @@
     "ws": "^8.21.0"
   },
   "devDependencies": {
-    "@types/node": "^25.9.3",
+    "@types/node": "^26.0.1",
     "@types/vscode": "^1.80.0",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.9",
