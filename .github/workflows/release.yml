@@ -35,7 +35,7 @@ jobs:
           bash package-vsix.sh
           cp fleet-bridge-*.vsix fleet-bridge.vsix
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: fleet-bridge-vsix
           path: packages/fleet-bridge/fleet-bridge.vsix
@@ -161,13 +161,13 @@ jobs:
           done
           ls -la
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: bundles-${{ matrix.platform }}
           path: dist/*
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: smoke-${{ matrix.platform }}
