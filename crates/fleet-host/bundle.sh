@@ -75,7 +75,7 @@ fi
   echo '  <key>CFBundleExecutable</key><string>fleet-host</string>'
   echo '  <key>CFBundleIdentifier</key><string>dev.fleet.host</string>'
   echo '  <key>CFBundlePackageType</key><string>APPL</string>'
-  echo '  <key>CFBundleShortVersionString</key><string>0.1.1</string>'
+  echo '  <key>CFBundleShortVersionString</key><string>0.1.2</string>'
   echo "  <key>CFBundleVersion</key><string>$BUILD_VERSION</string>"
   echo '  <key>NSHighResolutionCapable</key><true/>'
   echo '  <key>LSMinimumSystemVersion</key><string>10.15</string>'
