@@ -189,17 +189,6 @@ fn get_inbox(state: tauri::State<'_, hub_client::Shared>) -> RenderedInbox {
     state.lock().map(|g| g.clone()).unwrap_or_default()
 }
 
-// Glue: evaluates JS in the rail webview through the `AppHandle` — needs a live
-// webview.
-#[cfg_attr(coverage_nightly, coverage(off))]
-fn run_rail_action(app: &tauri::AppHandle, function_name: &str) {
-    if let Some(rail) = app.get_webview(mux::RAIL) {
-        let _ = rail.eval(format!(
-            "window.{function_name} && window.{function_name}()"
-        ));
-    }
-}
-
 // Glue: the entire Tauri application — builder, managed state, command handlers,
 // menu/window-event callbacks, the background runtime thread, and the forever
 // event loop (`.run`). Needs a real webview/event loop, so it can't run headless;
@@ -266,53 +255,26 @@ fn main() {
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
             if id == "spawn:new" {
-                if let Some(sup) = app.try_state::<spawn::ServerSupervisor>() {
-                    match sup.spawn() {
-                        Ok(server) => {
-                            mux::clear_host_status(app);
-                            let _ = app.emit(bridge::SERVERS_CHANGED, ());
-                            mux::select_spawned(app.clone(), server.id);
+                // `spawn()` does heavy blocking work (git clone, `code serve-web
+                // --help`, extension install, port scan). `on_menu_event` fires on
+                // the main (UI) thread, so run it on a blocking worker to keep the
+                // window responsive; re-resolve the supervisor from the handle
+                // there since managed `State` can't cross the thread boundary.
+                let app = app.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    if let Some(sup) = app.try_state::<spawn::ServerSupervisor>() {
+                        match sup.spawn() {
+                            Ok(server) => {
+                                mux::clear_host_status(&app);
+                                let _ = app.emit(bridge::SERVERS_CHANGED, ());
+                                mux::select_spawned(app.clone(), server.id);
+                            }
+                            Err(e) => mux::emit_spawn_error(&app, "menu", &e.to_string()),
                         }
-                        Err(e) => mux::emit_spawn_error(app, "menu", &e.to_string()),
-                    }
-                } else {
-                    mux::emit_spawn_error(app, "menu", "server supervisor unavailable");
-                }
-            } else if id == "spawn:close-current" {
-                if let (Some(sup), Some(mux)) = (
-                    app.try_state::<spawn::ServerSupervisor>(),
-                    app.try_state::<mux::MuxState>(),
-                ) {
-                    if let Some(active) = mux.selected.lock().ok().and_then(|g| g.clone()) {
-                        mux::close_server_by_id(app, &sup, &active);
                     } else {
-                        mux::emit_host_status(app, "warning", "menu", "no active server");
+                        mux::emit_spawn_error(&app, "menu", "server supervisor unavailable");
                     }
-                } else {
-                    mux::emit_host_status(app, "error", "menu", "server supervisor unavailable");
-                }
-            } else if id == "rail:palette" {
-                run_rail_action(app, "__fleetOpenPalette");
-            } else if id == "rail:jump-unread" {
-                run_rail_action(app, "__fleetJumpNextUnread");
-            } else if id == "rail:cycle-unread" {
-                run_rail_action(app, "__fleetCycleUnread");
-            } else if id == "external:open-current" {
-                let Some(mux_state) = app.try_state::<mux::MuxState>() else {
-                    mux::emit_host_status(app, "error", "menu", "server selector unavailable");
-                    return;
-                };
-                let Some(active) = mux_state.selected.lock().ok().and_then(|g| g.clone()) else {
-                    mux::emit_host_status(app, "warning", "menu", "no active server");
-                    return;
-                };
-                if let Err(e) = mux::open_server_external_by_id(app, &active) {
-                    mux::emit_host_status(app, "error", "menu", e);
-                }
-            } else if let Some(server_id) = id.strip_prefix("server:") {
-                if server_id != "none" {
-                    mux::select(app, server_id.to_string());
-                }
+                });
             } else if let Some(command) = id.strip_prefix("cmd:") {
                 let Some(mux_state) = app.try_state::<mux::MuxState>() else {
                     mux::emit_host_status(app, "error", "menu", "command bridge unavailable");

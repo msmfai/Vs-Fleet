@@ -54,13 +54,6 @@ pub struct HostStatus {
     pub message: String,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct RailMenuState {
-    row_count: usize,
-    unread_count: usize,
-    openable_unread_count: usize,
-}
-
 /// One persistent editor webview owned by a server id.
 #[derive(Debug, Clone)]
 struct EditorEntry {
@@ -395,8 +388,16 @@ pub fn select_spawned(app: AppHandle, id: String) {
 // Glue: spawns a real server tree and drives the live `AppHandle` (status/emit/
 // navigate). The spawn + error-surfacing logic is tested in spawn.rs / via
 // `emit_spawn_error`.
+//
+// `(async)`: `spawn_with` runs heavy BLOCKING work inline — `git clone`,
+// `code serve-web --help`, `code --install-extension`, a free-port scan, and dir
+// writes. In Tauri v2 a plain sync `#[tauri::command]` runs on the main (UI)
+// thread, so all of that would freeze the window. `#[tauri::command(async)]`
+// makes Tauri run the command via `async_runtime::spawn` on a worker thread
+// instead, keeping the UI responsive. (`State`/`AppHandle` are special-cased by
+// Tauri and remain usable in async commands.)
 #[cfg_attr(coverage_nightly, coverage(off))]
-#[tauri::command]
+#[tauri::command(async)]
 pub fn spawn_server_with_options(
     app: AppHandle,
     sup: State<'_, crate::spawn::ServerSupervisor>,
@@ -972,18 +973,18 @@ fn sync_rail_selection(app: &AppHandle) {
 pub fn build_menu<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
 ) -> tauri::Result<tauri::menu::Menu<R>> {
-    build_app_menu(app, &[], None, RailMenuState::default())
+    build_app_menu(app)
 }
 
-// Glue: assembles the full native menu via `muda` (AppKit). The pure label/enabled
-// decisions it composes (`close_current_menu_item`, `selected_server_has_url`,
-// `menu_server_label`) are unit-tested.
+// Glue: assembles the full native menu via `muda` (AppKit). The menu is fully
+// STATIC — the mirrored VS Code command tree (forwarded through the active
+// server's bridge via the `cmd:` items) plus a "New Server" spawn entry. There is
+// no dynamic per-server switching submenu: rebuilding the menu at runtime would
+// dismiss open macOS menus (see `refresh_menu`), so server switching stays in the
+// rail UI, not the native menu bar.
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn build_app_menu<R: tauri::Runtime>(
     manager: &tauri::AppHandle<R>,
-    servers: &[Server],
-    selected: Option<&str>,
-    rail_state: RailMenuState,
 ) -> tauri::Result<tauri::menu::Menu<R>> {
     use tauri::menu::{
         AboutMetadata, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
@@ -1028,7 +1029,13 @@ fn build_app_menu<R: tauri::Runtime>(
         subs.push(build_sub(manager, title, items)?);
     }
 
-    let server_menu = build_server_menu(manager, servers, selected, rail_state)?;
+    // A minimal STATIC Server submenu: only the always-valid "New Server" spawn
+    // entry. (Close / Open-in-browser / per-server switching required a live menu
+    // rebuild to reflect the current selection, which macOS forbids without
+    // dismissing open menus — see `refresh_menu` — so they live in the rail UI.)
+    let server_menu = SubmenuBuilder::new(manager, "Server")
+        .item(&MenuItemBuilder::with_id("spawn:new", "New Server").build(manager)?)
+        .build()?;
 
     let window_menu = SubmenuBuilder::new(manager, "Window")
         .item(&PredefinedMenuItem::minimize(manager, None)?)
@@ -1048,120 +1055,18 @@ fn build_app_menu<R: tauri::Runtime>(
         .build()
 }
 
-// Glue: a no-op placeholder hook kept for call-site symmetry with the live menu.
+/// Intentionally a no-op. The native menu is DELIBERATELY static (built once via
+/// [`build_menu`]): on macOS, mutating `NSApp.mainMenu` (`AppHandle::set_menu`)
+/// dismisses any open menu, so rebuilding it on every phone-home register /
+/// selection / rename / close would snap open menus shut mid-interaction. The
+/// dynamic per-server switching menu that once lived behind this seam has been
+/// removed (see T1.8) rather than left as a no-op pretending to work; this hook
+/// is retained only so the many call sites (bridge/register/selection churn)
+/// stay a single, obvious "menus are static" statement. Locked by the
+/// `fleet_installs_one_static_native_shell_menu` guardrail test.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn refresh_menu(app: &AppHandle) {
     let _ = app;
-}
-
-// Glue: builds the dynamic Server submenu via `muda` (AppKit).
-#[cfg_attr(coverage_nightly, coverage(off))]
-fn build_server_menu<R: tauri::Runtime>(
-    manager: &tauri::AppHandle<R>,
-    servers: &[Server],
-    selected: Option<&str>,
-    rail_state: RailMenuState,
-) -> tauri::Result<tauri::menu::Submenu<R>> {
-    use tauri::menu::{CheckMenuItemBuilder, MenuItemBuilder, SubmenuBuilder};
-    let close_current = close_current_menu_item(servers, selected);
-    let open_current_enabled = selected_server_has_url(servers, selected);
-
-    let mut menu = SubmenuBuilder::new(manager, "Server")
-        .item(&MenuItemBuilder::with_id("spawn:new", "New Server").build(manager)?)
-        .item(
-            &MenuItemBuilder::with_id("spawn:close-current", close_current.label)
-                .enabled(close_current.enabled)
-                .build(manager)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("external:open-current", "Open Current in Browser")
-                .enabled(open_current_enabled)
-                .build(manager)?,
-        )
-        .separator()
-        .item(
-            &MenuItemBuilder::with_id("rail:palette", "Session Palette")
-                .enabled(rail_state.row_count > 0)
-                .build(manager)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("rail:jump-unread", "Jump to Next Unread")
-                .enabled(rail_state.openable_unread_count > 0)
-                .build(manager)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("rail:cycle-unread", "Cycle Unread Without Marking Read")
-                .enabled(rail_state.unread_count > 0)
-                .build(manager)?,
-        )
-        .separator();
-
-    if servers.is_empty() {
-        return menu
-            .item(
-                &MenuItemBuilder::with_id("server:none", "No Servers")
-                    .enabled(false)
-                    .build(manager)?,
-            )
-            .build();
-    }
-
-    for server in servers {
-        let item = CheckMenuItemBuilder::with_id(
-            format!("server:{}", server.id),
-            menu_server_label(server),
-        )
-        .checked(selected == Some(server.id.as_str()))
-        .build(manager)?;
-        menu = menu.item(&item);
-    }
-
-    menu.build()
-}
-
-fn menu_server_label(server: &Server) -> String {
-    if server.owned {
-        server.label.clone()
-    } else {
-        format!("{} (external)", server.label)
-    }
-}
-
-struct CloseCurrentMenuItem {
-    label: &'static str,
-    enabled: bool,
-}
-
-fn close_current_menu_item(servers: &[Server], selected: Option<&str>) -> CloseCurrentMenuItem {
-    let Some(selected) = selected else {
-        return CloseCurrentMenuItem {
-            label: "Close Current Server",
-            enabled: false,
-        };
-    };
-    let Some(server) = servers.iter().find(|server| server.id == selected) else {
-        return CloseCurrentMenuItem {
-            label: "Close Current Server",
-            enabled: false,
-        };
-    };
-    CloseCurrentMenuItem {
-        label: if server.owned {
-            "Close Current Server"
-        } else {
-            "Forget Current Server"
-        },
-        enabled: true,
-    }
-}
-
-fn selected_server_has_url(servers: &[Server], selected: Option<&str>) -> bool {
-    let Some(selected) = selected else {
-        return false;
-    };
-    servers
-        .iter()
-        .any(|server| server.id == selected && !server.url.is_empty())
 }
 
 /// One entry in a mirrored VS Code menu.
@@ -1433,9 +1338,8 @@ fn editor_parking_pane(app: &AppHandle) -> Option<(LogicalPosition<f64>, Logical
 #[cfg(test)]
 mod tests {
     use super::{
-        close_current_menu_item, editor_label_for, external_open_command, keepalive_env_enabled,
-        menu_server_label, merged_servers, rail_only_env_enabled, sanitize_server_label,
-        selected_server_has_url, Server,
+        editor_label_for, external_open_command, keepalive_env_enabled, merged_servers,
+        rail_only_env_enabled, sanitize_server_label, Server,
     };
 
     #[cfg(target_os = "macos")]
@@ -1443,56 +1347,6 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     use tauri::TitleBarStyle;
-
-    fn server(id: &str, owned: bool, url: &str) -> Server {
-        Server {
-            id: id.into(),
-            label: id.into(),
-            url: url.into(),
-            owned,
-            renamed: false,
-        }
-    }
-
-    #[test]
-    fn close_current_menu_item_label_depends_on_ownership() {
-        let servers = vec![
-            server("owned", true, "http://127.0.0.1:1/"),
-            server("external", false, ""),
-        ];
-        // No selection ⇒ disabled "Close Current Server".
-        let none = close_current_menu_item(&servers, None);
-        assert_eq!(none.label, "Close Current Server");
-        assert!(!none.enabled);
-        // Selecting an unknown id ⇒ also disabled.
-        let missing = close_current_menu_item(&servers, Some("ghost"));
-        assert!(!missing.enabled);
-        // An owned selection ⇒ "Close"; an external one ⇒ "Forget".
-        let owned = close_current_menu_item(&servers, Some("owned"));
-        assert_eq!(owned.label, "Close Current Server");
-        assert!(owned.enabled);
-        let external = close_current_menu_item(&servers, Some("external"));
-        assert_eq!(external.label, "Forget Current Server");
-        assert!(external.enabled);
-    }
-
-    #[test]
-    fn selected_server_has_url_requires_a_selected_nonblank_url() {
-        let servers = vec![
-            server("with-url", true, "http://127.0.0.1:1/"),
-            server("blank", false, ""),
-        ];
-        assert!(!selected_server_has_url(&servers, None));
-        assert!(!selected_server_has_url(&servers, Some("ghost")));
-        assert!(!selected_server_has_url(&servers, Some("blank")));
-        assert!(selected_server_has_url(&servers, Some("with-url")));
-    }
-
-    #[test]
-    fn menu_server_label_marks_external_servers() {
-        assert_eq!(menu_server_label(&server("s", true, "u")), "s");
-        assert_eq!(menu_server_label(&server("s", false, "u")), "s (external)");
-    }
 
     #[test]
     fn mux_state_starts_empty() {
