@@ -97,3 +97,55 @@ fn fleet_installs_one_static_native_shell_menu() {
         "Fleet must keep the mirrored VS Code menu tree for child editor command pass-through"
     );
 }
+
+// T1.8 (fix option b): the DYNAMIC per-server menu machinery is deleted, not left
+// as a no-op pretending to work. Because `refresh_menu` is intentionally a no-op
+// (rebuilding the AppKit menu dismisses open macOS menus), the menu could never
+// reflect the live server list / selection, so `build_server_menu`, the
+// per-server `server:<id>` switching arm, and the frozen-disabled enable-state
+// items (Close/Open-Current, rail actions) could never fire. This locks them out
+// so they cannot silently return as dead seams. The STATIC command pass-through
+// (`cmd:`) and the `spawn:new` spawn entry stay (asserted above / below).
+#[test]
+fn fleet_has_no_dead_dynamic_menu_seam() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mux = fs::read_to_string(manifest.join("src/mux.rs")).expect("read mux.rs");
+    let main = fs::read_to_string(manifest.join("src/main.rs")).expect("read main.rs");
+
+    for dead in [
+        "build_server_menu",
+        "RailMenuState",
+        "close_current_menu_item",
+        "selected_server_has_url",
+        "menu_server_label",
+    ] {
+        assert!(
+            !mux.contains(dead),
+            "mux.rs must not reintroduce the dead dynamic-menu item {dead:?}"
+        );
+    }
+    // The per-server switching arm + the frozen enable-state item arms are gone
+    // from the menu-event handler.
+    for dead_arm in [
+        "strip_prefix(\"server:\")",
+        "spawn:close-current",
+        "external:open-current",
+        "rail:palette",
+        "rail:jump-unread",
+        "rail:cycle-unread",
+    ] {
+        assert!(
+            !main.contains(dead_arm),
+            "main.rs must not reintroduce the dead menu arm {dead_arm:?}"
+        );
+    }
+    // The static, genuinely-live entries remain.
+    assert!(
+        mux.contains("\"spawn:new\""),
+        "the static 'New Server' spawn entry must remain"
+    );
+    assert!(
+        main.contains("strip_prefix(\"cmd:\")"),
+        "the static VS Code command pass-through must remain"
+    );
+}

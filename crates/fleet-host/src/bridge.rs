@@ -79,8 +79,8 @@ impl BridgeRegistry {
     }
 
     /// Forward a VS Code command id to a server's bridge.
-    /// Synchronous + thread-safe — callable from the UI thread.
-    #[allow(dead_code)]
+    /// Synchronous + thread-safe — callable from the UI thread. Live via the
+    /// static `cmd:<id>` native-menu items (see `main.rs`'s menu-event handler).
     pub fn send_command(&self, server_id: &str, command: &str) -> bool {
         let frame = serde_json::json!({ "type": "command", "id": command }).to_string();
         let map = self.lock_map();
@@ -321,6 +321,80 @@ fn current_time_nanos() -> u128 {
         .unwrap_or_default()
 }
 
+/// Backoff before retrying `accept()` after a transient error. `accept()` can
+/// fail non-fatally (EMFILE/ENFILE under fd pressure, an in-queue peer reset);
+/// the listener stays valid, so the loop MUST retry rather than exit — exiting
+/// would kill phone-home for the whole process lifetime. A short, capped
+/// exponential delay keeps a genuine error storm (e.g. fd exhaustion) from
+/// spinning the loop hot. Pure. `consecutive_errors == 0` means "just accepted
+/// cleanly", so no wait.
+fn accept_backoff(consecutive_errors: u32) -> Duration {
+    if consecutive_errors == 0 {
+        return Duration::ZERO;
+    }
+    // Cap the shift at 5 (10ms → 320ms); further consecutive errors hold there.
+    let shift = consecutive_errors.min(6) - 1;
+    Duration::from_millis(10_u64 << shift)
+}
+
+/// A listener the bridge accept loop can drive, abstracted over the concrete
+/// transport (loopback `TcpListener` for containers/remote, `UnixListener` for
+/// local) so the shared [`accept_loop`] is identical for both — and so a test
+/// can feed a mock that returns a transient error then a connection.
+trait BridgeAccept {
+    type Conn;
+    async fn accept_conn(&self) -> std::io::Result<Self::Conn>;
+}
+
+impl BridgeAccept for TcpListener {
+    type Conn = tokio::net::TcpStream;
+    // Glue: a real loopback accept — only driven from `serve` with a live socket.
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    async fn accept_conn(&self) -> std::io::Result<Self::Conn> {
+        self.accept().await.map(|(stream, _)| stream)
+    }
+}
+
+#[cfg(unix)]
+impl BridgeAccept for tokio::net::UnixListener {
+    type Conn = tokio::net::UnixStream;
+    // Glue: a real unix-socket accept — only driven from `serve` with a live socket.
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    async fn accept_conn(&self) -> std::io::Result<Self::Conn> {
+        self.accept().await.map(|(stream, _)| stream)
+    }
+}
+
+/// The shared accept loop for BOTH bridge listeners. Runs forever, handing each
+/// accepted connection to `on_conn`. A transient `accept()` error is logged and
+/// retried (with a capped backoff) instead of ending the loop — the fix for the
+/// bug where the first EMFILE/peer-reset permanently killed phone-home.
+async fn accept_loop<A: BridgeAccept>(
+    listener: A,
+    kind: &'static str,
+    mut on_conn: impl FnMut(A::Conn),
+) {
+    let mut consecutive_errors: u32 = 0;
+    loop {
+        match listener.accept_conn().await {
+            Ok(conn) => {
+                consecutive_errors = 0;
+                on_conn(conn);
+            }
+            Err(e) => {
+                consecutive_errors = consecutive_errors.saturating_add(1);
+                tracing::warn!(
+                    transport = kind,
+                    error = %e,
+                    consecutive_errors,
+                    "bridge accept failed; retrying (transient accept error is non-fatal)"
+                );
+                sleep(accept_backoff(consecutive_errors)).await;
+            }
+        }
+    }
+}
+
 /// Start the bridge WS server on `127.0.0.1:port`. `app` is used to emit
 /// [`SERVERS_CHANGED`] so the rail re-renders as servers come and go.
 ///
@@ -353,14 +427,15 @@ pub async fn serve(
         let registry = registry.clone();
         let expected_token = expected_token.clone();
         tokio::spawn(async move {
-            while let Ok((stream, _)) = listener.accept().await {
+            accept_loop(listener, "tcp", move |stream| {
                 tokio::spawn(serve_ws_connection(
                     app.clone(),
                     stream,
                     registry.clone(),
                     expected_token.clone(),
                 ));
-            }
+            })
+            .await;
         });
     }
     tracing::info!(port, "command-bridge / phone-home WS server listening");
@@ -378,14 +453,15 @@ pub async fn serve(
         tokio::spawn(async move {
             // The socket lives as long as this accept loop; drop removes the file.
             let _guard = SocketFileGuard { path };
-            while let Ok((stream, _)) = unix_listener.accept().await {
+            accept_loop(unix_listener, "unix", move |stream| {
                 tokio::spawn(serve_ws_connection(
                     app.clone(),
                     stream,
                     registry.clone(),
                     expected_token.clone(),
                 ));
-            }
+            })
+            .await;
         });
     }
 
@@ -563,6 +639,75 @@ mod tests {
             std::process::id(),
             current_time_nanos()
         ))
+    }
+
+    #[test]
+    fn accept_backoff_is_zero_then_capped_exponential() {
+        // A clean accept ⇒ no wait.
+        assert_eq!(accept_backoff(0), Duration::ZERO);
+        // Consecutive transient errors back off exponentially from 10ms…
+        assert_eq!(accept_backoff(1), Duration::from_millis(10));
+        assert_eq!(accept_backoff(2), Duration::from_millis(20));
+        assert_eq!(accept_backoff(3), Duration::from_millis(40));
+        assert_eq!(accept_backoff(4), Duration::from_millis(80));
+        assert_eq!(accept_backoff(5), Duration::from_millis(160));
+        // …and saturate at the cap so a storm never spins hot nor overflows.
+        assert_eq!(accept_backoff(6), Duration::from_millis(320));
+        assert_eq!(accept_backoff(50), Duration::from_millis(320));
+    }
+
+    // Regression (T1.5): a transient `accept()` error must NOT end the accept
+    // loop. The old `while let Ok((stream, _)) = listener.accept().await` exited
+    // on the first `Err` (EMFILE/ENFILE, an in-queue peer reset), killing
+    // phone-home for the whole process. The fixed `accept_loop` logs + retries,
+    // so a connection queued AFTER a transient error is still delivered. A mock
+    // listener returns `Err` first, then a connection; the loop must hand that
+    // connection to the handler (the pre-fix loop would have died on the `Err`
+    // and this test would time out).
+    #[tokio::test]
+    async fn accept_loop_survives_a_transient_accept_error() {
+        use std::collections::VecDeque;
+        use std::io::Error;
+        use std::sync::Mutex as StdMutex;
+
+        struct MockListener {
+            events: StdMutex<VecDeque<std::io::Result<u32>>>,
+        }
+        impl BridgeAccept for MockListener {
+            type Conn = u32;
+            async fn accept_conn(&self) -> std::io::Result<u32> {
+                // Bind before matching so the lock guard drops before any `.await`.
+                let next = self.events.lock().unwrap().pop_front();
+                match next {
+                    Some(result) => result,
+                    // Nothing more queued: park like a real idle listener would;
+                    // the test cancels the loop via `select!`.
+                    None => std::future::pending().await,
+                }
+            }
+        }
+
+        let mock = MockListener {
+            events: StdMutex::new(VecDeque::from([
+                Err(Error::other("EMFILE (simulated transient)")),
+                Ok(7_u32),
+            ])),
+        };
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let on_conn = move |conn: u32| {
+            let _ = tx.send(conn);
+        };
+
+        tokio::select! {
+            _ = accept_loop(mock, "mock", on_conn) => unreachable!("accept loop must never return"),
+            received = tokio::time::timeout(Duration::from_secs(2), rx.recv()) => {
+                assert_eq!(
+                    received.expect("connection delivered before timeout"),
+                    Some(7),
+                    "the loop retried past the transient error and accepted the next connection"
+                );
+            }
+        }
     }
 
     #[test]
