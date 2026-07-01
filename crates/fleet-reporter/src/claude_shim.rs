@@ -45,8 +45,6 @@
 //! **recorded Claude hook-event JSON fixtures** — both a native-UI fixture and a
 //! shim fixture of the *same* approval.
 
-use serde::Deserialize;
-
 use fleet_protocol::{AgentKind, AgentRun, Confidence, Extra, State, Urgency, SCHEMA_VERSION};
 
 use crate::claude::{ClaudeHookEvent, ClaudeHookKind, ClaudeParseError};
@@ -107,9 +105,15 @@ impl LaunchContext {
 }
 
 /// A `PermissionRequest` event's approval payload, parsed from the recorded hook
-/// JSON. Claude's `PermissionRequest` stdin carries the `tool_name` (and a
-/// `permission` / `decision` envelope on the *response*), mirroring the Codex
-/// shape so the two adapters stay structurally aligned.
+/// JSON. Claude's `PermissionRequest` stdin carries the `tool_name` the agent is
+/// blocked on, mirroring the Codex shape so the two adapters stay structurally
+/// aligned.
+///
+/// **There is no inbound "response" event.** A `PermissionRequest` `decision` is
+/// a hook *output* (`hookSpecificOutput.decision.behavior`), not a second inbound
+/// hook. A real approval resolves via the *subsequent activity* hooks (a
+/// `PreToolUse`/`UserPromptSubmit`/`Stop`), which the lifecycle path already
+/// auto-resolves — so this type models the request only.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApprovalRequest {
     /// Claude `session_id` — the durable identity anchor (same one S15 uses).
@@ -118,68 +122,12 @@ pub struct ApprovalRequest {
     pub cwd: Option<String>,
     /// The tool the agent is blocked on, if named.
     pub tool_name: Option<String>,
-    /// `Some` when this event is the **response** to the approval (auto-resolve),
-    /// `None` when it is a fresh request.
-    pub decision: Option<ApprovalDecision>,
-}
-
-/// The user's answer to a Claude `PermissionRequest`. Its presence on an event
-/// means "this resolves the approval" (auto-resolve, mirrors Codex S13).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ApprovalDecision {
-    /// The user allowed the tool to run.
-    Allow,
-    /// The user denied the tool.
-    Deny,
-}
-
-/// Raw `PermissionRequest` payload shape. Only the approval-specific fields beyond
-/// the common S15 hook fields are surfaced here; identity/cwd/tool reuse the S15
-/// parser via [`ClaudeHookEvent`].
-#[derive(Debug, Deserialize)]
-struct RawPermission {
-    #[serde(alias = "permission", alias = "response", alias = "answer")]
-    decision: Option<RawDecision>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum RawDecision {
-    Plain(String),
-    Structured {
-        permission: Option<String>,
-        decision: Option<String>,
-        behavior: Option<String>,
-    },
-}
-
-impl RawDecision {
-    fn into_decision(self) -> Option<ApprovalDecision> {
-        let token = match self {
-            RawDecision::Plain(s) => Some(s),
-            RawDecision::Structured {
-                permission,
-                decision,
-                behavior,
-            } => permission.or(decision).or(behavior),
-        }?;
-        match token.to_ascii_lowercase().as_str() {
-            "allow" | "approve" | "approved" | "accept" | "yes" | "once" | "always" => {
-                Some(ApprovalDecision::Allow)
-            }
-            "deny" | "denied" | "reject" | "rejected" | "no" | "abort" => {
-                Some(ApprovalDecision::Deny)
-            }
-            _ => None,
-        }
-    }
 }
 
 impl ApprovalRequest {
     /// Parse a recorded Claude `PermissionRequest` hook-event JSON into an
     /// [`ApprovalRequest`]. Reuses the S15 [`ClaudeHookEvent`] parser for the
-    /// common fields (identity/cwd/tool, schema-drift tolerant), then layers the
-    /// approval-specific `decision` envelope on top.
+    /// common fields (identity/cwd/tool, schema-drift tolerant).
     ///
     /// Returns `None` (not an error) if the event is not a `PermissionRequest`, so
     /// a caller can cheaply filter a mixed hook stream. Hard parse failures
@@ -190,31 +138,17 @@ impl ApprovalRequest {
         if !is_permission_request(&ev.kind) {
             return Ok(None);
         }
-        Ok(Some(Self::from_event(ev, json)))
+        Ok(Some(Self::from_event(ev)))
     }
 
     /// Build an [`ApprovalRequest`] from an already-parsed [`ClaudeHookEvent`]
-    /// known to be a `PermissionRequest`, layering the approval-specific
-    /// `decision` envelope on top of the common identity/cwd/tool fields. `json`
-    /// is the original line, re-read only for the best-effort decision parse (a
-    /// malformed/absent decision ⇒ a fresh request, not an error).
-    fn from_event(ev: ClaudeHookEvent, json: &str) -> Self {
-        let decision = serde_json::from_str::<RawPermission>(json)
-            .ok()
-            .and_then(|r| r.decision)
-            .and_then(RawDecision::into_decision);
+    /// known to be a `PermissionRequest`.
+    fn from_event(ev: ClaudeHookEvent) -> Self {
         ApprovalRequest {
             session_id: ev.session_id,
             cwd: ev.cwd,
             tool_name: ev.tool_name,
-            decision,
         }
-    }
-
-    /// `true` when this is the **response** to an approval (carries a decision),
-    /// vs a fresh request.
-    pub fn is_response(&self) -> bool {
-        self.decision.is_some()
     }
 }
 
@@ -240,8 +174,9 @@ fn is_permission_request(kind: &ClaudeHookKind) -> bool {
 /// - **Confidence honesty (structural)** — [`Confidence::High`] for `waiting` is
 ///   reachable **only** when `ctx.permission_request_is_authoritative()` (i.e.
 ///   `ShimTerminal`). In `NativeUi` the *same* approval yields `Inferred`.
-/// - **Auto-resolve** — answering in the terminal (the `PermissionRequest`
-///   response, or any subsequent activity) clears `waiting` → `working`.
+/// - **Auto-resolve** — answering in the terminal produces the *next* activity
+///   hook (a `PreToolUse`/`UserPromptSubmit`/`Stop`), which clears `waiting` →
+///   `working`/`done`. There is no inbound approval-response event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClaudeShimStateMachine {
     session_id: String,
@@ -316,8 +251,8 @@ impl ClaudeShimStateMachine {
     }
 
     /// Apply a parsed S15 hook event (the lifecycle hooks: start/prompt/tool/stop/
-    /// end). Approval events are applied separately via [`Self::apply_approval`]
-    /// because S15's [`ClaudeHookEvent`] does not carry the decision envelope.
+    /// end). A `PermissionRequest` is raised as a fresh approval here too; the
+    /// dedicated [`Self::apply_approval`] path is the same request-only entry.
     pub fn apply(&mut self, ev: &ClaudeHookEvent) -> Transition {
         if ev.session_id != self.session_id {
             return self.no_op(false);
@@ -353,13 +288,23 @@ impl ClaudeShimStateMachine {
             }
             ClaudeHookKind::Stop => {
                 let resolved = self.pending_approval;
-                let next = if ev.turn_complete_done && !ev.stop_hook_active {
-                    State::Done
-                } else {
-                    State::Idle
-                };
-                let changed = self.state != next || self.urgency.is_some();
-                self.state = next;
+                if ev.stop_hook_active {
+                    // A continuation Stop is not a real turn boundary — activity,
+                    // not completion: cancel any pending approval, stay working.
+                    let was_working = self.state == State::Working && self.urgency.is_none();
+                    self.enter_working();
+                    return Transition {
+                        state: self.state,
+                        urgency: self.urgency,
+                        confidence: self.confidence,
+                        changed: !was_working || resolved,
+                        resolved_approval: resolved,
+                        liveness: true,
+                    };
+                }
+                // The Stop event firing IS the turn-complete signal → Done.
+                let changed = self.state != State::Done || self.urgency.is_some();
+                self.state = State::Done;
                 self.urgency = None;
                 self.confidence = Confidence::Inferred;
                 self.pending_approval = false;
@@ -405,9 +350,11 @@ impl ClaudeShimStateMachine {
         }
     }
 
-    /// Apply a parsed [`ApprovalRequest`] — the S17-specific path. A fresh request
-    /// raises `waiting`+`approval` with the launch-context confidence; a response
-    /// (decision present) auto-resolves it back to `working`.
+    /// Apply a parsed [`ApprovalRequest`] — the S17-specific path. A
+    /// `PermissionRequest` is always a **fresh** request (there is no inbound
+    /// response event); it raises `waiting`+`approval` with the launch-context
+    /// confidence and auto-resolves later via the subsequent activity hooks
+    /// (handled in [`Self::apply`]).
     pub fn apply_approval(&mut self, req: &ApprovalRequest) -> Transition {
         if req.session_id != self.session_id {
             return self.no_op(false);
@@ -420,22 +367,7 @@ impl ClaudeShimStateMachine {
         if let Some(t) = &req.tool_name {
             self.last_tool = Some(t.clone());
         }
-        if let Some(decision) = req.decision {
-            // The user's answer (auto-resolve, S13-analog): both allow/deny resume.
-            let _ = decision;
-            let was_pending = self.pending_approval;
-            self.enter_working();
-            Transition {
-                state: self.state,
-                urgency: self.urgency,
-                confidence: self.confidence,
-                changed: was_pending,
-                resolved_approval: was_pending,
-                liveness: true,
-            }
-        } else {
-            self.raise_approval()
-        }
+        self.raise_approval()
     }
 
     /// Build the current [`AgentRun`] snapshot. `native_id` is the Claude
@@ -598,11 +530,10 @@ impl ClaudeShimAdapter {
         let Ok(ev) = ClaudeHookEvent::parse(json) else {
             return Vec::new();
         };
-        // A PermissionRequest goes through the approval path (layering the
-        // best-effort decision envelope on top); everything else through the
-        // lifecycle path.
+        // A PermissionRequest goes through the approval (request-only) path;
+        // everything else through the lifecycle path.
         if is_permission_request(&ev.kind) {
-            let req = ApprovalRequest::from_event(ev, json);
+            let req = ApprovalRequest::from_event(ev);
             self.ingest_approval(&req).0
         } else {
             self.ingest(&ev).0
@@ -622,7 +553,7 @@ impl ClaudeShimAdapter {
         )
     }
 
-    /// Ingest a parsed approval request/response.
+    /// Ingest a parsed approval request.
     pub fn ingest_approval(&mut self, req: &ApprovalRequest) -> (Vec<ReporterCommand>, Transition) {
         let session_id = req.session_id.clone();
         self.ensure_session(&session_id);

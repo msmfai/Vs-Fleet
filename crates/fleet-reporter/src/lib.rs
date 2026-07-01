@@ -54,7 +54,6 @@ pub mod liveness;
 pub mod reporter;
 pub mod serve;
 pub mod testkit;
-pub mod transcript;
 pub mod transition;
 pub mod transport;
 
@@ -66,17 +65,16 @@ pub use claude::{
     Transition as ClaudeTransition,
 };
 pub use claude_infer::{
-    corroborate_jsonl, corroborate_jsonl_for, corroborate_transcript, ClaudeInferAdapter,
-    ClaudeInferMachine, Corroboration as InferCorroboration, Transition as ClaudeInferTransition,
-    DEFAULT_DEBOUNCE_MS,
+    corroborate_jsonl, corroborate_jsonl_for, ClaudeInferAdapter, ClaudeInferMachine,
+    Corroboration as InferCorroboration, Transition as ClaudeInferTransition, DEFAULT_DEBOUNCE_MS,
 };
 pub use claude_shim::{
-    ApprovalDecision as ClaudeApprovalDecision, ApprovalRequest as ClaudeApprovalRequest,
-    ClaudeShimAdapter, ClaudeShimStateMachine, LaunchContext, Transition as ClaudeShimTransition,
+    ApprovalRequest as ClaudeApprovalRequest, ClaudeShimAdapter, ClaudeShimStateMachine,
+    LaunchContext, Transition as ClaudeShimTransition,
 };
 pub use codex::{
-    ApprovalDecision, CodexAdapter, CodexHookEvent, CodexHookKind, CodexParseError,
-    CodexStateMachine, Transition as CodexTransition,
+    CodexAdapter, CodexHookEvent, CodexHookKind, CodexParseError, CodexStateMachine,
+    Transition as CodexTransition,
 };
 pub use fake::{FakeReporter, FakeReporterConfig, Transport};
 pub use identity::{DurableId, IdentityLedger, RunIdentity, Stamp};
@@ -85,7 +83,6 @@ pub use reporter::{Reporter, ReporterCommand, ReporterConfig, ReporterCore, Repo
 #[cfg(unix)]
 pub use serve::serve_unix;
 pub use serve::{parse_frame, Agent, DriftError, Receiver};
-pub use transcript::{corroborate, Corroboration};
 pub use transition::{ScriptedStep, TransitionScript};
 pub use transport::{Connection, Connector, TransportError, WsConnector};
 

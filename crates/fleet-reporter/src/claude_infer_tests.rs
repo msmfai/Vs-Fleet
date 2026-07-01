@@ -85,8 +85,25 @@ fn fast_tool_followed_by_stop_never_infers() {
     let mut m = machine();
     m.apply(&ev(&pre_tool_json()), 0);
     m.apply(&ev(&stop_idle_json()), WINDOW / 3);
-    assert_eq!(m.state(), State::Idle);
+    assert_eq!(m.state(), State::Done, "a real Stop ends the turn → done");
     assert!(!m.is_debouncing());
+    assert!(!m.tick(WINDOW * 5).changed, "a cancelled debounce never fires");
+}
+
+#[test]
+fn continuation_stop_stays_working_and_cancels_debounce() {
+    // A Stop with stop_hook_active=true is NOT a real turn boundary — it is a
+    // continuation → stays working (a liveness ping) and cancels any pending arm.
+    let mut m = machine();
+    m.apply(&ev(&pre_tool_json()), 0);
+    assert!(m.is_debouncing());
+    let cont = format!(
+        r#"{{"session_id":"{SID}","hook_event_name":"Stop","stop_hook_active":true}}"#
+    );
+    let t = m.apply(&ev(&cont), 100);
+    assert_eq!(m.state(), State::Working);
+    assert!(t.liveness);
+    assert!(!m.is_debouncing(), "the continuation cancels the pending debounce");
     assert!(!m.tick(WINDOW * 5).changed, "a cancelled debounce never fires");
 }
 
@@ -125,13 +142,13 @@ fn activity_auto_resolves_inferred_waiting() {
 }
 
 #[test]
-fn stop_resolves_inferred_waiting_to_idle() {
+fn stop_resolves_inferred_waiting_to_done() {
     let mut m = machine();
     m.apply(&ev(&pre_tool_json()), 0);
     m.tick(WINDOW);
     assert_eq!(m.state(), State::Waiting);
     let t = m.apply(&ev(&stop_idle_json()), WINDOW + 1);
-    assert_eq!(m.state(), State::Idle);
+    assert_eq!(m.state(), State::Done, "a real Stop ends the turn → done");
     assert!(t.resolved_inference);
     assert_eq!(m.confidence(), Confidence::Inferred);
 }
@@ -182,12 +199,6 @@ fn corroborate_jsonl_unknown_on_empty_or_drift() {
 fn corroborate_jsonl_bare_content_envelope() {
     let body = r#"{"content":[{"type":"tool_use","id":"t1"}]}"#;
     assert_eq!(corroborate_jsonl(body), Corroboration::Stuck);
-}
-
-#[test]
-fn corroborate_transcript_is_corroborate_jsonl() {
-    let body = r#"{"content":[{"type":"tool_use","id":"t1"}]}"#;
-    assert_eq!(corroborate_transcript(body), corroborate_jsonl(body));
 }
 
 // ── corroboration folds into the machine without changing confidence ─────────
@@ -334,7 +345,7 @@ fn adapter_full_native_ui_transcript() {
     a.ingest_json(&pre_tool_json(), 100 + WINDOW + 200);
     assert_eq!(a.state_of(SID), Some(State::Working));
     a.ingest_json(&stop_idle_json(), 100 + WINDOW + 400);
-    assert_eq!(a.state_of(SID), Some(State::Idle));
+    assert_eq!(a.state_of(SID), Some(State::Done), "a real Stop → done");
 }
 
 // ── property: confidence honesty is structural (never high for waiting) ──────
@@ -536,15 +547,11 @@ fn machine_accessors_reflect_state() {
 }
 
 #[test]
-fn stop_with_completion_marker_goes_done() {
-    // Stop carrying a completion reason (turn_complete_done && !stop_hook_active)
-    // → State::Done (line 338) and the Done last_message.
+fn real_stop_goes_done() {
+    // A real Stop (stop_hook_active=false) → State::Done and the Done last_message.
     let mut m = machine();
     m.apply(&ev(&pre_tool_json()), 0);
-    let done = format!(
-        r#"{{"session_id":"{SID}","hook_event_name":"Stop","reason":"completed","stop_hook_active":false}}"#
-    );
-    let t = m.apply(&ev(&done), 100);
+    let t = m.apply(&ev(&stop_idle_json()), 100);
     assert_eq!(t.state, State::Done);
     assert!(t.changed);
     let run = m.to_run("run-done", "2026-06-24T00:00:00Z");

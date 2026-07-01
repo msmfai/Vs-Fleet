@@ -25,12 +25,13 @@
 //!   Hub               Err(DriftError) ── drift guard ── log + drop (∅ commands)
 //! ```
 //!
-//! **Drift guard (invariant 2 + invariant 5).** A malformed frame, an unknown
-//! agent tag, or an adapter parse failure never panics and never fabricates a
-//! state: the pipeline collapses to *zero* commands and a `debug!` line. The
-//! adapters themselves already swallow JSON parse errors (`ingest_json` returns
-//! an empty `Vec`), so confidence honesty is structural here too — a drifted
-//! payload simply produces no Hub delta.
+//! **Drift guard (invariant 2 + invariant 5 + T1.7).** A malformed frame, an
+//! unknown agent tag, or an adapter-level parse failure never panics and never
+//! fabricates a state: the pipeline collapses to *zero* commands, bumps the
+//! `dropped` drift counter, and emits a `debug!` line. Unlike the old
+//! swallow-`ingest_json` path, an unparseable *body* is now routed through the
+//! error-returning `Agent::parse` and **counted** as drift — so a malformed
+//! payload is observable, not silently dropped, while still producing no Hub delta.
 //!
 //! ## Framing
 //!
@@ -61,9 +62,9 @@ use tokio::sync::Mutex;
 #[cfg(unix)]
 use tracing::{info, warn};
 
-use crate::claude::ClaudeAdapter;
+use crate::claude::{ClaudeAdapter, ClaudeHookEvent};
 use crate::claude_infer::ClaudeInferAdapter;
-use crate::codex::CodexAdapter;
+use crate::codex::{CodexAdapter, CodexHookEvent};
 use crate::reporter::ReporterCommand;
 #[cfg(unix)]
 use crate::reporter::ReporterHandle;
@@ -251,8 +252,30 @@ impl Receiver {
     }
 
     /// Like [`Self::tick`] but at an explicit monotonic `now_ms` (test injection).
+    ///
+    /// ## Transcript corroboration (the flagship native-UI path)
+    ///
+    /// Before an inferred `Waiting` *fires*, each session whose debounce has now
+    /// elapsed is corroborated against its transcript JSONL: the `transcript_path`
+    /// pinned when the `PreToolUse` armed is read from disk and the **armed
+    /// `tool_use`** is checked for a matching `tool_result`. A
+    /// [`Corroboration::Resolved`](crate::claude_infer::Corroboration::Resolved)
+    /// verdict (the tool already completed) **vetoes** the false waiting; `Stuck`/
+    /// `Unknown` leave the decision to the debounce timing. This is the only place
+    /// the transcript file is read — a best-effort I/O step; an unreadable path
+    /// degrades to timing-only (never suppresses a genuine approval).
     pub fn tick_at(&mut self, now_ms: u64) -> Vec<ReporterCommand> {
-        self.infer.tick(now_ms)
+        let mut cmds = Vec::new();
+        for (session_id, transcript_path) in self.infer.pending_fires(now_ms) {
+            if let Some(path) = transcript_path {
+                if let Ok(blob) = std::fs::read_to_string(&path) {
+                    cmds.extend(self.infer.corroborate_blob(&session_id, &blob));
+                }
+            }
+        }
+        // Fire the debounce for every session the corroboration did not veto.
+        cmds.extend(self.infer.tick(now_ms));
+        cmds
     }
 
     /// Stage 2: route the body to the agent's adapter(s) (the stateful step).
@@ -262,15 +285,35 @@ impl Receiver {
     /// path). The S15 commands lead; any waiting-inference command (an arm
     /// auto-resolution surfaced immediately, e.g. activity cancelling a raised
     /// waiting) follows. The debounce *fire* itself is deferred to [`Self::tick`].
+    ///
+    /// A body that parses to no valid hook event is **drift** (invariant 2 + T1.7):
+    /// it bumps the `dropped` counter and logs at `debug`, rather than being
+    /// silently swallowed — so a malformed payload is observable, never fabricated
+    /// into a state.
     fn dispatch(&mut self, agent: Agent, body: &str, now_ms: u64) -> Vec<ReporterCommand> {
         match agent {
-            Agent::Claude => {
-                let mut cmds = self.claude.ingest_json(body);
-                cmds.extend(self.infer.ingest_json(body, now_ms));
-                cmds
-            }
-            Agent::Codex => self.codex.ingest_json(body),
+            Agent::Claude => match ClaudeHookEvent::parse(body) {
+                Ok(ev) => {
+                    let mut cmds = self.claude.ingest(&ev).0;
+                    cmds.extend(self.infer.ingest(&ev, now_ms).0);
+                    cmds
+                }
+                Err(e) => self.drop_unparseable(body, &e),
+            },
+            Agent::Codex => match CodexHookEvent::parse(body) {
+                Ok(ev) => self.codex.ingest(&ev).0,
+                Err(e) => self.drop_unparseable(body, &e),
+            },
         }
+    }
+
+    /// Record an adapter-level parse failure as drift: bump the `dropped` counter
+    /// and log at `debug`, returning zero commands. Routes both agents' parse
+    /// errors through one place so the drift accounting is uniform.
+    fn drop_unparseable(&mut self, body: &str, err: &dyn std::fmt::Display) -> Vec<ReporterCommand> {
+        self.dropped += 1;
+        debug!(error = %err, frame = %truncate(body), "dropping unparseable hook body");
+        Vec::new()
     }
 }
 
@@ -491,8 +534,8 @@ mod tests {
             .any(|c| matches!(c, ReporterCommand::UpsertRun(r) if r.state == State::Waiting))
     }
 
-    // A minimal valid Claude Stop payload (matches the real 2.1.x envelope: no
-    // `reason`; `stop_hook_active:false` ⇒ a real turn boundary → idle).
+    // A minimal valid Claude Stop payload (matches the real 2026 envelope: no
+    // phantom markers; `stop_hook_active:false` ⇒ a real turn boundary → done).
     fn claude_stop(session: &str) -> String {
         format!(
             r#"{{"hook_event_name":"Stop","session_id":"{session}","cwd":"/repo","stop_hook_active":false}}"#
@@ -551,7 +594,7 @@ mod tests {
     // ── process: the whole pipeline incl. the drift guard ────────────────────
 
     #[test]
-    fn process_claude_prompt_then_stop_drives_working_then_idle() {
+    fn process_claude_prompt_then_stop_drives_working_then_done() {
         let mut rx = Receiver::new();
 
         // First a prompt → the session's run goes Working (a state change ⇒
@@ -564,28 +607,32 @@ mod tests {
             "durable anchor is the claude session_id"
         );
 
-        // Then a Stop → Idle.
+        // Then a real Stop → Done (the Stop event IS the turn-complete signal).
         let cmds = rx.process(&format!("claude {}", claude_stop("sess-A")));
         let run = first_upsert_run(&cmds).expect("stop should upsert a run");
-        assert_eq!(run.state, State::Idle);
+        assert_eq!(run.state, State::Done);
 
         assert_eq!(rx.frames_seen(), 2);
         assert_eq!(rx.frames_dropped(), 0);
     }
 
     #[test]
-    fn process_garbage_json_is_dropped_not_panicked() {
+    fn process_garbage_json_is_dropped_and_counted() {
+        // T1.7 (item 5): a tagged frame whose *body* is not valid JSON is drift —
+        // it yields no commands AND bumps the `dropped` counter + a debug! line
+        // (no longer silently swallowed), while never panicking or fabricating state.
         let mut rx = Receiver::new();
-        // Tagged but the body is not valid JSON: the adapter swallows it, so the
-        // pipeline yields no commands. (The drift counter only tracks frame-level
-        // drift, not adapter-level no-ops, but the key property is: no panic, no
-        // command, no fabricated state.)
         let cmds = rx.process("claude this-is-not-json");
         assert!(cmds.is_empty(), "garbage must yield no commands");
-        // A truly empty frame is frame-level drift.
+        assert_eq!(rx.frames_dropped(), 1, "the unparseable body was counted");
+        // A codex-tagged garbage body is counted the same way.
+        let cmds = rx.process("codex also-not-json");
+        assert!(cmds.is_empty());
+        assert_eq!(rx.frames_dropped(), 2);
+        // A truly empty frame is frame-level drift too.
         let cmds = rx.process("   ");
         assert!(cmds.is_empty());
-        assert_eq!(rx.frames_dropped(), 1, "the empty frame was dropped");
+        assert_eq!(rx.frames_dropped(), 3, "the empty frame was dropped");
     }
 
     // ── serve_unix: the real socket → adapter → handle path ──────────────────
@@ -835,9 +882,9 @@ mod tests {
     }
 
     #[test]
-    fn s15_working_idle_path_stays_intact_and_never_waits() {
-        // The additive infer adapter must not disturb the S15 working/idle path:
-        // a prompt → Working, a stop → Idle, and neither emits Waiting.
+    fn s15_working_done_path_stays_intact_and_never_waits() {
+        // The additive infer adapter must not disturb the S15 working/done path:
+        // a prompt → Working, a real stop → Done, and neither emits Waiting.
         let mut rx = Receiver::new();
         let cmds = rx.process(&format!("claude {}", claude_prompt("sess-Y")));
         assert_eq!(
@@ -848,8 +895,8 @@ mod tests {
         let cmds = rx.process(&format!("claude {}", claude_stop("sess-Y")));
         assert_eq!(
             first_upsert_run(&cmds).map(|r| r.state),
-            Some(State::Idle),
-            "a stop drives Idle"
+            Some(State::Done),
+            "a real stop drives Done"
         );
         assert!(
             !any_waiting_run(&cmds),
@@ -923,5 +970,93 @@ mod tests {
         let b = rx.process(&format!("claude {}", claude_prompt("sess-B")));
         let id = |cmds: &[ReporterCommand]| first_upsert_run(cmds).map(|r| r.run_id);
         assert_ne!(id(&a), id(&b), "distinct sessions ⇒ distinct Fleet run-ids");
+    }
+
+    // ── item 4: transcript corroboration wired into the SERVE tick path ──────
+
+    fn claude_pretool_with_transcript(session: &str, tool_use_id: &str, path: &str) -> String {
+        format!(
+            r#"{{"hook_event_name":"PreToolUse","session_id":"{session}","cwd":"/repo","tool_name":"Bash","tool_use_id":"{tool_use_id}","transcript_path":"{path}"}}"#
+        )
+    }
+
+    #[test]
+    fn serve_tick_corroborates_transcript_and_vetoes_false_waiting() {
+        // FLAGSHIP (item 4): the serve path itself now reads `transcript_path` and
+        // corroborates before firing. An armed tool_use that the transcript shows
+        // ALREADY RESOLVED (has a tool_result) must veto the would-be waiting — the
+        // debounce never fires. Proves corroboration runs in the serve path, not
+        // just in unit tests.
+        use crate::claude_infer::DEFAULT_DEBOUNCE_MS;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("transcript.jsonl");
+        std::fs::write(
+            &path,
+            concat!(
+                r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_1"}]}}"#,
+                "\n",
+                r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_1"}]}}"#,
+            ),
+        )
+        .unwrap();
+
+        let mut rx = Receiver::new();
+        let frame = format!(
+            "claude {}",
+            claude_pretool_with_transcript("sess-corr", "toolu_1", &path.to_string_lossy())
+        );
+        rx.process_at(&frame, 0);
+        // Tick past the debounce: corroboration reads the transcript, sees the
+        // armed tool resolved, and vetoes — NO waiting is fired.
+        let cmds = rx.tick_at(DEFAULT_DEBOUNCE_MS + 1);
+        assert!(
+            !any_waiting_run(&cmds),
+            "a resolved transcript vetoes the inferred waiting in the serve path"
+        );
+    }
+
+    #[test]
+    fn serve_tick_corroboration_lets_a_stuck_transcript_fire() {
+        // The companion: an armed tool_use with NO tool_result in the transcript
+        // (stuck) does not veto — the inferred waiting fires normally.
+        use crate::claude_infer::DEFAULT_DEBOUNCE_MS;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("transcript.jsonl");
+        std::fs::write(
+            &path,
+            r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_9"}]}}"#,
+        )
+        .unwrap();
+
+        let mut rx = Receiver::new();
+        let frame = format!(
+            "claude {}",
+            claude_pretool_with_transcript("sess-stuck", "toolu_9", &path.to_string_lossy())
+        );
+        rx.process_at(&frame, 0);
+        let cmds = rx.tick_at(DEFAULT_DEBOUNCE_MS + 1);
+        assert!(
+            any_waiting_run(&cmds),
+            "a stuck transcript leaves the inferred waiting to fire"
+        );
+    }
+
+    #[test]
+    fn serve_tick_unreadable_transcript_falls_back_to_timing() {
+        // A `transcript_path` that cannot be read (does not exist) degrades to
+        // timing alone — it must NOT suppress a genuine approval (the read-error
+        // arm of the serve corroboration).
+        use crate::claude_infer::DEFAULT_DEBOUNCE_MS;
+        let mut rx = Receiver::new();
+        let frame = format!(
+            "claude {}",
+            claude_pretool_with_transcript("sess-noread", "toolu_x", "/nope/does-not-exist.jsonl")
+        );
+        rx.process_at(&frame, 0);
+        let cmds = rx.tick_at(DEFAULT_DEBOUNCE_MS + 1);
+        assert!(
+            any_waiting_run(&cmds),
+            "an unreadable transcript never suppresses a genuine approval"
+        );
     }
 }

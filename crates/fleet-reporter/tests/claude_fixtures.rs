@@ -77,19 +77,21 @@ fn camelcase_fixture_parses() {
 }
 
 #[test]
-fn stop_done_fixture_marks_completion_idle_does_not() {
-    assert!(parse("stop_done.json").turn_complete_done);
-    assert!(!parse("stop_idle.json").turn_complete_done);
+fn real_stop_fixtures_drive_done() {
+    // A real Stop (stop_hook_active=false) IS the turn-complete signal → Done,
+    // regardless of any phantom `reason`/completion marker in the payload.
+    let mut m = ClaudeStateMachine::new(SESSION);
+    m.apply(&parse("stop_idle.json"));
+    assert_eq!(m.state(), State::Done);
+    let mut m2 = ClaudeStateMachine::new(SESSION);
+    m2.apply(&parse("stop_done.json"));
+    assert_eq!(m2.state(), State::Done);
 }
 
 #[test]
 fn stop_hook_active_fixture_is_flagged() {
     let e = parse("stop_hook_active.json");
-    assert!(e.stop_hook_active);
-    assert!(
-        e.turn_complete_done,
-        "carries the marker but inside a stop hook"
-    );
+    assert!(e.stop_hook_active, "a continuation Stop is flagged");
 }
 
 // ── drift / error fixtures degrade gracefully ────────────────────────────────
@@ -133,10 +135,11 @@ fn replay_working_idle_done_from_fixtures() {
     a.ingest_json(&fixture("post_tool_use.json"));
     assert_eq!(a.state_of(SESSION), Some(State::Working));
 
+    // A real Stop → Done (the event is the turn-complete signal).
     a.ingest_json(&fixture("stop_idle.json"));
-    assert_eq!(a.state_of(SESSION), Some(State::Idle));
+    assert_eq!(a.state_of(SESSION), Some(State::Done));
 
-    // A fresh prompt then a completion-marked Stop → done (distinct from idle).
+    // A fresh prompt then another real Stop → done again.
     a.ingest_json(&fixture("user_prompt_submit.json"));
     a.ingest_json(&fixture("stop_done.json"));
     assert_eq!(a.state_of(SESSION), Some(State::Done));
@@ -162,14 +165,14 @@ fn post_tool_use_never_completes_the_run() {
 // ── stop_hook_active suppresses an over-eager done claim ─────────────────────
 
 #[test]
-fn stop_inside_stop_hook_stays_idle() {
+fn stop_inside_stop_hook_stays_working() {
     let mut a = ClaudeAdapter::new();
     a.ingest_json(&fixture("user_prompt_submit.json"));
     a.ingest_json(&fixture("stop_hook_active.json"));
     assert_eq!(
         a.state_of(SESSION),
-        Some(State::Idle),
-        "a Stop from within a stop hook is not a real task end"
+        Some(State::Working),
+        "a Stop from within a stop hook is a continuation, not a real turn end"
     );
 }
 
@@ -258,7 +261,7 @@ fn full_transcript_transition_sequence() {
         ("user_prompt_submit.json", State::Working),
         ("pre_tool_use.json", State::Working),
         ("post_tool_use.json", State::Working),
-        ("stop_idle.json", State::Idle),
+        ("stop_idle.json", State::Done),
         ("user_prompt_submit.json", State::Working),
         ("stop_done.json", State::Done),
         ("session_end.json", State::Dead),

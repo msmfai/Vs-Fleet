@@ -18,12 +18,6 @@ fn permission_request_json() -> String {
     )
 }
 
-fn permission_response_json(decision: &str) -> String {
-    format!(
-        r#"{{"session_id":"{SID}","hook_event_name":"PermissionRequest","tool_name":"Bash","permission":"{decision}"}}"#
-    )
-}
-
 fn prompt_json() -> String {
     format!(r#"{{"session_id":"{SID}","hook_event_name":"UserPromptSubmit","prompt":"go"}}"#)
 }
@@ -42,7 +36,6 @@ fn session_end_json() -> String {
 fn same_approval_yields_inferred_native_vs_high_shim() {
     let json = permission_request_json();
     let req = ApprovalRequest::parse(&json).unwrap().unwrap();
-    assert!(!req.is_response(), "a bare request is not a response");
 
     // Native UI: PermissionRequest does not fire authoritatively → inferred.
     let mut native = ClaudeShimStateMachine::new(SID, LaunchContext::NativeUi);
@@ -146,16 +139,17 @@ fn full_shim_lifecycle_working_waiting_high_resolve_done() {
     assert_eq!(a.confidence_of(SID), Some(Confidence::High));
     assert!(a.machine_of(SID).unwrap().awaiting_approval());
 
-    // Answer in the terminal → auto-resolve back to working, confidence drops to
-    // inferred (working is never authoritative).
-    a.ingest_json(&permission_response_json("allow"));
+    // Answer in the terminal → Claude resumes and fires the NEXT activity hook
+    // (there is no inbound decision event), auto-resolving back to working with
+    // confidence dropping to inferred (working is never authoritative).
+    a.ingest_json(&prompt_json());
     assert_eq!(a.state_of(SID), Some(State::Working));
     assert_eq!(a.confidence_of(SID), Some(Confidence::Inferred));
     assert!(!a.machine_of(SID).unwrap().awaiting_approval());
 
-    // Stop → idle.
+    // Stop → done (the turn-complete signal).
     a.ingest_json(&stop_idle_json());
-    assert_eq!(a.state_of(SID), Some(State::Idle));
+    assert_eq!(a.state_of(SID), Some(State::Done));
 }
 
 #[test]
@@ -174,21 +168,12 @@ fn activity_auto_resolves_a_pending_approval() {
 }
 
 #[test]
-fn deny_response_also_resolves() {
-    let mut a = ClaudeShimAdapter::new(LaunchContext::ShimTerminal);
-    a.ingest_json(&permission_request_json());
-    assert_eq!(a.state_of(SID), Some(State::Waiting));
-    a.ingest_json(&permission_response_json("deny"));
-    assert_eq!(a.state_of(SID), Some(State::Working));
-}
-
-#[test]
-fn stop_while_waiting_clears_to_idle() {
+fn stop_while_waiting_clears_to_done() {
     let mut a = ClaudeShimAdapter::new(LaunchContext::ShimTerminal);
     a.ingest_json(&permission_request_json());
     assert_eq!(a.state_of(SID), Some(State::Waiting));
     a.ingest_json(&stop_idle_json());
-    assert_eq!(a.state_of(SID), Some(State::Idle));
+    assert_eq!(a.state_of(SID), Some(State::Done), "a real Stop ends the turn → done");
     assert_eq!(a.confidence_of(SID), Some(Confidence::Inferred));
 }
 
@@ -253,57 +238,41 @@ fn non_permission_event_parses_to_no_approval() {
 }
 
 #[test]
-fn permission_request_with_no_decision_envelope_is_a_request() {
+fn permission_request_is_a_request_with_the_tool() {
     let r = ApprovalRequest::parse(&permission_request_json())
         .unwrap()
         .unwrap();
-    assert!(!r.is_response());
     assert_eq!(r.tool_name.as_deref(), Some("Bash"));
+    assert_eq!(r.session_id, SID);
 }
 
 #[test]
-fn structured_decision_envelope_parses() {
+fn permission_request_carrying_a_decision_field_still_raises_waiting() {
+    // REGRESSION (item 3): a `decision` is a hook OUTPUT, not an inbound event.
+    // A PermissionRequest that happens to carry one is STILL a fresh request — the
+    // decision is ignored and the gate is raised (never a silent auto-resolve).
     let json = format!(
-        r#"{{"session_id":"{SID}","hook_event_name":"PermissionRequest","decision":{{"behavior":"allow"}}}}"#
+        r#"{{"session_id":"{SID}","hook_event_name":"PermissionRequest","tool_name":"Bash","decision":{{"behavior":"allow"}}}}"#
     );
-    let r = ApprovalRequest::parse(&json).unwrap().unwrap();
-    assert!(r.is_response());
-}
-
-#[test]
-fn unknown_decision_token_is_treated_as_fresh_request() {
-    // A decision token we don't recognise must NOT silently resolve the approval.
-    let json = permission_response_json("frobnicate");
-    let r = ApprovalRequest::parse(&json).unwrap().unwrap();
-    assert!(!r.is_response(), "unknown decision token ⇒ not a resolution");
-
-    let mut a = ClaudeShimAdapter::new(LaunchContext::ShimTerminal);
-    a.ingest_json(&json);
-    // Stays waiting (the approval is still outstanding), high confidence.
-    assert_eq!(a.state_of(SID), Some(State::Waiting));
-    assert_eq!(a.confidence_of(SID), Some(Confidence::High));
-}
-
-// ── structured decision envelope with no recognised key ⇒ fresh request ──────
-
-#[test]
-fn structured_decision_with_no_known_key_is_a_fresh_request() {
-    // A `decision` object that carries none of permission/decision/behavior (only
-    // unrelated keys) yields `None` from the Structured arm (the `?` early-return),
-    // so it must NOT resolve the approval — it stays a fresh request.
-    let json = format!(
-        r#"{{"session_id":"{SID}","hook_event_name":"PermissionRequest","tool_name":"Bash","decision":{{"updatedInput":{{}}}}}}"#
-    );
-    let r = ApprovalRequest::parse(&json).unwrap().unwrap();
-    assert!(
-        !r.is_response(),
-        "a structured decision with no allow/deny key is not a resolution"
-    );
-
     let mut a = ClaudeShimAdapter::new(LaunchContext::ShimTerminal);
     a.ingest_json(&json);
     assert_eq!(a.state_of(SID), Some(State::Waiting));
     assert_eq!(a.confidence_of(SID), Some(Confidence::High));
+}
+
+// ── continuation Stop (stop_hook_active) is liveness, not a completion ────────
+
+#[test]
+fn continuation_stop_stays_working() {
+    let mut m = ClaudeShimStateMachine::new(SID, LaunchContext::ShimTerminal);
+    m.apply(&ClaudeHookEvent::parse(&prompt_json()).unwrap()); // working
+    let cont = format!(
+        r#"{{"session_id":"{SID}","hook_event_name":"Stop","stop_hook_active":true}}"#
+    );
+    let t = m.apply(&ClaudeHookEvent::parse(&cont).unwrap());
+    assert_eq!(m.state(), State::Working, "a continuation Stop is not a turn end");
+    assert!(!t.changed);
+    assert!(t.liveness);
 }
 
 // ── accessors expose the real machine identity / context / cwd ───────────────
@@ -360,7 +329,8 @@ fn stop_with_completion_marker_is_done() {
     let mut a = ClaudeShimAdapter::new(LaunchContext::ShimTerminal);
     a.ingest_json(&prompt_json());
     assert_eq!(a.state_of(SID), Some(State::Working));
-    // task_complete:true with stop_hook_active:false ⇒ turn_complete_done ⇒ Done.
+    // A real Stop (stop_hook_active:false) ⇒ Done; the phantom `task_complete` is
+    // ignored (the Stop event itself is the turn-complete signal).
     let stop_done = format!(
         r#"{{"session_id":"{SID}","hook_event_name":"Stop","stop_hook_active":false,"task_complete":true}}"#
     );

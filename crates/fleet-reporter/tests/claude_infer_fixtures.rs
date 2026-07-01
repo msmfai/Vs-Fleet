@@ -155,7 +155,7 @@ fn adapter_full_native_ui_replay_from_fixtures() {
     assert_eq!(run.confidence, Confidence::Inferred);
 
     a.ingest_json(&claude_fixture("stop_idle.json"), 100 + WINDOW + 50);
-    assert_eq!(a.state_of(SID), Some(State::Idle));
+    assert_eq!(a.state_of(SID), Some(State::Done), "a real Stop → done");
 }
 
 // ── a malformed hook line never creates a ghost run (drift-guard) ────────────

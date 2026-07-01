@@ -131,11 +131,6 @@ pub fn corroborate_jsonl(body: &str) -> Corroboration {
     }
 }
 
-/// Convenience wrapper over [`corroborate_jsonl`] for a raw transcript blob.
-pub fn corroborate_transcript(blob: &str) -> Corroboration {
-    corroborate_jsonl(blob)
-}
-
 /// Like [`corroborate_jsonl`] but keyed on a **specific** `tool_use_id` (the
 /// precise anchor a `PreToolUse` hook carries) rather than the transcript's
 /// last-dispatched tool. Correct when tools run in parallel or the transcript
@@ -209,6 +204,9 @@ pub struct ClaudeInferMachine {
     /// the run is armed/waiting so corroboration checks *this exact* tool, not
     /// merely the transcript's last-dispatched one.
     armed_tool_use_id: Option<String>,
+    /// The `transcript_path` pinned at arm time, so the serve layer can read the
+    /// transcript JSONL and corroborate the inferred `waiting` before it fires.
+    armed_transcript_path: Option<String>,
 }
 
 /// A single state transition the machine decided. `changed` is `false` for a no-op.
@@ -247,6 +245,7 @@ impl ClaudeInferMachine {
             armed_since: None,
             inferred_waiting: false,
             armed_tool_use_id: None,
+            armed_transcript_path: None,
         }
     }
 
@@ -287,6 +286,18 @@ impl ClaudeInferMachine {
     pub fn armed_tool_use_id(&self) -> Option<&str> {
         self.armed_tool_use_id.as_deref()
     }
+    /// The `transcript_path` pinned when the current `PreToolUse` armed, if any —
+    /// the file the serve layer reads to corroborate before firing.
+    pub fn armed_transcript_path(&self) -> Option<&str> {
+        self.armed_transcript_path.as_deref()
+    }
+    /// Whether an armed `PreToolUse` has now been debouncing for at least the
+    /// window at `now_ms` — i.e. a [`Self::tick`] at `now_ms` would fire the
+    /// inferred `waiting`. Used by the serve layer to corroborate *before* firing.
+    pub fn debounce_elapsed(&self, now_ms: u64) -> bool {
+        self.armed_since
+            .is_some_and(|a| now_ms.saturating_sub(a) >= self.debounce_ms)
+    }
 
     /// Apply a parsed lifecycle hook event at monotonic millisecond time `now_ms`.
     pub fn apply(&mut self, ev: &ClaudeHookEvent, now_ms: u64) -> Transition {
@@ -308,8 +319,9 @@ impl ClaudeInferMachine {
                 let was_working = self.state == State::Working && self.urgency.is_none();
                 self.enter_working();
                 self.armed_since = Some(now_ms);
-                // Pin the precise correlation anchor for this arming (if present).
+                // Pin the precise correlation anchor + transcript for this arming.
                 self.armed_tool_use_id = ev.tool_use_id.clone();
+                self.armed_transcript_path = ev.transcript_path.clone();
                 Transition {
                     state: self.state,
                     urgency: self.urgency,
@@ -334,13 +346,24 @@ impl ClaudeInferMachine {
             }
             ClaudeHookKind::Stop => {
                 let resolved = self.clear_inference();
-                let next = if ev.turn_complete_done && !ev.stop_hook_active {
-                    State::Done
-                } else {
-                    State::Idle
-                };
-                let changed = self.state != next || self.urgency.is_some();
-                self.state = next;
+                if ev.stop_hook_active {
+                    // A continuation Stop is not a real turn boundary: the agent is
+                    // looping on, so it is activity — cancel any inference, stay
+                    // working (never a completion claim).
+                    let was_working = self.state == State::Working && self.urgency.is_none();
+                    self.enter_working();
+                    return Transition {
+                        state: self.state,
+                        urgency: self.urgency,
+                        confidence: self.confidence,
+                        changed: !was_working || resolved,
+                        resolved_inference: resolved,
+                        liveness: true,
+                    };
+                }
+                // The Stop event firing IS the turn-complete signal → Done.
+                let changed = self.state != State::Done || self.urgency.is_some();
+                self.state = State::Done;
                 self.urgency = None;
                 self.confidence = Confidence::Inferred;
                 Transition {
@@ -486,6 +509,7 @@ impl ClaudeInferMachine {
     fn clear_inference(&mut self) -> bool {
         self.armed_since = None;
         self.armed_tool_use_id = None;
+        self.armed_transcript_path = None;
         let was_waiting = self.inferred_waiting;
         self.inferred_waiting = false;
         was_waiting
@@ -633,6 +657,18 @@ impl ClaudeInferAdapter {
             cmds.extend(self.commands_for(&transition, &session_id, run_id));
         }
         cmds
+    }
+
+    /// Sessions whose debounce would fire at `now_ms` (armed and elapsed), paired
+    /// with the `transcript_path` pinned when they armed. The serve layer reads
+    /// each transcript and corroborates the inferred `waiting` **before** the
+    /// [`Self::tick`] fires it — the flagship native-UI corroboration path.
+    pub fn pending_fires(&self, now_ms: u64) -> Vec<(String, Option<String>)> {
+        self.sessions
+            .iter()
+            .filter(|(_, s)| s.machine.debounce_elapsed(now_ms))
+            .map(|(id, s)| (id.clone(), s.machine.armed_transcript_path().map(String::from)))
+            .collect()
     }
 
     /// Apply a transcript corroboration verdict to one session (by id), returning any

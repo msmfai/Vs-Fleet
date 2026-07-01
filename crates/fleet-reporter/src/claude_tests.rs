@@ -20,9 +20,9 @@ fn ev(kind: ClaudeHookKind) -> ClaudeHookEvent {
         cwd: Some("/work".into()),
         tool_name: None,
         stop_hook_active: false,
-        turn_complete_done: false,
         last_message: None,
         tool_use_id: None,
+        transcript_path: None,
     }
 }
 
@@ -73,19 +73,25 @@ fn stop_hook_active_is_parsed() {
 }
 
 #[test]
-fn stop_done_markers_parsed() {
+fn phantom_completion_markers_are_ignored_not_parsed() {
+    // REGRESSION (item 1): `task_complete`/`reason`/`subtype` are PHANTOM fields —
+    // they are NOT in the 2026 Claude Stop hook contract. They must be ignored:
+    // parsing must still succeed (unknown fields tolerated) and — crucially — a
+    // real Stop drives Done from the *event itself*, never from these markers.
     for json in [
         r#"{"session_id":"s","hook_event_name":"Stop","task_complete":true}"#,
         r#"{"session_id":"s","hook_event_name":"Stop","reason":"completed"}"#,
         r#"{"session_id":"s","hook_event_name":"Stop","subtype":"success"}"#,
+        r#"{"session_id":"s","hook_event_name":"Stop"}"#,
     ] {
-        assert!(
-            ClaudeHookEvent::parse(json).unwrap().turn_complete_done,
-            "should mark completion: {json}"
+        let mut m = ClaudeStateMachine::new("s");
+        m.apply(&ClaudeHookEvent::parse(json).unwrap());
+        assert_eq!(
+            m.state(),
+            State::Done,
+            "a real Stop drives Done from the event, regardless of phantom markers: {json}"
         );
     }
-    let bare = r#"{"session_id":"s","hook_event_name":"Stop"}"#;
-    assert!(!ClaudeHookEvent::parse(bare).unwrap().turn_complete_done);
 }
 
 // ── parsing: error / drift handling (never panics, never overstates) ─────────
@@ -229,8 +235,7 @@ fn post_tool_use_does_not_make_a_run_done() {
     // The whole point of S15: `done` is derived from Stop, never PostToolUse.
     let mut m = machine();
     m.apply(&ev(ClaudeHookKind::UserPromptSubmit));
-    let mut e = tool_ev(ClaudeHookKind::PostToolUse, "Bash");
-    e.turn_complete_done = true; // even if a PostToolUse claimed completion…
+    let e = tool_ev(ClaudeHookKind::PostToolUse, "Bash");
     m.apply(&e);
     assert_ne!(m.state(), State::Done, "PostToolUse must never reach Done");
     assert_eq!(m.state(), State::Working);
@@ -257,61 +262,47 @@ fn compaction_is_liveness_only() {
     assert!(t.liveness);
 }
 
-// ── transitions: Stop → idle / done (the completion signal) ──────────────────
+// ── transitions: Stop → done (the turn-complete signal) ──────────────────────
 
 #[test]
-fn stop_goes_idle() {
+fn stop_goes_done() {
+    // The Stop event firing IS the turn-complete signal (item 1): a real Stop is
+    // the honest "assistant finished this turn" → Done (never Idle).
     let mut m = machine();
     m.apply(&ev(ClaudeHookKind::UserPromptSubmit)); // working
     let t = m.apply(&ev(ClaudeHookKind::Stop));
-    assert_eq!(m.state(), State::Idle);
+    assert_eq!(m.state(), State::Done);
     assert_eq!(m.confidence(), Confidence::Inferred);
     assert!(t.changed);
 }
 
 #[test]
-fn stop_with_completion_goes_done() {
+fn stop_from_within_stop_hook_is_liveness_only_not_done() {
+    // stop_hook_active=true means we are inside a Stop hook's own continuation
+    // loop — NOT a real turn boundary, so it is a pure liveness ping and must not
+    // claim `done`.
     let mut m = machine();
-    m.apply(&ev(ClaudeHookKind::UserPromptSubmit));
+    m.apply(&ev(ClaudeHookKind::UserPromptSubmit)); // working
     let mut stop = ev(ClaudeHookKind::Stop);
-    stop.turn_complete_done = true;
+    stop.stop_hook_active = true;
     let t = m.apply(&stop);
     assert_eq!(
         m.state(),
-        State::Done,
-        "completion marker → done (D9 distinct)"
+        State::Working,
+        "a continuation Stop keeps the run working (no completion claim)"
     );
-    assert!(t.changed);
-}
-
-#[test]
-fn stop_from_within_stop_hook_stays_idle_not_done() {
-    // stop_hook_active=true means we are inside a Stop hook's own continuation —
-    // NOT a real task end, so we must not claim `done`.
-    let mut m = machine();
-    m.apply(&ev(ClaudeHookKind::UserPromptSubmit));
-    let mut stop = ev(ClaudeHookKind::Stop);
-    stop.turn_complete_done = true;
-    stop.stop_hook_active = true;
-    m.apply(&stop);
-    assert_eq!(
-        m.state(),
-        State::Idle,
-        "stop_hook_active suppresses the done claim (conservative)"
-    );
+    assert!(!t.changed, "no state change");
+    assert!(t.liveness, "but it is a liveness signal");
 }
 
 #[test]
 fn done_and_idle_are_distinct() {
-    // D9: done must never collapse into idle.
-    let mut a = machine();
-    a.apply(&ev(ClaudeHookKind::UserPromptSubmit));
-    a.apply(&ev(ClaudeHookKind::Stop));
+    // D9: done must never collapse into idle. Idle comes from a SessionStart
+    // (alive, nothing produced); Done comes from a real Stop (turn finished).
+    let a = machine(); // fresh session, idle
     let mut b = machine();
     b.apply(&ev(ClaudeHookKind::UserPromptSubmit));
-    let mut stop = ev(ClaudeHookKind::Stop);
-    stop.turn_complete_done = true;
-    b.apply(&stop);
+    b.apply(&ev(ClaudeHookKind::Stop));
     assert_eq!(a.state(), State::Idle);
     assert_eq!(b.state(), State::Done);
     assert_ne!(a.state(), b.state());
@@ -386,18 +377,16 @@ fn full_lifecycle_idle_working_idle_done_dead() {
         (ClaudeHookKind::UserPromptSubmit, State::Working),
         (ClaudeHookKind::PreToolUse, State::Working),
         (ClaudeHookKind::PostToolUse, State::Working), // liveness only
-        (ClaudeHookKind::Stop, State::Idle),
+        (ClaudeHookKind::Stop, State::Done),           // a real Stop → done
     ];
     for (k, expect) in seq {
         let e = tool_ev(k, "Bash");
         m.apply(&e);
         assert_eq!(m.state(), expect);
     }
-    // a fresh prompt then a completion-marked Stop → done
+    // a fresh prompt then a real Stop → done again
     m.apply(&ev(ClaudeHookKind::UserPromptSubmit));
-    let mut stop = ev(ClaudeHookKind::Stop);
-    stop.turn_complete_done = true;
-    m.apply(&stop);
+    m.apply(&ev(ClaudeHookKind::Stop));
     assert_eq!(m.state(), State::Done);
     m.apply(&ev(ClaudeHookKind::SessionEnd));
     assert_eq!(m.state(), State::Dead);
@@ -460,7 +449,7 @@ fn adapter_multiplexes_sessions() {
     a.ingest(&e1);
     a.ingest(&e2);
     assert_eq!(a.session_count(), 2);
-    assert_eq!(a.state_of("session-A"), Some(State::Idle));
+    assert_eq!(a.state_of("session-A"), Some(State::Done), "a real Stop → done");
     assert_eq!(a.state_of("session-B"), Some(State::Working));
     assert_ne!(a.run_id_of("session-A"), a.run_id_of("session-B"));
 }
@@ -478,10 +467,12 @@ fn adapter_ingest_json_working_idle_done_cycle() {
     let mut a = ClaudeAdapter::new();
     a.ingest_json(r#"{"session_id":"sX","hook_event_name":"UserPromptSubmit"}"#);
     assert_eq!(a.state_of("sX"), Some(State::Working));
+    // A real Stop → Done (the event is the turn-complete signal).
     a.ingest_json(r#"{"session_id":"sX","hook_event_name":"Stop"}"#);
-    assert_eq!(a.state_of("sX"), Some(State::Idle));
+    assert_eq!(a.state_of("sX"), Some(State::Done));
+    // A continuation Stop (stop_hook_active) is a no-op liveness — stays Done.
     a.ingest_json(r#"{"session_id":"sX","hook_event_name":"UserPromptSubmit"}"#);
-    a.ingest_json(r#"{"session_id":"sX","hook_event_name":"Stop","reason":"completed"}"#);
+    a.ingest_json(r#"{"session_id":"sX","hook_event_name":"Stop"}"#);
     assert_eq!(a.state_of("sX"), Some(State::Done));
 }
 
@@ -521,7 +512,6 @@ fn s15_never_emits_waiting_or_heuristic_high() {
         let mut m = machine();
         let mut e = ev(kind.clone());
         e.tool_name = Some("Bash".into());
-        e.turn_complete_done = true; // try to provoke an over-claim
         m.apply(&e);
         assert_ne!(m.state(), State::Waiting, "S15 must never enter Waiting ({kind:?})");
         if m.confidence() == Confidence::High {
@@ -566,14 +556,12 @@ fn arb_kind() -> impl Strategy<Value = ClaudeHookKind> {
 #[derive(Debug, Clone)]
 struct ArbEvent {
     kind: ClaudeHookKind,
-    done: bool,
     stop_hook_active: bool,
 }
 
 fn arb_event() -> impl Strategy<Value = ArbEvent> {
-    (arb_kind(), any::<bool>(), any::<bool>()).prop_map(|(kind, done, stop_hook_active)| ArbEvent {
+    (arb_kind(), any::<bool>()).prop_map(|(kind, stop_hook_active)| ArbEvent {
         kind,
-        done,
         stop_hook_active,
     })
 }
@@ -594,7 +582,6 @@ proptest! {
         for ae in events {
             let mut e = ev(ae.kind.clone());
             e.tool_name = Some("Bash".into());
-            e.turn_complete_done = ae.done;
             e.stop_hook_active = ae.stop_hook_active;
             let was_state = m.state();
             let t = m.apply(&e);
@@ -643,9 +630,9 @@ proptest! {
 // ── last_assistant_message → inbox preview (real Stop carries it) ─────────────
 
 #[test]
-fn stop_surfaces_last_assistant_message_as_idle_preview() {
-    // A real Stop payload carries `last_assistant_message`; the run's preview
-    // should be that text (not None / not a generic line).
+fn stop_surfaces_last_assistant_message_as_done_preview() {
+    // A real Stop payload carries `last_assistant_message`; the finished (Done)
+    // run's preview should be that text (not the generic "Task complete.").
     let json = r#"{"session_id":"s","hook_event_name":"Stop","stop_hook_active":false,
         "last_assistant_message":"The current model is Claude Opus 4.8 (1M context)."}"#;
     let e = ClaudeHookEvent::parse(json).unwrap();
@@ -653,7 +640,7 @@ fn stop_surfaces_last_assistant_message_as_idle_preview() {
 
     let mut m = ClaudeStateMachine::new("s");
     m.apply(&e);
-    assert_eq!(m.state(), State::Idle);
+    assert_eq!(m.state(), State::Done);
     let run = m.to_run("r", "2026-06-08T00:00:00Z");
     assert_eq!(
         run.last_message.as_deref(),
@@ -662,10 +649,19 @@ fn stop_surfaces_last_assistant_message_as_idle_preview() {
 }
 
 #[test]
-fn idle_preview_is_none_without_a_message() {
-    // A bare Stop (no last_assistant_message) → idle with no preview (unchanged).
+fn done_preview_is_task_complete_without_a_message() {
+    // A bare Stop (no last_assistant_message) → Done with the generic preview.
     let mut m = ClaudeStateMachine::new("s");
     m.apply(&ClaudeHookEvent::parse(r#"{"session_id":"s","hook_event_name":"Stop"}"#).unwrap());
+    assert_eq!(m.state(), State::Done);
+    assert_eq!(m.to_run("r", "t").last_message.as_deref(), Some("Task complete."));
+}
+
+#[test]
+fn idle_preview_is_none_for_a_fresh_session() {
+    // A fresh session is Idle (alive, nothing produced) → no inbox preview. This
+    // exercises the Idle arm of `last_message` (returning None with no message).
+    let m = ClaudeStateMachine::new("s");
     assert_eq!(m.state(), State::Idle);
     assert!(m.to_run("r", "t").last_message.is_none());
 }
