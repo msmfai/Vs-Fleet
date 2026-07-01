@@ -8,19 +8,23 @@
 //! inbound and a [`fleet_protocol::Event`] outbound — so a client on either
 //! transport is indistinguishable to the merge engine.
 //!
-//! Concurrency model: one authoritative [`MergeEngine`] behind an async
+//! Concurrency model: one authoritative [`StateStore`] behind an async
 //! [`Mutex`]; a [`broadcast`] channel fans every applied delta out to all
-//! subscribers. A subscriber's connection task: (1) locks the engine, applies
-//! any inbound delta, releasing the broadcast events; (2) on `subscribe`, sends
-//! the current snapshot **then** attaches to the broadcast stream. Snapshot is
-//! taken under the same lock that gates new deltas, so no delta is lost or
-//! double-applied across the subscribe boundary.
+//! subscribers. Mutations run *off* the async worker via `spawn_blocking` (the
+//! blocking SQLite append never stalls a tokio worker — T1.2) and, after
+//! applying, refresh a **published snapshot** (an `RwLock<Vec<Session>>`).
+//! Faces read that published snapshot on `subscribe`/`snapshot` WITHOUT taking
+//! the store mutex, so a slow durable append can never block a snapshot read.
+//! A connection attaches its broadcast receiver *before* it sends `subscribe`,
+//! so every post-attach delta is delivered on the stream; any delta also present
+//! in the snapshot is idempotent for faces — no delta is lost across the
+//! subscribe boundary.
 
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 
-use fleet_protocol::Event;
+use fleet_protocol::{Event, Session};
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, Mutex};
@@ -44,6 +48,11 @@ const BROADCAST_CAPACITY: usize = 1024;
 #[derive(Clone)]
 pub struct HubState {
     store: Arc<Mutex<StateStore>>,
+    /// Published read snapshot, refreshed after every mutation. Faces read this
+    /// (subscribe / snapshot) WITHOUT taking the `store` mutex, so a slow durable
+    /// append in flight under `store` never blocks a snapshot read (T1.2: the
+    /// blocking append is no longer under the same lock that gates snapshot reads).
+    snapshot: Arc<std::sync::RwLock<Vec<Session>>>,
     tx: broadcast::Sender<Event>,
 }
 
@@ -71,8 +80,10 @@ impl HubState {
 
     fn from_store(store: StateStore) -> Self {
         let (tx, _rx) = broadcast::channel(BROADCAST_CAPACITY);
+        let snapshot = Arc::new(std::sync::RwLock::new(store.snapshot()));
         HubState {
             store: Arc::new(Mutex::new(store)),
+            snapshot,
             tx,
         }
     }
@@ -90,17 +101,21 @@ impl HubState {
     /// optional immediate reply for the calling connection (the snapshot for
     /// `subscribe`).
     ///
-    /// Returning the snapshot here — under the same lock that serializes deltas
-    /// — is what makes subscribe atomic w.r.t. the delta stream. A persistence
-    /// error on a delta is logged and the delta is dropped (the in-memory
-    /// projection is only updated *after* a successful append, so memory and the
-    /// log never diverge).
+    /// The `subscribe` reply is served from the **published snapshot** (refreshed
+    /// after every applied mutation), not under the `store` mutex — so a slow
+    /// durable append can never stall a subscribe. No delta is lost across the
+    /// boundary: a connection attaches its broadcast receiver *before* it sends
+    /// `subscribe` (see [`serve_ws_connection`]), so every post-attach delta is
+    /// delivered on the stream; a delta already reflected in the snapshot and also
+    /// re-delivered is idempotent for faces.
+    ///
+    /// A persistence error on a delta is logged and the delta is dropped; the
+    /// durable append happens off the async worker (see [`Self::mutate`]) with the
+    /// in-memory projection only committed on a successful append (or rolled back),
+    /// so memory and the log never diverge.
     async fn apply(&self, msg: ClientMessage) -> Option<Event> {
         match msg {
-            ClientMessage::Subscribe => {
-                let store = self.store.lock().await;
-                Some(Event::snapshot(store.snapshot()))
-            }
+            ClientMessage::Subscribe => Some(Event::snapshot(self.published_snapshot())),
             ClientMessage::Command { command } => {
                 // Commands are accepted asynchronously: mutations are broadcast
                 // as normal deltas rather than returned as immediate replies.
@@ -112,8 +127,10 @@ impl HubState {
                 None
             }
             ClientMessage::SessionRemove { session_id } => {
-                let mut store = self.store.lock().await;
-                match store.apply_session_remove(&session_id) {
+                match self
+                    .mutate(move |store| store.apply_session_remove(&session_id))
+                    .await
+                {
                     Ok(evs) => {
                         for ev in evs {
                             let _ = self.tx.send(ev);
@@ -133,8 +150,10 @@ impl HubState {
                 None
             }
             ClientMessage::RunRemove { session_id, run_id } => {
-                let mut store = self.store.lock().await;
-                match store.apply_run_remove(&session_id, &run_id) {
+                match self
+                    .mutate(move |store| store.apply_run_remove(&session_id, &run_id))
+                    .await
+                {
                     Ok(evs) => {
                         for ev in evs {
                             let _ = self.tx.send(ev);
@@ -148,51 +167,110 @@ impl HubState {
     }
 
     /// Apply a face→Hub command and broadcast the resulting persisted events.
-    /// Unknown commands are logged and accepted for forward compatibility.
+    /// Unknown commands are logged and accepted for forward compatibility. Every
+    /// mutating arm runs off the async worker via [`Self::mutate`] (T1.2).
     async fn apply_command(&self, command: fleet_protocol::Command) {
         use fleet_protocol::{Command, Target};
         match command {
             Command::Focus { target, .. } => {
-                let mut store = self.store.lock().await;
-                let session_id = match target {
-                    Target::Session { session_id } => Some(session_id),
-                    Target::Run { run_id } => store.snapshot().into_iter().find_map(|session| {
-                        session
-                            .runs
-                            .iter()
-                            .any(|run| run.run_id == run_id)
-                            .then_some(session.session_id)
-                    }),
-                };
-                if let Some(session_id) = session_id {
-                    if let Some(ev) = store.apply_focus(&session_id) {
-                        let _ = self.tx.send(ev);
-                    }
+                let ev = self
+                    .mutate(move |store| {
+                        let session_id = match target {
+                            Target::Session { session_id } => Some(session_id),
+                            Target::Run { run_id } => {
+                                store.snapshot().into_iter().find_map(|session| {
+                                    session
+                                        .runs
+                                        .iter()
+                                        .any(|run| run.run_id == run_id)
+                                        .then_some(session.session_id)
+                                })
+                            }
+                        };
+                        session_id.and_then(|sid| store.apply_focus(&sid))
+                    })
+                    .await;
+                if let Some(ev) = ev {
+                    let _ = self.tx.send(ev);
                 }
             }
             Command::Mute { session_id, .. } => {
-                let mut store = self.store.lock().await;
-                for ev in store.apply_mute(&session_id) {
-                    let _ = self.tx.send(ev);
+                match self.mutate(move |store| store.apply_mute(&session_id)).await {
+                    Ok(evs) => {
+                        for ev in evs {
+                            let _ = self.tx.send(ev);
+                        }
+                    }
+                    Err(e) => tracing::error!(error = %e, "persist mute failed; dropped"),
                 }
             }
             Command::Unmute { session_id, .. } => {
-                let mut store = self.store.lock().await;
-                for ev in store.apply_unmute(&session_id) {
-                    let _ = self.tx.send(ev);
+                match self
+                    .mutate(move |store| store.apply_unmute(&session_id))
+                    .await
+                {
+                    Ok(evs) => {
+                        for ev in evs {
+                            let _ = self.tx.send(ev);
+                        }
+                    }
+                    Err(e) => tracing::error!(error = %e, "persist unmute failed; dropped"),
                 }
             }
             Command::Solo { session_id, .. } => {
-                let mut store = self.store.lock().await;
-                for ev in store.apply_solo(&session_id) {
-                    let _ = self.tx.send(ev);
+                match self.mutate(move |store| store.apply_solo(&session_id)).await {
+                    Ok(evs) => {
+                        for ev in evs {
+                            let _ = self.tx.send(ev);
+                        }
+                    }
+                    Err(e) => tracing::error!(error = %e, "persist solo failed; dropped"),
                 }
             }
-            Command::Dismiss { target, .. } => {
-                let mut store = self.store.lock().await;
-                match target {
-                    Target::Session { session_id } => match store.apply_session_remove(&session_id)
-                    {
+            Command::Dismiss { target, .. } => self.apply_dismiss(target).await,
+            other => log_unimplemented_command(&other),
+        }
+    }
+
+    /// Handle a `dismiss` command (remove a session or a run), off the async
+    /// worker via [`Self::mutate`], broadcasting the resulting removal events.
+    async fn apply_dismiss(&self, target: fleet_protocol::Target) {
+        use fleet_protocol::Target;
+        match target {
+            Target::Session { session_id } => {
+                let sid = session_id.clone();
+                match self
+                    .mutate(move |store| store.apply_session_remove(&session_id))
+                    .await
+                {
+                    Ok(evs) => {
+                        for ev in evs {
+                            let _ = self.tx.send(ev);
+                        }
+                    }
+                    Err(e) => tracing::error!(
+                        error = %e,
+                        session_id = %sid,
+                        "persist dismiss session failed; dropped"
+                    ),
+                }
+            }
+            Target::Run { run_id } => {
+                let rid = run_id.clone();
+                let outcome = self
+                    .mutate(move |store| {
+                        let session_id = store.snapshot().into_iter().find_map(|session| {
+                            session
+                                .runs
+                                .iter()
+                                .any(|run| run.run_id == run_id)
+                                .then_some(session.session_id)
+                        })?;
+                        Some((session_id.clone(), store.apply_run_remove(&session_id, &run_id)))
+                    })
+                    .await;
+                if let Some((session_id, result)) = outcome {
+                    match result {
                         Ok(evs) => {
                             for ev in evs {
                                 let _ = self.tx.send(ev);
@@ -201,51 +279,29 @@ impl HubState {
                         Err(e) => tracing::error!(
                             error = %e,
                             session_id,
-                            "persist dismiss session failed; dropped"
+                            run_id = %rid,
+                            "persist dismiss run failed; dropped"
                         ),
-                    },
-                    Target::Run { run_id } => {
-                        let session_id = store.snapshot().into_iter().find_map(|session| {
-                            session
-                                .runs
-                                .iter()
-                                .any(|run| run.run_id == run_id)
-                                .then_some(session.session_id)
-                        });
-                        if let Some(session_id) = session_id {
-                            match store.apply_run_remove(&session_id, &run_id) {
-                                Ok(evs) => {
-                                    for ev in evs {
-                                        let _ = self.tx.send(ev);
-                                    }
-                                }
-                                Err(e) => tracing::error!(
-                                    error = %e,
-                                    session_id,
-                                    run_id,
-                                    "persist dismiss run failed; dropped"
-                                ),
-                            }
-                        }
                     }
                 }
             }
-            other => log_unimplemented_command(&other),
         }
     }
 
-    /// Current snapshot (used by tests and the unix/ws snapshot path).
+    /// Current snapshot (used by tests and the unix/ws snapshot path). Served from
+    /// the published snapshot, never blocked by an in-flight durable append.
     pub async fn snapshot_event(&self) -> Event {
-        let store = self.store.lock().await;
-        Event::snapshot(store.snapshot())
+        Event::snapshot(self.published_snapshot())
     }
 
     /// Persist + project + broadcast a session upsert. The public, transport-
     /// agnostic equivalent of receiving a `session.upsert` delta — used by the
     /// fake reporter and integration tests that drive the Hub without a socket.
     pub async fn ingest_session_upsert(&self, session: fleet_protocol::Session) {
-        let mut store = self.store.lock().await;
-        match store.apply_session_upsert(session) {
+        match self
+            .mutate(move |store| store.apply_session_upsert(session))
+            .await
+        {
             Ok(ev) => {
                 let _ = self.tx.send(ev);
             }
@@ -257,8 +313,11 @@ impl HubState {
     ///
     /// Un-stamped (S5 reporters): applied ungated, preserving prior behavior.
     pub async fn ingest_run_upsert(&self, session_id: &str, run: fleet_protocol::AgentRun) {
-        let mut store = self.store.lock().await;
-        match store.apply_run_upsert(session_id, run) {
+        let session_id = session_id.to_string();
+        match self
+            .mutate(move |store| store.apply_run_upsert(&session_id, run))
+            .await
+        {
             Ok(evs) => {
                 for ev in evs {
                     let _ = self.tx.send(ev);
@@ -279,16 +338,18 @@ impl HubState {
         run: fleet_protocol::AgentRun,
         stamp: Option<crate::wire::SeqStamp>,
     ) {
-        let mut store = self.store.lock().await;
-        let result = match stamp {
-            Some(s) => {
-                let did = crate::reclaim::DurableId::new(s.durable_id);
-                store
-                    .apply_run_upsert_seq(session_id, run, &did, s.epoch, s.seq)
-                    .map(|(_decision, evs)| evs)
-            }
-            None => store.apply_run_upsert(session_id, run),
-        };
+        let session_id = session_id.to_string();
+        let result = self
+            .mutate(move |store| match stamp {
+                Some(s) => {
+                    let did = crate::reclaim::DurableId::new(s.durable_id);
+                    store
+                        .apply_run_upsert_seq(&session_id, run, &did, s.epoch, s.seq)
+                        .map(|(_decision, evs)| evs)
+                }
+                None => store.apply_run_upsert(&session_id, run),
+            })
+            .await;
         match result {
             Ok(evs) => {
                 for ev in evs {
@@ -297,6 +358,39 @@ impl HubState {
             }
             Err(e) => tracing::error!(error = %e, "persist run.upsert failed; dropped"),
         }
+    }
+
+    /// Run a mutating store operation **off the async worker** (T1.2): the
+    /// blocking SQLite append runs on the blocking pool, not on a tokio worker,
+    /// so a slow disk can never stall the runtime that services other reporters
+    /// and faces. The `store` mutex is acquired (and held across the blocking
+    /// append) only on that blocking thread. After the mutation applies, the
+    /// published read snapshot is refreshed under the same lock so it never
+    /// exposes a half-applied mutation. The append-before-project ordering inside
+    /// [`StateStore`] is unchanged — only *where* the blocking call runs changes.
+    async fn mutate<R, F>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut StateStore) -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        let store = self.store.clone();
+        let published = self.snapshot.clone();
+        let handle = tokio::task::spawn_blocking(move || {
+            let mut guard = store.blocking_lock();
+            let result = f(&mut guard);
+            *published.write().unwrap_or_else(|p| p.into_inner()) = guard.snapshot();
+            result
+        });
+        join_blocking(handle).await
+    }
+
+    /// The current published read snapshot (a clone), never blocked by an
+    /// in-flight durable append (it does not touch the `store` mutex).
+    fn published_snapshot(&self) -> Vec<Session> {
+        self.snapshot
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
     }
 
     /// Run one GC pass: reap `dead` runs past `grace` (D17) and sweep sessions
@@ -309,9 +403,14 @@ impl HubState {
         grace: std::time::Duration,
         session_ttl: std::time::Duration,
     ) -> Result<usize, PersistError> {
-        let mut store = self.store.lock().await;
-        let mut events = store.reap_dead(now, grace)?;
-        events.extend(store.sweep_expired_sessions(now, session_ttl)?);
+        let now = now.to_string();
+        let events = self
+            .mutate(move |store| -> Result<Vec<Event>, PersistError> {
+                let mut events = store.reap_dead(&now, grace)?;
+                events.extend(store.sweep_expired_sessions(&now, session_ttl)?);
+                Ok(events)
+            })
+            .await?;
         let n = events.len();
         for ev in events {
             let _ = self.tx.send(ev);
@@ -323,6 +422,18 @@ impl HubState {
     fn subscribe(&self) -> broadcast::Receiver<Event> {
         self.tx.subscribe()
     }
+}
+
+/// Await a `spawn_blocking` join, propagating a panic raised inside the blocking
+/// store closure so it is not silently swallowed.
+///
+/// Coverage: the `Err(JoinError)` arm only fires if the store closure panics (a
+/// bug no bounded test induces — the closures are infallible mutations that
+/// return `Result` rather than panic), so it is excluded from the nightly gate;
+/// a no-op on stable.
+#[cfg_attr(coverage_nightly, coverage(off))]
+async fn join_blocking<R>(handle: tokio::task::JoinHandle<R>) -> R {
+    handle.await.expect("store mutation task must not panic")
 }
 
 /// Log an accepted-but-not-yet-implemented face command.
@@ -664,9 +775,18 @@ mod tests {
     #[tokio::test]
     async fn focus_session_clears_unread_and_broadcasts() {
         let state = HubState::new();
+        // A genuine waiting run gives a legitimate Waiting rollup and arms unread
+        // (a run-less session normalizes to the idle sentinel).
         let mut session = sess("s1");
-        session.unread = true;
-        session.rollup_state = State::Waiting;
+        session.runs.push(AgentRun::new(
+            "r1",
+            AgentKind::Codex,
+            "n",
+            "/",
+            State::Waiting,
+            Confidence::High,
+            "2026-06-08T00:00:00Z",
+        ));
         state.apply(ClientMessage::SessionUpsert { session }).await;
         let mut rx = state.subscribe();
 
@@ -1403,6 +1523,70 @@ mod tests {
                 let s2 = sessions.iter().find(|s| s.session_id == "s2").unwrap();
                 assert!(s1.soloed, "s1 must be soloed in snapshot");
                 assert!(!s2.soloed, "s2 must not be soloed in snapshot");
+            }
+            other => panic!("expected snapshot, got {other:?}"),
+        }
+    }
+
+    // ── T1.2: blocking append offloaded + snapshot lock narrowed ──────────────
+
+    /// A Hub whose durable append sleeps `delay` before each write (slow disk),
+    /// used to exercise the blocking-offload + published-snapshot paths.
+    fn slow_hub(delay: std::time::Duration) -> HubState {
+        let store = crate::persist::StateStore::open_in_memory_slow(delay).unwrap();
+        HubState::from_store_for_test(store)
+    }
+
+    #[tokio::test]
+    async fn mutations_apply_in_order_through_offloaded_writes() {
+        // Sequentially-awaited mutations must still land in order once the blocking
+        // append is offloaded (the append-before-project ordering is preserved).
+        let state = HubState::new();
+        for i in 0..6 {
+            state.ingest_session_upsert(sess(&format!("s{i}"))).await;
+        }
+        match state.snapshot_event().await {
+            Event::Snapshot { sessions, .. } => {
+                let ids: Vec<_> = sessions.iter().map(|s| s.session_id.clone()).collect();
+                assert_eq!(ids, vec!["s0", "s1", "s2", "s3", "s4", "s5"]);
+            }
+            other => panic!("expected snapshot, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn concurrent_snapshot_not_blocked_by_in_flight_append() {
+        use std::time::{Duration, Instant};
+        // A durable append that takes 200ms (slow disk).
+        let state = slow_hub(Duration::from_millis(200));
+
+        // Start a slow mutation and let it enter the in-flight (offloaded) append.
+        let start = Instant::now();
+        let s = state.clone();
+        let mutation = tokio::spawn(async move { s.ingest_session_upsert(sess("slow")).await });
+        tokio::task::yield_now().await;
+
+        // A snapshot read must return promptly: it is served from the published
+        // snapshot, so it neither waits on the store lock the append is holding
+        // (lock narrowed) nor is starved by the append (offloaded off the worker).
+        // The elapsed time is measured from BEFORE the mutation was spawned, so a
+        // regression in EITHER the offload or the lock-narrowing would push it to
+        // ~200ms.
+        let _ = state.snapshot_event().await;
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(120),
+            "snapshot blocked by the in-flight durable append ({elapsed:?})"
+        );
+
+        // The slow mutation still completes and durably commits.
+        mutation.await.unwrap();
+        match state.snapshot_event().await {
+            Event::Snapshot { sessions, .. } => {
+                assert!(
+                    sessions.iter().any(|x| x.session_id == "slow"),
+                    "the offloaded mutation must still commit"
+                );
             }
             other => panic!("expected snapshot, got {other:?}"),
         }

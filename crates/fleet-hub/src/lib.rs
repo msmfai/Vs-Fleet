@@ -206,6 +206,21 @@ pub async fn run(config: HubConfig) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // Every env-mutating test below shares this one mutex, so cargo's parallel
+    // test threads can't observe each other's transient `set_var`/`remove_var`
+    // on `FLEET_RUNTIME_DIR`/`XDG_RUNTIME_DIR`. Serializing WITHIN a single test
+    // is not enough — the race is ACROSS tests running concurrently (it broke the
+    // parallel `--all-features` coverage gate). Mirror of `fleet-host`'s
+    // `lock_env()`. Each test still saves/restores the env unconditionally.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    // Tolerate a prior test panicking while holding the guard: the env is always
+    // restored, so the lock itself stays usable (recover the poisoned guard).
+    fn lock_env() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner())
+    }
 
     /// Restore an env var to a previously-captured value (set it back, or remove
     /// it if it was unset). Coverage: which of the set/remove arms runs depends on
@@ -230,18 +245,22 @@ mod tests {
 
     #[test]
     fn fleet_runtime_dir_override_honored() {
+        let _env = lock_env();
+        let saved_fleet = std::env::var_os("FLEET_RUNTIME_DIR");
         std::env::set_var("FLEET_RUNTIME_DIR", "/tmp/fleet-test-override");
         let c = HubConfig::default();
         assert!(c.unix_path.starts_with("/tmp/fleet-test-override"));
-        std::env::remove_var("FLEET_RUNTIME_DIR");
+        restore_env("FLEET_RUNTIME_DIR", saved_fleet);
     }
 
     /// `state_dir`'s precedence: `FLEET_RUNTIME_DIR` wins; otherwise (on unix)
     /// `XDG_RUNTIME_DIR/fleet`; otherwise the temp fallback. Env mutation is
-    /// serialized within this single test and every variable is restored, so the
-    /// branches are exercised deterministically regardless of the host env.
+    /// serialized across all env-mutating tests via `ENV_LOCK` and every variable
+    /// is restored, so the branches are exercised deterministically regardless of
+    /// the host env and without racing sibling tests under parallel `cargo test`.
     #[test]
     fn state_dir_precedence_runtime_then_xdg_then_temp() {
+        let _env = lock_env();
         let saved_fleet = std::env::var_os("FLEET_RUNTIME_DIR");
         let saved_xdg = std::env::var_os("XDG_RUNTIME_DIR");
 
