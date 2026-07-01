@@ -583,43 +583,38 @@ mod tests {
 
     /// §4.3 two-face consistency test driven by the fake reporter.
     ///
-    /// Two faces subscribe, the fake drives all steps, and we verify both faces
-    /// see the same final snapshot after the full lifecycle. We verify consistency
-    /// by querying the hub's merge engine snapshot directly at the end — avoiding
-    /// the WS event-forwarding race — and checking that late subscribing faces get
-    /// the same state.
+    /// Two faces are subscribed to the **quiescent, empty** hub *before any
+    /// mutation occurs*, then the fake drives the full lifecycle. We assert both
+    /// faces observe the **identical event SEQUENCE** in the same order.
+    ///
+    /// ## Why this is deterministic (no timing assumption)
+    ///
+    /// The earlier structure connected both faces *after* the lifecycle and
+    /// compared their first snapshots — that is only correct if zero activity
+    /// interleaves between face_a's subscribe and face_b's subscribe, which
+    /// residual async (reporter-disconnect handling, listener task scheduling) can
+    /// violate on a slow runner, making the two snapshots legitimately diverge.
+    ///
+    /// Here both faces subscribe while the hub is empty and idle (no reporter is
+    /// even connected yet), so **nothing can broadcast between the two subscribes**
+    /// — both provably get the same empty initial snapshot. Every subsequent delta
+    /// is broadcast atomically by the hub to *all* subscribers in one order, so the
+    /// two faces provably receive the same events in the same order regardless of
+    /// scheduling. (The "late subscriber sees the correct post-lifecycle snapshot"
+    /// property is covered separately by
+    /// `late_subscriber_sees_correct_snapshot_after_fake`; this test focuses on
+    /// stream consistency.)
     #[tokio::test]
     async fn two_faces_see_identical_events_from_fake() {
-        // §4.3: every face is a projection of the same Hub state.
-        // We run the full fake lifecycle via the hub's WS listener, then
-        // verify both faces see the same snapshot after the session is removed.
         let state = HubState::new();
         let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
         let (local, fut) = run_ws_listener(state.clone(), addr).await.unwrap();
         tokio::spawn(fut);
         let url = format!("ws://{local}");
 
-        // Run the full lifecycle step-by-step (same task, reliable ordering).
-        let (mut rep, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-        let ts = now_iso8601();
-        let script = crate::transition::TransitionScript::new("sess-two-face", "run-two-face");
-        let steps = script.generate(&ts);
-        for step in &steps {
-            let msg = FakeReporter::step_to_message(step);
-            let json = serde_json::to_string(&msg).unwrap();
-            rep.send(WsMsg::Text(json.into())).await.unwrap();
-            // Yield to let the hub process this message.
-            tokio::task::yield_now().await;
-            tokio::task::yield_now().await;
-        }
-        rep.close(None).await.ok();
-
-        // Poll hub state until the session is removed.
-        wait_until_sessions_empty(&state).await;
-
-        // Now subscribe two faces and verify they both see the same empty snapshot.
-        // This is the §4.3 two-face consistency invariant: the Hub's state is a
-        // single source of truth that all faces project identically.
+        // (1) Subscribe BOTH faces to the quiescent, empty hub FIRST. No reporter
+        // is connected yet, so no mutation can slip between the two subscribes:
+        // both receive the identical empty initial snapshot.
         let (mut face_a, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
         let (mut face_b, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
         let sub = serde_json::to_string(&ClientMessage::Subscribe).unwrap();
@@ -628,49 +623,81 @@ mod tests {
 
         let snap_a = next_event(&mut face_a).await;
         let snap_b = next_event(&mut face_b).await;
-
-        // Both faces must see identical snapshots.
-        let v_a = serde_json::to_value(&snap_a).unwrap();
-        let v_b = serde_json::to_value(&snap_b).unwrap();
         assert_eq!(
-            v_a, v_b,
-            "both faces must see the identical snapshot (§4.3)"
+            serde_json::to_value(&snap_a).unwrap(),
+            serde_json::to_value(&snap_b).unwrap(),
+            "both faces must see the identical initial snapshot (§4.3)"
         );
         assert!(
             expect_snapshot_sessions(snap_a).is_empty(),
-            "session must be removed from snapshot"
+            "the initial snapshot is empty (quiescent hub)"
+        );
+        assert!(expect_snapshot_sessions(snap_b).is_empty());
+
+        // (2) Only now connect the reporter and drive the full lifecycle. Every
+        // delta is broadcast atomically to both already-subscribed faces in one
+        // order.
+        let (mut rep, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+        let ts = now_iso8601();
+        let script = crate::transition::TransitionScript::new("sess-two-face", "run-two-face");
+        let steps = script.generate(&ts);
+
+        // (3) For each step assert the two faces observe the IDENTICAL event
+        // sequence, accumulating the full stream for the aggregate assertions.
+        let mut seq_a: Vec<Event> = Vec::new();
+        let mut seq_b: Vec<Event> = Vec::new();
+        for step in &steps {
+            let msg = FakeReporter::step_to_message(step);
+            let json = serde_json::to_string(&msg).unwrap();
+            rep.send(WsMsg::Text(json.into())).await.unwrap();
+
+            let mut step_a: Vec<Event> = Vec::new();
+            let mut step_b: Vec<Event> = Vec::new();
+            collect_events_for_step(&mut face_a, step, &mut step_a).await;
+            collect_events_for_step(&mut face_b, step, &mut step_b).await;
+            assert_eq!(
+                serde_json::to_value(&step_a).unwrap(),
+                serde_json::to_value(&step_b).unwrap(),
+                "both faces must see the identical event sequence for step '{}' (§4.3)",
+                step.label()
+            );
+            seq_a.extend(step_a);
+            seq_b.extend(step_b);
+        }
+        rep.close(None).await.ok();
+
+        // The full accumulated streams are identical, in order.
+        assert_eq!(
+            serde_json::to_value(&seq_a).unwrap(),
+            serde_json::to_value(&seq_b).unwrap(),
+            "both faces must project the identical full event stream (§4.3)"
         );
 
-        // Also verify the scripted sequence was applied: push a new session and
-        // verify BOTH faces see the same session.added.
-        let session_b_json = serde_json::to_string(&ClientMessage::SessionUpsert {
-            session: {
-                let mut s = steps[0].as_session().unwrap().clone();
-                s.session_id = "sess-verify".into();
-                s
-            },
-        })
-        .unwrap();
-        let (mut verifier, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-        verifier
-            .send(WsMsg::Text(session_b_json.into()))
-            .await
-            .unwrap();
-
-        let ev_a = next_event(&mut face_a).await;
-        let ev_b = next_event(&mut face_b).await;
-        assert_eq!(
-            serde_json::to_value(&ev_a).unwrap(),
-            serde_json::to_value(&ev_b).unwrap(),
-            "both faces must see the same live event (§4.3 live consistency)"
+        // And the stream is the real lifecycle, not a trivial/empty match: the
+        // session is added then removed, and the run passes through working →
+        // waiting → dead (the §4.3 scripted transitions).
+        assert!(
+            seq_a
+                .iter()
+                .any(|e| matches!(e, Event::SessionAdded { .. })),
+            "must see session.added"
         );
         assert!(
-            matches!(ev_a, Event::SessionAdded { .. }),
-            "expected session.added"
+            seq_a
+                .iter()
+                .any(|e| matches!(e, Event::SessionRemoved { .. })),
+            "must see session.removed"
         );
-        if let Event::SessionAdded { session, .. } = ev_a {
-            assert_eq!(session.session_id, "sess-verify");
-        }
+        let run_states: Vec<State> = seq_a
+            .iter()
+            .filter_map(|e| match e {
+                Event::RunAdded { run, .. } | Event::RunUpdated { run, .. } => Some(run.state),
+                _ => None,
+            })
+            .collect();
+        assert!(run_states.contains(&State::Working), "must see working");
+        assert!(run_states.contains(&State::Waiting), "must see waiting");
+        assert!(run_states.contains(&State::Dead), "must see dead");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
