@@ -94,21 +94,47 @@ pub enum PersistError {
 /// fast across power-loss-free restarts — adequate for a local daemon).
 pub struct EventLog {
     conn: Connection,
+    /// Test-only artificial delay applied before each append's SQLite write, to
+    /// simulate a slow disk so the server's blocking-offload + lock-narrowing
+    /// (T1.2) can be exercised deterministically. The field does not exist in
+    /// non-test builds (so it can never affect production).
+    #[cfg(test)]
+    append_delay: std::time::Duration,
 }
 
 impl EventLog {
+    /// Wrap an opened connection with the default (zero) append delay.
+    fn wrap(conn: Connection) -> Self {
+        EventLog {
+            conn,
+            #[cfg(test)]
+            append_delay: std::time::Duration::ZERO,
+        }
+    }
+
     /// Open (creating if absent) the log at `path` and ensure the schema exists.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, PersistError> {
         let conn = Connection::open(path)?;
         Self::init(&conn)?;
-        Ok(EventLog { conn })
+        Ok(Self::wrap(conn))
     }
 
     /// Open an in-memory log (tests / ephemeral Hubs).
     pub fn open_in_memory() -> Result<Self, PersistError> {
         let conn = Connection::open_in_memory()?;
         Self::init(&conn)?;
-        Ok(EventLog { conn })
+        Ok(Self::wrap(conn))
+    }
+
+    /// Open an in-memory log whose every append sleeps `delay` before writing,
+    /// simulating a slow disk (tests only — drives the T1.2 blocking-offload path).
+    #[cfg(test)]
+    fn open_in_memory_slow(delay: std::time::Duration) -> Result<Self, PersistError> {
+        let conn = Connection::open_in_memory()?;
+        Self::init(&conn)?;
+        let mut log = Self::wrap(conn);
+        log.append_delay = delay;
+        Ok(log)
     }
 
     /// Open an existing on-disk log **read-only** (tests only). Replaying still
@@ -120,7 +146,7 @@ impl EventLog {
     fn open_read_only(path: impl AsRef<Path>) -> Result<Self, PersistError> {
         use rusqlite::OpenFlags;
         let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        Ok(EventLog { conn })
+        Ok(Self::wrap(conn))
     }
 
     // WAL + schema bootstrap. The success path runs on every open (covered), but
@@ -147,6 +173,11 @@ impl EventLog {
     /// Append one mutation. Returns the assigned monotonic `seq`.
     pub fn append(&self, event: &PersistEvent) -> Result<i64, PersistError> {
         let payload = serde_json::to_string(event)?;
+        // Test-only slow-disk simulation (see `append_delay`); zero in production.
+        #[cfg(test)]
+        if !self.append_delay.is_zero() {
+            std::thread::sleep(self.append_delay);
+        }
         self.conn
             .execute("INSERT INTO events (payload) VALUES (?1)", [&payload])?;
         Ok(self.conn.last_insert_rowid())
@@ -213,20 +244,6 @@ fn log_dropped_marks(session_id: &str, dropped: usize) {
     }
 }
 
-/// The session id of a `session.updated` event, else `None`.
-///
-/// Coverage: `persist_sessions_from_events` is only ever handed the events that
-/// mute/unmute/solo emit — all `SessionUpdated` — so the `_ => None` arm is
-/// unreachable defensive code (kept for forward-compat if those ops ever emit
-/// another event kind). Excluded from the nightly gate; a no-op on stable.
-#[cfg_attr(coverage_nightly, coverage(off))]
-fn updated_session_id(ev: &Event) -> Option<String> {
-    match ev {
-        Event::SessionUpdated { session, .. } => Some(session.session_id.clone()),
-        _ => None,
-    }
-}
-
 /// Apply one [`PersistEvent`] to a [`MergeEngine`]. Shared by replay and (via
 /// [`StateStore`]) by live writes, so the projection is computed identically on
 /// restore and at runtime.
@@ -282,6 +299,14 @@ impl StateStore {
     #[cfg(test)]
     pub(crate) fn open_read_only_for_test(path: impl AsRef<Path>) -> Result<Self, PersistError> {
         let log = EventLog::open_read_only(path)?;
+        Self::from_log(log)
+    }
+
+    /// Open an in-memory store whose every durable append sleeps `delay` first,
+    /// simulating a slow disk (tests only — drives the T1.2 blocking-offload path).
+    #[cfg(test)]
+    pub(crate) fn open_in_memory_slow(delay: std::time::Duration) -> Result<Self, PersistError> {
+        let log = EventLog::open_in_memory_slow(delay)?;
         Self::from_log(log)
     }
 
@@ -446,50 +471,74 @@ impl StateStore {
         }
     }
 
-    /// Set `muted = true` on a session, persisting every updated session state.
+    /// Set `muted = true` on a session, durably (append-first, see
+    /// [`Self::apply_flag_change`]).
     ///
-    /// Returns the broadcast events. Empty if absent or already muted.
-    pub fn apply_mute(&mut self, session_id: &str) -> Vec<Event> {
-        let events = self.engine.apply_mute(session_id);
-        self.persist_sessions_from_events(&events, "mute");
-        events
+    /// Returns the broadcast events (empty if absent or already muted). Surfaces a
+    /// [`PersistError`] if the durable append fails — in which case the in-memory
+    /// mute is rolled back, so a non-durable mute is never silently retained.
+    pub fn apply_mute(&mut self, session_id: &str) -> Result<Vec<Event>, PersistError> {
+        self.apply_flag_change(|engine| engine.apply_mute(session_id))
     }
 
-    /// Set `muted = false` on a session, persisting every updated session state.
+    /// Set `muted = false` on a session, durably (see [`Self::apply_flag_change`]).
     ///
-    /// Returns the broadcast events. Empty if absent or already unmuted.
-    pub fn apply_unmute(&mut self, session_id: &str) -> Vec<Event> {
-        let events = self.engine.apply_unmute(session_id);
-        self.persist_sessions_from_events(&events, "unmute");
-        events
+    /// Returns the broadcast events (empty if absent or already unmuted), or a
+    /// [`PersistError`] on a durable-append failure (with the change rolled back).
+    pub fn apply_unmute(&mut self, session_id: &str) -> Result<Vec<Event>, PersistError> {
+        self.apply_flag_change(|engine| engine.apply_unmute(session_id))
     }
 
     /// Solo a session (set `soloed = true` on it, clear the flag on all others),
-    /// persisting every changed session.
+    /// durably (see [`Self::apply_flag_change`]).
     ///
-    /// Returns the broadcast events. Empty if `session_id` is not found.
-    pub fn apply_solo(&mut self, session_id: &str) -> Vec<Event> {
-        let events = self.engine.apply_solo(session_id);
-        self.persist_sessions_from_events(&events, "solo");
-        events
+    /// Returns the broadcast events (empty if `session_id` is not found), or a
+    /// [`PersistError`] on a durable-append failure (with the change rolled back).
+    pub fn apply_solo(&mut self, session_id: &str) -> Result<Vec<Event>, PersistError> {
+        self.apply_flag_change(|engine| engine.apply_solo(session_id))
     }
 
-    fn persist_sessions_from_events(&mut self, events: &[Event], context: &str) {
-        let changed_ids: Vec<String> = events.iter().filter_map(updated_session_id).collect();
-        for id in &changed_ids {
-            self.persist_session_snapshot(id, context);
+    /// Durably apply a Hub-owned flag change (mute/unmute/solo): project it into
+    /// memory, then append every resulting `session.updated` snapshot to the log.
+    ///
+    /// If any append fails, the projection is **rolled back** to the captured
+    /// pre-change state and the error is surfaced. This preserves the module
+    /// invariant that "the in-memory state and the log never diverge": the
+    /// projection here is speculative and undone on a durable-write failure, so a
+    /// broadcast/in-memory mute is never retained without a matching log row (the
+    /// previous behavior swallowed the append error and left memory ahead of the
+    /// log — a mute lost on restart). Every flag event is a `session.updated`
+    /// carrying the full session, so each is persisted directly from the event.
+    fn apply_flag_change(
+        &mut self,
+        project: impl FnOnce(&mut MergeEngine) -> Vec<Event>,
+    ) -> Result<Vec<Event>, PersistError> {
+        let before = self.engine.snapshot();
+        let events = project(&mut self.engine);
+        for ev in &events {
+            if let Event::SessionUpdated { session, .. } = ev {
+                if let Err(e) = self.log.append(&PersistEvent::SessionUpsert {
+                    session: Box::new(session.clone()),
+                }) {
+                    self.engine.restore(before);
+                    return Err(e);
+                }
+            }
         }
+        Ok(events)
     }
 
-    /// Re-persist a session's current projected state (a `session.upsert` row) so
-    /// a Hub-owned flag change (mute/solo/unread) survives restart, logging on a
-    /// durable-write failure.
+    /// Re-persist a focused session's current projected state (a `session.upsert`
+    /// row) so a cleared `unread` badge survives restart, logging on a
+    /// durable-write failure. Used only by [`Self::apply_focus`], whose contract
+    /// (unlike the mute/solo flag ops) is that focus still acknowledges the ping
+    /// in memory even if the durable write fails.
     ///
-    /// Coverage: the `else` of `self.engine.session(id)` is unreachable — callers
-    /// pass an id the engine just confirmed present (an emitted-event id, or a
-    /// freshly-focused session) — and the `Err(e)` append-failure arm fires only
-    /// against a read-only log (exercised by `append_failure_in_mute_solo_focus`).
-    /// The defensive `None` arm is excluded from the nightly gate; a no-op on stable.
+    /// Coverage: the `else` of `self.engine.session(id)` is unreachable — the
+    /// caller passes an id the engine just confirmed present — and the `Err(e)`
+    /// append-failure arm fires only against a read-only log (exercised by
+    /// `append_failure_in_focus_is_logged_not_panicked`). Excluded from the nightly
+    /// gate; a no-op on stable.
     #[cfg_attr(coverage_nightly, coverage(off))]
     fn persist_session_snapshot(&mut self, session_id: &str, context: &str) {
         let Some(sess) = self.engine.session(session_id) else {
@@ -947,7 +996,7 @@ mod tests {
         let mut s = StateStore::open_in_memory().unwrap();
         s.apply_session_upsert(sess("muted", "2026-06-08T00:00:00Z"))
             .unwrap();
-        s.apply_mute("muted");
+        s.apply_mute("muted").unwrap();
         let mut muted_refresh = sess("muted", "2026-06-08T00:01:00Z");
         muted_refresh.muted = false;
         s.apply_session_upsert(muted_refresh).unwrap();
@@ -960,7 +1009,7 @@ mod tests {
 
         s.apply_session_upsert(sess("soloed", "2026-06-08T00:00:00Z"))
             .unwrap();
-        s.apply_solo("soloed");
+        s.apply_solo("soloed").unwrap();
         let mut solo_refresh = sess("soloed", "2026-06-08T00:01:00Z");
         solo_refresh.soloed = false;
         s.apply_session_upsert(solo_refresh).unwrap();
@@ -990,7 +1039,7 @@ mod tests {
 
             s.apply_session_upsert(sess("muted", "2026-06-08T00:00:00Z"))
                 .unwrap();
-            s.apply_mute("muted");
+            s.apply_mute("muted").unwrap();
             let mut muted_refresh = sess("muted", "2026-06-08T00:01:00Z");
             muted_refresh.muted = false;
             s.apply_session_upsert(muted_refresh).unwrap();
@@ -1049,7 +1098,7 @@ mod tests {
                 .unwrap();
             s.apply_focus("solo").unwrap();
             s.apply_focus("other").unwrap();
-            s.apply_solo("solo");
+            s.apply_solo("solo").unwrap();
 
             let evs = s.apply_session_remove("solo").unwrap();
             assert_eq!(
@@ -1384,28 +1433,76 @@ mod tests {
     }
 
     #[test]
-    fn append_failure_in_mute_solo_focus_is_logged_not_panicked() {
+    fn flag_change_append_failure_rolls_back_and_surfaces_error() {
+        // T1.3 regression: mute/unmute/solo must be append-FIRST — if the durable
+        // log write fails, the change must NOT be retained in memory (no silent
+        // divergence between memory and the log). Previously the append error was
+        // swallowed with `tracing::error!` and the in-memory mute survived,
+        // vanishing on the next restart.
         with_trace(|| {
-            // Session with a waiting run so focus has unread to clear and the
-            // mute/solo paths produce session.updated events to persist.
+            // mute: an un-muted session; the append fails → Err surfaced, mute
+            // rolled back (memory stays un-muted, matching the empty log).
+            let (_d1, mut store) = read_only_store_after(|s| {
+                let mut sess = sess("s1", "2026-06-08T00:00:00Z");
+                sess.runs
+                    .push(run("r1", State::Waiting, "2026-06-08T00:00:00Z"));
+                s.apply_session_upsert(sess).unwrap();
+            });
+            assert!(matches!(
+                store.apply_mute("s1").unwrap_err(),
+                PersistError::Sqlite(_)
+            ));
+            assert!(
+                !store.engine().session("s1").unwrap().muted,
+                "a mute whose durable append failed must be rolled back, not retained"
+            );
+
+            // unmute: a durably-muted session (restored muted); the unmute append
+            // fails → Err surfaced, unmute rolled back (memory stays muted).
+            let (_d2, mut store) = read_only_store_after(|s| {
+                s.apply_session_upsert(sess("s1", "2026-06-08T00:00:00Z"))
+                    .unwrap();
+                s.apply_mute("s1").unwrap();
+            });
+            assert!(store.engine().session("s1").unwrap().muted, "restored muted");
+            assert!(matches!(
+                store.apply_unmute("s1").unwrap_err(),
+                PersistError::Sqlite(_)
+            ));
+            assert!(
+                store.engine().session("s1").unwrap().muted,
+                "an unmute whose durable append failed must be rolled back (stays muted)"
+            );
+
+            // solo: an un-soloed session; the append fails → Err surfaced, solo
+            // rolled back (memory stays un-soloed).
+            let (_d3, mut store) = read_only_store_after(|s| {
+                s.apply_session_upsert(sess("s1", "2026-06-08T00:00:00Z"))
+                    .unwrap();
+            });
+            assert!(matches!(
+                store.apply_solo("s1").unwrap_err(),
+                PersistError::Sqlite(_)
+            ));
+            assert!(
+                !store.engine().session("s1").unwrap().soloed,
+                "a solo whose durable append failed must be rolled back"
+            );
+        });
+    }
+
+    #[test]
+    fn append_failure_in_focus_is_logged_not_panicked() {
+        // Focus's contract (unlike the flag ops) is to still acknowledge the ping
+        // in memory even if the durable append fails — it must log, not panic, and
+        // return the event. Drives `persist_session_snapshot`'s error arm.
+        with_trace(|| {
             let (_dir, mut store) = read_only_store_after(|s| {
                 let mut sess = sess("s1", "2026-06-08T00:00:00Z");
                 sess.runs
                     .push(run("r1", State::Waiting, "2026-06-08T00:00:00Z"));
                 s.apply_session_upsert(sess).unwrap();
             });
-
-            // Each of these projects in-memory but the durable append fails — the
-            // `persist_sessions_from_events` / `apply_focus` error arms fire.
-            let muted = store.apply_mute("s1");
-            assert_eq!(muted.len(), 1, "mute still projects + broadcasts in memory");
-            assert!(store.engine().session("s1").unwrap().muted);
-
-            let unmuted = store.apply_unmute("s1");
-            assert_eq!(unmuted.len(), 1);
-
-            let soloed = store.apply_solo("s1");
-            assert_eq!(soloed.len(), 1);
 
             let focus = store
                 .apply_focus("s1")

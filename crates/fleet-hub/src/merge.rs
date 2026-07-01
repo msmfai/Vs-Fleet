@@ -72,13 +72,16 @@ impl MergeEngine {
 
     /// Recompute a session's rollups from its current runs (README §7.1).
     ///
-    /// An empty session (no runs) keeps its existing `rollup_state` and clears
-    /// `rollup_urgency` — there is nothing to roll up, and we must not invent a
-    /// state. Callers that add the first run will recompute immediately after.
+    /// An empty session (no runs) is reset to the **idle sentinel** ([`State::Idle`])
+    /// and cleared of `rollup_urgency` — there is nothing to roll up. Resetting
+    /// (rather than leaving the last computed rollup in place) is a correctness
+    /// requirement: removing the last run of a `Waiting` session must not leave a
+    /// stale `Waiting` rollup, which would keep [`Self::should_notify_session`]
+    /// arming an `unread` badge for a session with zero runs. The notify-transition
+    /// bookkeeping in the callers then clears that now-stale `unread`.
     fn recompute_rollups(session: &mut Session) {
-        if let Some(state) = rollup::rollup_state(&session.runs) {
-            session.rollup_state = state;
-        }
+        // Empty run set → idle sentinel; otherwise the most-urgent run state.
+        session.rollup_state = rollup::rollup_state(&session.runs).unwrap_or(State::Idle);
         // rollup_urgency is None for an empty run set, and the most-urgent
         // (possibly Urgency::None) otherwise. We normalize Urgency::None → None
         // on the optional field so the wire shows absence rather than "null".
@@ -414,6 +417,23 @@ impl MergeEngine {
         sess.unread = false;
         Some(Event::session_updated(sess.clone()))
     }
+
+    /// Replace the entire in-memory session set with `sessions` verbatim (no
+    /// rollup/unread recomputation), preserving their given order.
+    ///
+    /// Used by the durable [`StateStore`](crate::persist::StateStore) to **roll a
+    /// projection back** to a captured pre-mutation snapshot when the durable log
+    /// append for that mutation fails, so the in-memory state can never diverge
+    /// from the log (the persistence invariant). Because it restores exact prior
+    /// `Session` objects, no derived field is re-derived or perturbed.
+    pub(crate) fn restore(&mut self, sessions: Vec<Session>) {
+        self.sessions.clear();
+        self.order.clear();
+        for session in sessions {
+            self.order.push(session.session_id.clone());
+            self.sessions.insert(session.session_id.clone(), session);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -634,6 +654,36 @@ mod tests {
     }
 
     #[test]
+    fn removing_last_run_resets_rollup_to_idle_and_clears_unread() {
+        // T1.6 regression: a session with a single Waiting run is `unread`; removing
+        // that last run must reset the rollup to the idle sentinel AND clear the now
+        // stale `unread` badge (a zero-run session must not keep pinging).
+        let mut e = MergeEngine::new();
+        e.upsert_session(sess("s1"));
+        e.upsert_run(
+            "s1",
+            run_with("r1", State::Waiting, Some(Urgency::Approval)),
+        );
+        assert!(e.session("s1").unwrap().unread, "waiting run arms unread");
+        assert_eq!(e.session("s1").unwrap().rollup_state, State::Waiting);
+
+        e.remove_run("s1", "r1");
+
+        let s = e.session("s1").unwrap();
+        assert!(s.runs.is_empty(), "last run removed");
+        assert_eq!(
+            s.rollup_state,
+            State::Idle,
+            "empty session resets to the idle sentinel, not a stale Waiting"
+        );
+        assert_eq!(s.rollup_urgency, None, "empty session has no rollup urgency");
+        assert!(
+            !s.unread,
+            "unread must clear once the last waiting run is gone"
+        );
+    }
+
+    #[test]
     fn run_remove_recomputes() {
         let mut e = MergeEngine::new();
         e.upsert_session(sess("s1"));
@@ -724,16 +774,23 @@ mod tests {
     #[test]
     fn focus_clears_unread_and_keeps_state() {
         let mut e = MergeEngine::new();
+        // A genuine waiting run gives the session a legitimate Waiting rollup and
+        // arms `unread` (a run-less session is normalized to the idle sentinel).
         let mut s = sess("s1");
-        s.unread = true;
-        s.rollup_state = State::Waiting;
+        s.runs
+            .push(run_with("r1", State::Waiting, Some(Urgency::Approval)));
         e.upsert_session(s);
+        assert!(e.session("s1").unwrap().unread);
 
         let ev = e.apply_focus("s1").expect("focus on unread session");
         assert_eq!(ev.type_name(), "session.updated");
         let s = e.session("s1").unwrap();
         assert!(!s.unread);
-        assert_eq!(s.rollup_state, State::Waiting);
+        assert_eq!(
+            s.rollup_state,
+            State::Waiting,
+            "focus acknowledges the ping without changing run-derived state"
+        );
     }
 
     #[test]
