@@ -676,7 +676,10 @@ mod tests {
             State::Idle,
             "empty session resets to the idle sentinel, not a stale Waiting"
         );
-        assert_eq!(s.rollup_urgency, None, "empty session has no rollup urgency");
+        assert_eq!(
+            s.rollup_urgency, None,
+            "empty session has no rollup urgency"
+        );
         assert!(
             !s.unread,
             "unread must clear once the last waiting run is gone"

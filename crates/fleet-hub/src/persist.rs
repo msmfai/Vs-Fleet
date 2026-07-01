@@ -1464,7 +1464,10 @@ mod tests {
                     .unwrap();
                 s.apply_mute("s1").unwrap();
             });
-            assert!(store.engine().session("s1").unwrap().muted, "restored muted");
+            assert!(
+                store.engine().session("s1").unwrap().muted,
+                "restored muted"
+            );
             assert!(matches!(
                 store.apply_unmute("s1").unwrap_err(),
                 PersistError::Sqlite(_)

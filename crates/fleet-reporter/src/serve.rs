@@ -310,7 +310,11 @@ impl Receiver {
     /// Record an adapter-level parse failure as drift: bump the `dropped` counter
     /// and log at `debug`, returning zero commands. Routes both agents' parse
     /// errors through one place so the drift accounting is uniform.
-    fn drop_unparseable(&mut self, body: &str, err: &dyn std::fmt::Display) -> Vec<ReporterCommand> {
+    fn drop_unparseable(
+        &mut self,
+        body: &str,
+        err: &dyn std::fmt::Display,
+    ) -> Vec<ReporterCommand> {
         self.dropped += 1;
         debug!(error = %err, frame = %truncate(body), "dropping unparseable hook body");
         Vec::new()

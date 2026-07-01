@@ -667,7 +667,12 @@ impl ClaudeInferAdapter {
         self.sessions
             .iter()
             .filter(|(_, s)| s.machine.debounce_elapsed(now_ms))
-            .map(|(id, s)| (id.clone(), s.machine.armed_transcript_path().map(String::from)))
+            .map(|(id, s)| {
+                (
+                    id.clone(),
+                    s.machine.armed_transcript_path().map(String::from),
+                )
+            })
             .collect()
     }
 

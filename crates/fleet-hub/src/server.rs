@@ -47,12 +47,26 @@ const BROADCAST_CAPACITY: usize = 1024;
 /// the first connection is served.
 #[derive(Clone)]
 pub struct HubState {
+    /// Serializes MUTATIONS end-to-end (durable append + in-memory project). It
+    /// is acquired on the blocking pool and held across the slow SQLite append
+    /// (T1.2), so a mutation's disk I/O never runs on a tokio worker and a face
+    /// read never waits behind the append (see [`Self::publish`]).
     store: Arc<Mutex<StateStore>>,
-    /// Published read snapshot, refreshed after every mutation. Faces read this
-    /// (subscribe / snapshot) WITHOUT taking the `store` mutex, so a slow durable
-    /// append in flight under `store` never blocks a snapshot read (T1.2: the
-    /// blocking append is no longer under the same lock that gates snapshot reads).
-    snapshot: Arc<std::sync::RwLock<Vec<Session>>>,
+    /// The single FAST serialization point for subscribe-atomicity. It pairs the
+    /// published read snapshot with the broadcast sender so that a mutation
+    /// publishes its new snapshot and broadcasts its events in ONE critical
+    /// section, and a subscribe reads the snapshot and attaches its receiver in
+    /// ONE critical section. Every face's stream is therefore exactly
+    /// `{snapshot at the instant it subscribed} + {every broadcast after that}` —
+    /// identical for all faces regardless of scheduling. The slow append is NOT
+    /// under this lock, so a snapshot read never waits on disk.
+    publish: Arc<std::sync::Mutex<Publish>>,
+}
+
+/// Snapshot + broadcast sender guarded together as the one subscribe-atomicity
+/// serialization point (see [`HubState::publish`]).
+struct Publish {
+    snapshot: Vec<Session>,
     tx: broadcast::Sender<Event>,
 }
 
@@ -80,11 +94,13 @@ impl HubState {
 
     fn from_store(store: StateStore) -> Self {
         let (tx, _rx) = broadcast::channel(BROADCAST_CAPACITY);
-        let snapshot = Arc::new(std::sync::RwLock::new(store.snapshot()));
+        let publish = Arc::new(std::sync::Mutex::new(Publish {
+            snapshot: store.snapshot(),
+            tx,
+        }));
         HubState {
             store: Arc::new(Mutex::new(store)),
-            snapshot,
-            tx,
+            publish,
         }
     }
 
@@ -127,17 +143,10 @@ impl HubState {
                 None
             }
             ClientMessage::SessionRemove { session_id } => {
-                match self
-                    .mutate(move |store| store.apply_session_remove(&session_id))
-                    .await
-                {
-                    Ok(evs) => {
-                        for ev in evs {
-                            let _ = self.tx.send(ev);
-                        }
-                    }
-                    Err(e) => tracing::error!(error = %e, "persist session.remove failed; dropped"),
-                }
+                self.commit_or_log("session.remove", move |store| {
+                    store.apply_session_remove(&session_id)
+                })
+                .await;
                 None
             }
             ClientMessage::RunUpsert {
@@ -150,17 +159,10 @@ impl HubState {
                 None
             }
             ClientMessage::RunRemove { session_id, run_id } => {
-                match self
-                    .mutate(move |store| store.apply_run_remove(&session_id, &run_id))
-                    .await
-                {
-                    Ok(evs) => {
-                        for ev in evs {
-                            let _ = self.tx.send(ev);
-                        }
-                    }
-                    Err(e) => tracing::error!(error = %e, "persist run.remove failed; dropped"),
-                }
+                self.commit_or_log("run.remove", move |store| {
+                    store.apply_run_remove(&session_id, &run_id)
+                })
+                .await;
                 None
             }
         }
@@ -168,122 +170,76 @@ impl HubState {
 
     /// Apply a face→Hub command and broadcast the resulting persisted events.
     /// Unknown commands are logged and accepted for forward compatibility. Every
-    /// mutating arm runs off the async worker via [`Self::mutate`] (T1.2).
+    /// mutating arm runs off the async worker and publishes+broadcasts atomically
+    /// via [`Self::commit_or_log`].
     async fn apply_command(&self, command: fleet_protocol::Command) {
         use fleet_protocol::{Command, Target};
         match command {
             Command::Focus { target, .. } => {
-                let ev = self
-                    .mutate(move |store| {
-                        let session_id = match target {
-                            Target::Session { session_id } => Some(session_id),
-                            Target::Run { run_id } => {
-                                store.snapshot().into_iter().find_map(|session| {
-                                    session
-                                        .runs
-                                        .iter()
-                                        .any(|run| run.run_id == run_id)
-                                        .then_some(session.session_id)
-                                })
-                            }
-                        };
-                        session_id.and_then(|sid| store.apply_focus(&sid))
-                    })
-                    .await;
-                if let Some(ev) = ev {
-                    let _ = self.tx.send(ev);
-                }
+                self.commit_or_log("focus", move |store| {
+                    let session_id = match target {
+                        Target::Session { session_id } => Some(session_id),
+                        Target::Run { run_id } => {
+                            store.snapshot().into_iter().find_map(|session| {
+                                session
+                                    .runs
+                                    .iter()
+                                    .any(|run| run.run_id == run_id)
+                                    .then_some(session.session_id)
+                            })
+                        }
+                    };
+                    // apply_focus swallows its own append error and never fails;
+                    // normalize its `Option<Event>` into the broadcast-events vec.
+                    Ok(session_id
+                        .and_then(|sid| store.apply_focus(&sid))
+                        .into_iter()
+                        .collect())
+                })
+                .await;
             }
             Command::Mute { session_id, .. } => {
-                match self.mutate(move |store| store.apply_mute(&session_id)).await {
-                    Ok(evs) => {
-                        for ev in evs {
-                            let _ = self.tx.send(ev);
-                        }
-                    }
-                    Err(e) => tracing::error!(error = %e, "persist mute failed; dropped"),
-                }
+                self.commit_or_log("mute", move |store| store.apply_mute(&session_id))
+                    .await;
             }
             Command::Unmute { session_id, .. } => {
-                match self
-                    .mutate(move |store| store.apply_unmute(&session_id))
-                    .await
-                {
-                    Ok(evs) => {
-                        for ev in evs {
-                            let _ = self.tx.send(ev);
-                        }
-                    }
-                    Err(e) => tracing::error!(error = %e, "persist unmute failed; dropped"),
-                }
+                self.commit_or_log("unmute", move |store| store.apply_unmute(&session_id))
+                    .await;
             }
             Command::Solo { session_id, .. } => {
-                match self.mutate(move |store| store.apply_solo(&session_id)).await {
-                    Ok(evs) => {
-                        for ev in evs {
-                            let _ = self.tx.send(ev);
-                        }
-                    }
-                    Err(e) => tracing::error!(error = %e, "persist solo failed; dropped"),
-                }
+                self.commit_or_log("solo", move |store| store.apply_solo(&session_id))
+                    .await;
             }
             Command::Dismiss { target, .. } => self.apply_dismiss(target).await,
             other => log_unimplemented_command(&other),
         }
     }
 
-    /// Handle a `dismiss` command (remove a session or a run), off the async
-    /// worker via [`Self::mutate`], broadcasting the resulting removal events.
+    /// Handle a `dismiss` command (remove a session or a run) atomically via
+    /// [`Self::commit_or_log`].
     async fn apply_dismiss(&self, target: fleet_protocol::Target) {
         use fleet_protocol::Target;
         match target {
             Target::Session { session_id } => {
-                let sid = session_id.clone();
-                match self
-                    .mutate(move |store| store.apply_session_remove(&session_id))
-                    .await
-                {
-                    Ok(evs) => {
-                        for ev in evs {
-                            let _ = self.tx.send(ev);
-                        }
-                    }
-                    Err(e) => tracing::error!(
-                        error = %e,
-                        session_id = %sid,
-                        "persist dismiss session failed; dropped"
-                    ),
-                }
+                self.commit_or_log("dismiss session", move |store| {
+                    store.apply_session_remove(&session_id)
+                })
+                .await;
             }
             Target::Run { run_id } => {
-                let rid = run_id.clone();
-                let outcome = self
-                    .mutate(move |store| {
-                        let session_id = store.snapshot().into_iter().find_map(|session| {
-                            session
-                                .runs
-                                .iter()
-                                .any(|run| run.run_id == run_id)
-                                .then_some(session.session_id)
-                        })?;
-                        Some((session_id.clone(), store.apply_run_remove(&session_id, &run_id)))
-                    })
-                    .await;
-                if let Some((session_id, result)) = outcome {
-                    match result {
-                        Ok(evs) => {
-                            for ev in evs {
-                                let _ = self.tx.send(ev);
-                            }
-                        }
-                        Err(e) => tracing::error!(
-                            error = %e,
-                            session_id,
-                            run_id = %rid,
-                            "persist dismiss run failed; dropped"
-                        ),
+                self.commit_or_log("dismiss run", move |store| {
+                    match store.snapshot().into_iter().find_map(|session| {
+                        session
+                            .runs
+                            .iter()
+                            .any(|run| run.run_id == run_id)
+                            .then_some(session.session_id)
+                    }) {
+                        Some(session_id) => store.apply_run_remove(&session_id, &run_id),
+                        None => Ok(Vec::new()), // run id present in no session: no-op
                     }
-                }
+                })
+                .await;
             }
         }
     }
@@ -298,15 +254,10 @@ impl HubState {
     /// agnostic equivalent of receiving a `session.upsert` delta — used by the
     /// fake reporter and integration tests that drive the Hub without a socket.
     pub async fn ingest_session_upsert(&self, session: fleet_protocol::Session) {
-        match self
-            .mutate(move |store| store.apply_session_upsert(session))
-            .await
-        {
-            Ok(ev) => {
-                let _ = self.tx.send(ev);
-            }
-            Err(e) => tracing::error!(error = %e, "persist session.upsert failed; dropped"),
-        }
+        self.commit_or_log("session.upsert", move |store| {
+            store.apply_session_upsert(session).map(|ev| vec![ev])
+        })
+        .await;
     }
 
     /// Persist + project + broadcast a run upsert (see [`Self::ingest_session_upsert`]).
@@ -314,17 +265,10 @@ impl HubState {
     /// Un-stamped (S5 reporters): applied ungated, preserving prior behavior.
     pub async fn ingest_run_upsert(&self, session_id: &str, run: fleet_protocol::AgentRun) {
         let session_id = session_id.to_string();
-        match self
-            .mutate(move |store| store.apply_run_upsert(&session_id, run))
-            .await
-        {
-            Ok(evs) => {
-                for ev in evs {
-                    let _ = self.tx.send(ev);
-                }
-            }
-            Err(e) => tracing::error!(error = %e, "persist run.upsert failed; dropped"),
-        }
+        self.commit_or_log("run.upsert", move |store| {
+            store.apply_run_upsert(&session_id, run)
+        })
+        .await;
     }
 
     /// Persist + project + broadcast a run upsert, **gated by the durable-identity
@@ -339,57 +283,72 @@ impl HubState {
         stamp: Option<crate::wire::SeqStamp>,
     ) {
         let session_id = session_id.to_string();
-        let result = self
-            .mutate(move |store| match stamp {
-                Some(s) => {
-                    let did = crate::reclaim::DurableId::new(s.durable_id);
-                    store
-                        .apply_run_upsert_seq(&session_id, run, &did, s.epoch, s.seq)
-                        .map(|(_decision, evs)| evs)
-                }
-                None => store.apply_run_upsert(&session_id, run),
-            })
-            .await;
-        match result {
-            Ok(evs) => {
-                for ev in evs {
-                    let _ = self.tx.send(ev);
-                }
+        self.commit_or_log("run.upsert", move |store| match stamp {
+            Some(s) => {
+                let did = crate::reclaim::DurableId::new(s.durable_id);
+                store
+                    .apply_run_upsert_seq(&session_id, run, &did, s.epoch, s.seq)
+                    .map(|(_decision, evs)| evs)
             }
-            Err(e) => tracing::error!(error = %e, "persist run.upsert failed; dropped"),
-        }
+            None => store.apply_run_upsert(&session_id, run),
+        })
+        .await;
     }
 
-    /// Run a mutating store operation **off the async worker** (T1.2): the
-    /// blocking SQLite append runs on the blocking pool, not on a tokio worker,
-    /// so a slow disk can never stall the runtime that services other reporters
-    /// and faces. The `store` mutex is acquired (and held across the blocking
-    /// append) only on that blocking thread. After the mutation applies, the
-    /// published read snapshot is refreshed under the same lock so it never
-    /// exposes a half-applied mutation. The append-before-project ordering inside
-    /// [`StateStore`] is unchanged — only *where* the blocking call runs changes.
-    async fn mutate<R, F>(&self, f: F) -> R
+    /// Apply a mutation **off the async worker** and, atomically with its
+    /// projection, publish the new snapshot and broadcast its events.
+    ///
+    /// The closure `f` performs the durable append + in-memory projection inside
+    /// [`StateStore`] while `store` is held on the blocking pool, so the slow
+    /// SQLite I/O never runs on a tokio worker (T1.2) and the append-before-project
+    /// ordering is preserved. Once it returns the events to broadcast, the fast
+    /// `publish` lock is taken — **still holding `store`, so publishes/broadcasts
+    /// stay in mutation order** — and the new snapshot is published + the events
+    /// broadcast in one critical section. A [`Self::subscribe_with_snapshot`] that
+    /// interleaves takes only `publish`, so it observes either the state-before
+    /// (and its receiver, attached in the same section, will catch the broadcast)
+    /// or the state-after (and the broadcast has already fired) — never a split
+    /// view. On a persist error nothing is published or broadcast; the error is
+    /// returned to the caller. Returns the number of events broadcast.
+    async fn commit<F>(&self, f: F) -> Result<usize, PersistError>
     where
-        F: FnOnce(&mut StateStore) -> R + Send + 'static,
-        R: Send + 'static,
+        F: FnOnce(&mut StateStore) -> Result<Vec<Event>, PersistError> + Send + 'static,
     {
         let store = self.store.clone();
-        let published = self.snapshot.clone();
-        let handle = tokio::task::spawn_blocking(move || {
+        let publish = self.publish.clone();
+        let handle = tokio::task::spawn_blocking(move || -> Result<usize, PersistError> {
             let mut guard = store.blocking_lock();
-            let result = f(&mut guard);
-            *published.write().unwrap_or_else(|p| p.into_inner()) = guard.snapshot();
-            result
+            let events = f(&mut guard)?;
+            let snapshot = guard.snapshot();
+            let mut p = publish.lock().unwrap_or_else(|e| e.into_inner());
+            p.snapshot = snapshot;
+            let n = events.len();
+            for ev in events {
+                let _ = p.tx.send(ev);
+            }
+            Ok(n)
         });
         join_blocking(handle).await
     }
 
-    /// The current published read snapshot (a clone), never blocked by an
-    /// in-flight durable append (it does not touch the `store` mutex).
+    /// [`Self::commit`], logging (and dropping) a persist error under `context`
+    /// rather than surfacing it — the log-and-drop policy for reporter/face deltas.
+    async fn commit_or_log<F>(&self, context: &'static str, f: F)
+    where
+        F: FnOnce(&mut StateStore) -> Result<Vec<Event>, PersistError> + Send + 'static,
+    {
+        if let Err(e) = self.commit(f).await {
+            tracing::error!(error = %e, op = context, "persist mutation failed; dropped");
+        }
+    }
+
+    /// The current published read snapshot (a clone). Takes only the fast
+    /// `publish` lock, so it is never blocked by an in-flight durable append.
     fn published_snapshot(&self) -> Vec<Session> {
-        self.snapshot
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
+        self.publish
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .snapshot
             .clone()
     }
 
@@ -404,23 +363,34 @@ impl HubState {
         session_ttl: std::time::Duration,
     ) -> Result<usize, PersistError> {
         let now = now.to_string();
-        let events = self
-            .mutate(move |store| -> Result<Vec<Event>, PersistError> {
-                let mut events = store.reap_dead(&now, grace)?;
-                events.extend(store.sweep_expired_sessions(&now, session_ttl)?);
-                Ok(events)
-            })
-            .await?;
-        let n = events.len();
-        for ev in events {
-            let _ = self.tx.send(ev);
-        }
-        Ok(n)
+        self.commit(move |store| -> Result<Vec<Event>, PersistError> {
+            let mut events = store.reap_dead(&now, grace)?;
+            events.extend(store.sweep_expired_sessions(&now, session_ttl)?);
+            Ok(events)
+        })
+        .await
     }
 
-    /// Subscribe to the broadcast stream of applied deltas.
+    /// Subscribe to the broadcast stream of applied deltas (no snapshot). Used by
+    /// tests that only need to observe broadcasts; connections use
+    /// [`Self::subscribe_with_snapshot`] for atomicity.
     fn subscribe(&self) -> broadcast::Receiver<Event> {
-        self.tx.subscribe()
+        self.publish
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .tx
+            .subscribe()
+    }
+
+    /// Atomically read the current snapshot AND attach a broadcast receiver under
+    /// the one `publish` lock. This is the subscribe-atomicity guarantee: the
+    /// returned receiver will deliver **exactly** the broadcasts of every mutation
+    /// ordered after this call, and the snapshot reflects **exactly** the
+    /// mutations ordered before it — so a face's stream is `{snapshot} + {later
+    /// broadcasts}` with every mutation appearing once, identical for all faces.
+    fn subscribe_with_snapshot(&self) -> (Vec<Session>, broadcast::Receiver<Event>) {
+        let p = self.publish.lock().unwrap_or_else(|e| e.into_inner());
+        (p.snapshot.clone(), p.tx.subscribe())
     }
 }
 
@@ -474,7 +444,13 @@ where
         }
     };
     let (mut sink, mut source) = ws.split();
+    // The broadcast receiver is (re)attached ATOMICALLY with the snapshot when the
+    // client sends `subscribe` (see `dispatch_client_message`), not at connection
+    // time — so this face's stream is exactly {snapshot} + {broadcasts after it},
+    // with no dependency on rx-attach-before-subscribe ordering. `rx` starts as a
+    // placeholder receiver whose deltas are never forwarded until `subscribed`.
     let mut rx = state.subscribe();
+    let mut subscribed = false;
 
     loop {
         tokio::select! {
@@ -484,24 +460,22 @@ where
                     Some(Ok(Message::Text(txt))) => {
                         match serde_json::from_str::<ClientMessage>(&txt) {
                             Ok(msg) => {
-                                if let Some(reply) = state.apply(msg).await {
-                                    if sink.send(encode(&reply)).await.is_err() {
-                                        break;
-                                    }
+                                if !dispatch_client_message(
+                                    &state, msg, &mut sink, &mut rx, &mut subscribed,
+                                ).await {
+                                    break;
                                 }
                             }
-                            Err(e) => {
-                                tracing::warn!(error = %e, "undecodable client message");
-                            }
+                            Err(e) => tracing::warn!(error = %e, "undecodable client message"),
                         }
                     }
                     Some(Ok(Message::Binary(bin))) => {
                         match serde_json::from_slice::<ClientMessage>(&bin) {
                             Ok(msg) => {
-                                if let Some(reply) = state.apply(msg).await {
-                                    if sink.send(encode(&reply)).await.is_err() {
-                                        break;
-                                    }
+                                if !dispatch_client_message(
+                                    &state, msg, &mut sink, &mut rx, &mut subscribed,
+                                ).await {
+                                    break;
                                 }
                             }
                             Err(e) => tracing::warn!(error = %e, "undecodable binary message"),
@@ -518,11 +492,43 @@ where
                     }
                 }
             }
-            // Outbound broadcast delta.
-            ev = rx.recv() => {
+            // Outbound broadcast delta — only once the client has subscribed (so
+            // pre-subscribe broadcasts are never forwarded ahead of the snapshot).
+            ev = rx.recv(), if subscribed => {
                 if forward_broadcast(ev, &mut sink).await { break; }
             }
         }
+    }
+}
+
+/// Handle one decoded inbound client message on a connection. Returns `true` to
+/// keep the connection open, `false` to close it (a sink write failed).
+///
+/// `subscribe` is special-cased here so the snapshot reply and the broadcast
+/// receiver are obtained ATOMICALLY ([`HubState::subscribe_with_snapshot`]) and
+/// the receiver replaces `rx` — this is the subscribe-atomicity join point. Every
+/// other message is a mutation/no-op routed through [`HubState::apply`].
+async fn dispatch_client_message<Si>(
+    state: &HubState,
+    msg: ClientMessage,
+    sink: &mut Si,
+    rx: &mut broadcast::Receiver<Event>,
+    subscribed: &mut bool,
+) -> bool
+where
+    Si: SinkExt<Message> + Unpin,
+{
+    match msg {
+        ClientMessage::Subscribe => {
+            let (snapshot, receiver) = state.subscribe_with_snapshot();
+            *rx = receiver;
+            *subscribed = true;
+            sink.send(encode(&Event::snapshot(snapshot))).await.is_ok()
+        }
+        other => match state.apply(other).await {
+            Some(reply) => sink.send(encode(&reply)).await.is_ok(),
+            None => true,
+        },
     }
 }
 
