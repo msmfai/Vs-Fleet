@@ -1,0 +1,34 @@
+# Security-advisory gate (RUSTSEC). The 2026-06 audit found no vulnerable/yanked
+# crate, but Dependabot only *nudges* — a newly-disclosed advisory in an
+# already-pinned crate failed no check. This scans both Cargo.locks (root
+# workspace + the standalone fleet-host workspace) on every push + weekly.
+name: Security audit
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - ".github/workflows/audit.yml"
+  pull_request:
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC — catch advisories disclosed against unchanged pins
+
+jobs:
+  cargo-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      # Plain `cargo audit` exits non-zero on VULNERABILITIES only; informational
+      # warnings (unmaintained/yanked transitive crates) don't fail the gate — so
+      # it flags real advisories without going red on unavoidable transitive noise.
+      - name: Audit root workspace lockfile
+        run: cargo audit --file Cargo.lock
+      - name: Audit fleet-host workspace lockfile
+        run: cargo audit --file crates/fleet-host/Cargo.lock
