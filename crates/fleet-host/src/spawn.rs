@@ -470,7 +470,7 @@ impl ServerSupervisor {
             r_hub,
             r_bridge,
         } = ssh_remote_ports(n);
-        let local_hub = ws_port(&self.hub_url).unwrap_or(51777);
+        let local_hub = ws_port(&self.hub_url).unwrap_or(fleet_hub::DEFAULT_WS_PORT);
         let local_bridge = self.bridge_port;
 
         let remote_editor =

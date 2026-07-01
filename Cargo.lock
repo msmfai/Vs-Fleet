@@ -440,7 +440,6 @@ version = "0.1.0"
 dependencies = [
  "fleet-protocol",
  "proptest",
- "serde",
  "serde_json",
 ]
 
@@ -472,7 +471,6 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "thiserror",
 ]
 
 [[package]]

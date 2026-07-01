@@ -1021,8 +1021,6 @@ name = "fleet-host-core"
 version = "0.1.0"
 dependencies = [
  "fleet-protocol",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -1049,7 +1047,6 @@ dependencies = [
  "schemars 1.2.1",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
 ]
 
 [[package]]

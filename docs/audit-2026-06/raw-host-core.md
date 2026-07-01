@@ -1,0 +1,11 @@
+# fleet-host-core (agent 2) — captured; see consolidated report
+- [dead deps S] serde unused + serde_json misplaced in [dependencies] — Cargo.toml:29-30
+- [dup/correctness M] tab_transition (solo-blind) duplicates view_transition — notify.rs:197-274
+- [coverage-gaming S] coverage(off) on focus_editor hides tested logic — editors.rs:310-320
+- [VERIFIED SOUND] macOS focus (cooperative activation, xdg_activation) — focus.rs (NOT a smell)
+- [over-abstraction M] focus Part 2 = 5 enums+trait for 2-bit policy — focus.rs:114-385
+- [fragile S-M] parse_iso8601_secs: non-Z offsets -> age 0 (mis-sort) — sort.rs:95-136
+- [test smell S] expect_fire self-referential; tautological is_empty asserts — notify.rs:400
+- [dead surface S] confidence.rs BadgeMarker/badge_for zero consumers — confidence.rs
+- [idiom S] sort_tab_refs &mut Vec (clippy::ptr_arg) -> &mut [] — sort.rs:185-191
+- [coupling S] urgency_sort_rank re-encodes protocol urgency_rank — sort.rs:47-55
