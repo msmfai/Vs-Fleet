@@ -1,5 +1,18 @@
 # VS Fleet code-smell + refactor audit — 2026-06
 
+> **Status (branch `refactor/audit-2026-06`):**
+> **APPLIED (safe, mechanical, CI-verified):** Tier 3 dead deps (`serde`+`serde_json` in
+> host-core, `thiserror` in protocol), `ws_port` magic constant → `DEFAULT_WS_PORT`,
+> `sort_tab_refs` `ptr_arg`, dead `removeRow()` + broken `npm run check` scripts; Tier 4.2
+> `cargo audit` RUSTSEC CI gate.
+> **DEFERRED — needs a decision (see Questions):** Tier 1 correctness (esp. T1.1 agent
+> contracts), Tier 2 cross-cutting refactors, T2.1 date-dep choice. Held because the goal
+> gates structural/behavioral changes on review, and the two design questions below.
+> **DEFERRED — needs node (CI-only) or entangled:** T4.1 commit JS lockfiles (needs
+> pnpm/npm), confidence.rs delete-vs-wire, `send_command`/menu (tied to T1.8), the
+> `coverage(off)` restructures + Tier 5 test-smell pass.
+
+
 Fresh-model pass, six parallel surface audits, every non-trivial assumption web-verified
 against live 2026 sources. Verdicts are CONFIRMED / REFUTED / UNVERIFIED per finding.
 Ranked by value × confidence within tiers.
