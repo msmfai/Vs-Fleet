@@ -3,8 +3,13 @@
 // Spawning shows an optimistic "pending" tab immediately, which resolves when the
 // new server phones in. Agent state comes from the Hub `inbox` event (id ==
 // session_id).
-const { listen } = window.__TAURI__.event;
-const { invoke } = window.__TAURI__.core;
+// window.__TAURI__ is injected by the Tauri runtime but may not be present yet
+// when this top-level script first runs (observed on Windows) — eagerly
+// destructuring it here would throw a TypeError and the whole rail would never
+// initialize. Resolve it lazily per call (never throws at load); init() is
+// deferred below until __TAURI__ is available.
+const invoke = (...args) => window.__TAURI__.core.invoke(...args);
+const listen = (...args) => window.__TAURI__.event.listen(...args);
 
 const railEl = document.getElementById("rail");
 const statusEl = document.getElementById("status");
@@ -1568,7 +1573,20 @@ async function init() {
   render();
 }
 
-init();
+// Boot once the Tauri runtime has injected window.__TAURI__ — a slow/late
+// injection must not kill init(). Ready synchronously in tests (the harness sets
+// __TAURI__ before importing this module) and normally in production.
+function bootWhenTauriReady(attempt = 0) {
+  const t = window.__TAURI__;
+  if (t && t.core && t.event) {
+    init();
+  } else if (attempt < 100) {
+    setTimeout(() => bootWhenTauriReady(attempt + 1), 50);
+  } else {
+    console.error("Fleet rail: window.__TAURI__ never became available");
+  }
+}
+bootWhenTauriReady();
 setInterval(render, 1000); // tick the "waiting Nm" age
 
 if (paletteInput) {
