@@ -182,7 +182,7 @@ pub fn sort_tabs(tabs: &mut [SessionTab], now: Option<&str>) {
 
 /// Sort a slice of [`SessionTab`] references in-place (useful when the caller
 /// holds a borrowed slice rather than ownership).
-pub fn sort_tab_refs(tabs: &mut Vec<&SessionTab>, now: Option<&str>) {
+pub fn sort_tab_refs(tabs: &mut [&SessionTab], now: Option<&str>) {
     tabs.sort_by(|a, b| {
         let ka = sort_key(a, now);
         let kb = sort_key(b, now);

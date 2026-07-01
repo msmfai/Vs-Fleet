@@ -21,8 +21,6 @@ name = "fleet_host_core"
 # Tauri shell wraps this crate but lives elsewhere.
 [dependencies]
 fleet-protocol = { path = "../fleet-protocol" }
-serde = { workspace = true }
-serde_json = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"
