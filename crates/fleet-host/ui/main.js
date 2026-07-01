@@ -1493,24 +1493,6 @@ function forgetAgentOnlyRow(id) {
   dismissSession(id);
 }
 
-function removeRow(id) {
-  if (sessionActionBusy(id)) {
-    showHostStatus({ level: "info", source: "rail", message: "action in progress" });
-    return;
-  }
-  const srv = displayed().find((item) => item.id === id);
-  const agent = agentFor(id);
-  if (srv && canCloseServerRow(srv)) {
-    closeServer(id);
-  } else if (canDismissAgent(agent, agent && agent.state)) {
-    dismissSession(id);
-  } else if (canForgetAgentOnly(srv, agent)) {
-    forgetAgentOnlyRow(id);
-  } else {
-    showHostStatus({ level: "info", source: "rail", message: "no server process to close" });
-  }
-}
-
 async function refreshServers() {
   const generation = ++refreshGeneration;
   let nextServers = [];

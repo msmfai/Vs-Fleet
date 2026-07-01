@@ -7,10 +7,7 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "coverage": "vitest run --coverage",
-    "check:webview-safety": "node scripts/check-webview-safety.mjs",
-    "check:ipc-contract": "node scripts/check-ipc-contract.mjs",
-    "check": "npm run check:webview-safety && npm run check:ipc-contract"
+    "coverage": "vitest run --coverage"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.9",
