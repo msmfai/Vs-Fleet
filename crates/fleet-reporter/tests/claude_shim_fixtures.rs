@@ -76,26 +76,9 @@ fn permission_request_fixture_parses_as_request() {
         .unwrap();
     assert_eq!(req.session_id, SID);
     assert_eq!(req.tool_name.as_deref(), Some("Bash"));
-    assert!(!req.is_response());
 }
 
-#[test]
-fn allow_response_fixture_is_a_response() {
-    let req = ApprovalRequest::parse(&fixture("permission_response_allow.json"))
-        .unwrap()
-        .unwrap();
-    assert!(req.is_response());
-}
-
-#[test]
-fn structured_response_fixture_is_a_response() {
-    let req = ApprovalRequest::parse(&fixture("permission_response_structured.json"))
-        .unwrap()
-        .unwrap();
-    assert!(req.is_response());
-}
-
-// ── full shim transcript from fixtures: working→waiting(high)→resolve→idle ────
+// ── full shim transcript: working→waiting(high)→resolve(activity)→done ───────
 
 #[test]
 fn full_shim_transcript_from_fixtures() {
@@ -108,11 +91,13 @@ fn full_shim_transcript_from_fixtures() {
     assert_eq!(a.state_of(SID), Some(State::Waiting));
     assert_eq!(a.confidence_of(SID), Some(Confidence::High));
 
-    a.ingest_json(&fixture("permission_response_allow.json"));
+    // Answered in the terminal → Claude fires the next activity hook, which
+    // auto-resolves the gate (there is no inbound decision event).
+    a.ingest_json(&fixture("user_prompt_submit.json"));
     assert_eq!(a.state_of(SID), Some(State::Working));
 
     a.ingest_json(&fixture("stop_idle.json"));
-    assert_eq!(a.state_of(SID), Some(State::Idle));
+    assert_eq!(a.state_of(SID), Some(State::Done), "a real Stop → done");
 }
 
 // ── a lifecycle fixture is not an approval ──────────────────────────────────

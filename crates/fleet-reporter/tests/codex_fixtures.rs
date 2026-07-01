@@ -46,7 +46,12 @@ fn fixtures_parse_to_expected_kinds() {
     );
     assert_eq!(parse("stop_idle.json").kind, CodexHookKind::Stop);
     assert_eq!(parse("stop_done.json").kind, CodexHookKind::Stop);
-    assert_eq!(parse("session_end.json").kind, CodexHookKind::SessionEnd);
+    // Codex has NO SessionEnd hook (2026 contract): the legacy fixture parses to
+    // Other (forward-compatible), never to a death-driving variant.
+    assert!(matches!(
+        parse("session_end.json").kind,
+        CodexHookKind::Other(_)
+    ));
 }
 
 #[test]
@@ -54,14 +59,6 @@ fn permission_request_fixture_carries_thread_and_tool() {
     let e = parse("permission_request.json");
     assert_eq!(e.thread_id, "0199f3aa-thread-codex-1");
     assert_eq!(e.tool_name.as_deref(), Some("Bash"));
-    assert!(e.decision.is_none(), "a fresh request has no decision");
-    assert!(!e.is_approval_response());
-}
-
-#[test]
-fn permission_response_fixtures_carry_decisions() {
-    assert!(parse("permission_response_allow.json").is_approval_response());
-    assert!(parse("permission_response_deny.json").is_approval_response());
 }
 
 #[test]
@@ -73,9 +70,13 @@ fn camelcase_fixture_parses() {
 }
 
 #[test]
-fn stop_done_fixture_marks_completion() {
-    assert!(parse("stop_done.json").turn_complete_done);
-    assert!(!parse("stop_idle.json").turn_complete_done);
+fn real_stop_fixtures_drive_done() {
+    // Both Stop fixtures are real turn boundaries (stop_hook_active=false) → Done.
+    for f in ["stop_idle.json", "stop_done.json"] {
+        let mut m = CodexStateMachine::new("0199f3aa-thread-codex-1");
+        m.apply(&parse(f));
+        assert_eq!(m.state(), State::Done, "{f} → done");
+    }
 }
 
 // ── drift / error fixtures degrade gracefully ────────────────────────────────
@@ -113,10 +114,11 @@ fn replay_working_idle_done_from_fixtures() {
     a.ingest_json(&fixture("pre_tool_use.json"));
     assert_eq!(a.state_of("0199f3aa-thread-codex-1"), Some(State::Working));
 
+    // A real Stop → Done (the event is the turn-complete signal).
     a.ingest_json(&fixture("stop_idle.json"));
-    assert_eq!(a.state_of("0199f3aa-thread-codex-1"), Some(State::Idle));
+    assert_eq!(a.state_of("0199f3aa-thread-codex-1"), Some(State::Done));
 
-    // A fresh prompt then a completion-marked Stop → done (distinct from idle).
+    // A fresh prompt then another real Stop → done again.
     a.ingest_json(&fixture("user_prompt_submit.json"));
     a.ingest_json(&fixture("stop_done.json"));
     assert_eq!(a.state_of("0199f3aa-thread-codex-1"), Some(State::Done));
@@ -141,21 +143,12 @@ fn replay_approval_is_waiting_high() {
     }
 }
 
-// ── S13: auto-resolve — answer in terminal clears waiting ───────────────────
-
-#[test]
-fn replay_auto_resolve_via_decision_fixture() {
-    let mut a = CodexAdapter::new();
-    a.ingest_json(&fixture("permission_request.json"));
-    assert_eq!(a.state_of("0199f3aa-thread-codex-1"), Some(State::Waiting));
-    a.ingest_json(&fixture("permission_response_allow.json"));
-    assert_eq!(a.state_of("0199f3aa-thread-codex-1"), Some(State::Working));
-}
+// ── S13: auto-resolve — answer in terminal fires the next activity hook ──────
 
 #[test]
 fn replay_auto_resolve_via_activity_fixture() {
-    // No explicit decision event: the user answers, Codex resumes and emits
-    // PreToolUse, which clears the gate (S13 "no Fleet interaction").
+    // There is NO inbound decision event: the user answers, Codex resumes and
+    // emits PreToolUse, which clears the gate (S13 "no Fleet interaction").
     let mut a = CodexAdapter::new();
     a.ingest_json(&fixture("permission_request.json"));
     assert_eq!(a.state_of("0199f3aa-thread-codex-1"), Some(State::Waiting));
@@ -163,29 +156,22 @@ fn replay_auto_resolve_via_activity_fixture() {
     assert_eq!(a.state_of("0199f3aa-thread-codex-1"), Some(State::Working));
 }
 
-#[test]
-fn replay_deny_also_resolves() {
-    let mut a = CodexAdapter::new();
-    a.ingest_json(&fixture("permission_request.json"));
-    a.ingest_json(&fixture("permission_response_deny.json"));
-    assert_eq!(a.state_of("0199f3aa-thread-codex-1"), Some(State::Working));
-}
-
-// ── SessionEnd → dead ────────────────────────────────────────────────────────
+// ── a legacy SessionEnd fixture is now inert (no death, no ghost) ────────────
 
 #[test]
-fn replay_session_end_is_dead() {
+fn replay_session_end_fixture_is_inert() {
+    // Codex has no SessionEnd hook: the legacy fixture parses to Other and is an
+    // idempotent no-op — it never marks the run dead (death is the reporter's job).
     let mut a = CodexAdapter::new();
     a.ingest_json(&fixture("user_prompt_submit.json"));
+    assert_eq!(a.state_of("0199f3aa-thread-codex-1"), Some(State::Working));
     let cmds = a.ingest_json(&fixture("session_end.json"));
-    assert_eq!(a.state_of("0199f3aa-thread-codex-1"), Some(State::Dead));
-    match &cmds[0] {
-        ReporterCommand::UpsertRun(run) => {
-            assert_eq!(run.state, State::Dead);
-            assert_eq!(run.confidence, Confidence::High);
-        }
-        other => panic!("expected dead upsert, got {other:?}"),
-    }
+    assert!(cmds.is_empty(), "an Other(_) hook produces no command");
+    assert_eq!(
+        a.state_of("0199f3aa-thread-codex-1"),
+        Some(State::Working),
+        "SessionEnd is not a modelled death signal for Codex"
+    );
 }
 
 // ── a bad fixture line never creates a ghost run ─────────────────────────────
@@ -209,10 +195,9 @@ fn full_transcript_transition_sequence() {
         ("user_prompt_submit.json", State::Working),
         ("pre_tool_use.json", State::Working),
         ("permission_request.json", State::Waiting),
-        ("permission_response_allow.json", State::Working),
+        // No inbound decision event: activity resolves the gate.
         ("pre_tool_use.json", State::Working),
-        ("stop_idle.json", State::Idle),
-        ("session_end.json", State::Dead),
+        ("stop_idle.json", State::Done),
     ];
     for (file, expect) in script {
         a.ingest_json(&fixture(file));

@@ -36,13 +36,20 @@
 //!
 //! ## Distinguishing `done` from `idle` (D9)
 //!
-//! A bare `Stop` means the turn ended and Claude is awaiting the next prompt →
-//! [`State::Idle`]. A `Stop` that carries a completion marker (`stop_hook_active`
-//! is *false* after a real end-of-task turn, or an explicit `reason: "completed"`
-//! / a `subtype: "success"` envelope some builds emit) → [`State::Done`]. We treat
-//! the *absence* of a continuation marker conservatively as `idle` so we never
-//! over-claim completion. (`stop_hook_active == true` denotes a Stop fired *from
-//! within* a Stop hook's own continuation, i.e. not a real task end → `idle`.)
+//! The Claude Stop hook input carries **no** task-vs-turn-complete field — the
+//! `task_complete` / `reason` / `subtype` markers earlier builds of this adapter
+//! parsed were phantom (they are not in the 2026 hook contract:
+//! code.claude.com/docs/en/hooks). The **real** signal is the *Stop event itself*:
+//! its firing **is** the turn-complete signal. So a real `Stop`
+//! (`stop_hook_active == false`) is the honest "the assistant finished this turn
+//! and is awaiting the human" → [`State::Done`] (D9-distinct from idle). Hooks
+//! cannot distinguish *task*-complete from *turn*-complete, so every real turn
+//! boundary is `Done`; that is the honest ceiling of what the hook stream proves.
+//!
+//! [`State::Idle`] is reached the other honest way — a `SessionStart` (a session
+//! opened / resumed but not yet seen to do work). `stop_hook_active == true`
+//! denotes a `Stop` fired from *within* a Stop hook's own continuation loop, i.e.
+//! **not** a real turn boundary → it is a pure liveness ping, no completion claim.
 //!
 //! ## Durable identity (D4 / §7.5)
 //!
@@ -134,8 +141,6 @@ pub struct ClaudeHookEvent {
     /// `true` when a `Stop`/`SubagentStop` fired from *within* a stop hook's own
     /// continuation (`stop_hook_active`), i.e. **not** a real end-of-task turn.
     pub stop_hook_active: bool,
-    /// `true` when a `Stop` carried an explicit task-completion marker → `done`.
-    pub turn_complete_done: bool,
     /// The assistant's last message text, when the payload carries it (real
     /// `Stop` payloads include `last_assistant_message`). Surfaced as the inbox
     /// preview so a finished/idle run shows *what Claude said*, not a generic line.
@@ -144,6 +149,10 @@ pub struct ClaudeHookEvent {
     /// The durable correlation anchor between this hook and the transcript's
     /// `tool_use`/`tool_result` blocks (used by [`crate::claude_infer`]).
     pub tool_use_id: Option<String>,
+    /// The append-only transcript JSONL path Claude writes (`transcript_path`).
+    /// The S16 inference path reads it to corroborate an inferred `waiting`
+    /// (an armed `tool_use` with no `tool_result`) before firing.
+    pub transcript_path: Option<String>,
 }
 
 /// The raw on-the-wire shape of a Claude hook payload, as recorded from the hook
@@ -163,18 +172,16 @@ struct RawClaudeHook {
     /// continuation, not a real task end. Absent/`false` ⇒ a real turn boundary.
     #[serde(alias = "stopHookActive")]
     stop_hook_active: Option<bool>,
-    /// Some builds attach an explicit completion marker to the terminal `Stop`.
-    /// We accept any of these truthy spellings; absence ⇒ conservatively `idle`.
-    #[serde(alias = "taskComplete")]
-    task_complete: Option<bool>,
-    reason: Option<String>,
-    subtype: Option<String>,
     /// Real `Stop` payloads carry the assistant's final text here.
     #[serde(alias = "lastAssistantMessage")]
     last_assistant_message: Option<String>,
     /// Real `PreToolUse` payloads carry the tool-call id here.
     #[serde(alias = "toolUseId")]
     tool_use_id: Option<String>,
+    /// The append-only transcript JSONL path (`transcript_path`) — the S16
+    /// corroboration source.
+    #[serde(alias = "transcriptPath")]
+    transcript_path: Option<String>,
 }
 
 /// Error parsing a Claude hook payload. The only hard requirements are valid JSON
@@ -222,18 +229,15 @@ impl ClaudeHookEvent {
             .ok_or(ClaudeParseError::MissingSessionId)?;
         let kind = ClaudeHookKind::from_name(&name);
         let stop_hook_active = raw.stop_hook_active.unwrap_or(false);
-        let turn_complete_done = raw.task_complete.unwrap_or(false)
-            || matches!(raw.reason.as_deref(), Some("completed") | Some("done"))
-            || matches!(raw.subtype.as_deref(), Some("success") | Some("completed"));
         Ok(ClaudeHookEvent {
             kind,
             session_id,
             cwd: raw.cwd,
             tool_name: raw.tool_name,
             stop_hook_active,
-            turn_complete_done,
             last_message: raw.last_assistant_message.filter(|m| !m.is_empty()),
             tool_use_id: raw.tool_use_id.filter(|s| !s.is_empty()),
+            transcript_path: raw.transcript_path.filter(|s| !s.is_empty()),
         })
     }
 }
@@ -339,17 +343,18 @@ impl ClaudeStateMachine {
                 }
             }
 
-            // ── turn complete → idle / done (NEVER from PostToolUse) ──────────
+            // ── turn complete → done (NEVER from PostToolUse) ─────────────────
             ClaudeHookKind::Stop => {
-                // A Stop fired from inside a Stop hook's own continuation is not a
-                // real task end → keep it conservative (idle, no done claim).
-                let next = if ev.turn_complete_done && !ev.stop_hook_active {
-                    State::Done
-                } else {
-                    State::Idle
-                };
-                let changed = self.state != next;
-                self.state = next;
+                if ev.stop_hook_active {
+                    // A Stop fired from inside a Stop hook's own continuation loop
+                    // is NOT a real turn boundary: pure liveness, no completion.
+                    return self.no_op(true);
+                }
+                // The Stop event firing IS the turn-complete signal (hooks carry no
+                // task-vs-turn field), so a real Stop is the honest "assistant
+                // finished this turn" → Done (D9-distinct from idle).
+                let changed = self.state != State::Done;
+                self.state = State::Done;
                 self.confidence = Confidence::Inferred;
                 Transition {
                     state: self.state,

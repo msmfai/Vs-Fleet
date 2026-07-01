@@ -44,14 +44,10 @@ pub fn codex_permission_request(thread: &str, cwd: &str, tool: &str) -> String {
     )
 }
 
-/// Codex `PermissionRequest` **response** — the user answered in the terminal.
-/// `allow`/`deny` both auto-resolve the run back to `working` (§21.4).
-pub fn codex_permission_response(thread: &str, cwd: &str, tool: &str, allow: bool) -> String {
-    let decision = if allow { "allow" } else { "deny" };
-    format!(
-        r#"{{"hook_event_name":"PermissionRequest","session_id":"{thread}","turn_id":"t1","cwd":"{cwd}","tool_name":"{tool}","decision":"{decision}"}}"#
-    )
-}
+// NOTE: there is no `codex_permission_response` fixture — a Codex approval
+// `decision` is a hook *output*, not an inbound event (2026 contract). The user
+// answering in the terminal is observed as the *next activity hook* (a
+// `PreToolUse`/prompt), which auto-resolves `waiting → working`.
 
 /// Codex `Stop` — the turn finished (idle).
 pub fn codex_stop(thread: &str, cwd: &str) -> String {
@@ -168,18 +164,16 @@ mod tests {
     }
 
     #[test]
-    fn codex_permission_fixtures_carry_decision() {
+    fn codex_permission_request_is_request_only() {
+        // A PermissionRequest is request-only — it carries NO decision (a decision
+        // is a hook output, not an inbound event). Resolution is a later activity
+        // hook, not a response fixture.
         let v = parse(&codex_permission_request("th", "/w", "shell"));
         assert_eq!(v["hook_event_name"], "PermissionRequest");
         assert!(
             v.get("decision").is_none(),
             "the request carries no decision"
         );
-
-        let allow = parse(&codex_permission_response("th", "/w", "shell", true));
-        assert_eq!(allow["decision"], "allow");
-        let deny = parse(&codex_permission_response("th", "/w", "shell", false));
-        assert_eq!(deny["decision"], "deny");
     }
 
     #[test]

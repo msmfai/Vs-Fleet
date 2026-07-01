@@ -2,9 +2,10 @@
 //
 // Included from `codex.rs` via `include!`. Covers: hook-event parsing (incl.
 // camelCase aliases + schema-drift tolerance), every modelled transition, the
-// approval gate, the auto-resolve paths, confidence honesty, the durable
-// thread-id anchor, and a property test proving the state machine has NO illegal
-// edge (every event from every state lands in a legal state, never panics).
+// approval gate (request-only — there is NO inbound decision event), the
+// activity-driven auto-resolve, confidence honesty, the durable thread-id anchor,
+// the real death path (reporter liveness timeout — Codex has no `SessionEnd`), and
+// a property test proving the state machine has NO illegal edge.
 
 use super::*;
 use fleet_protocol::{Confidence, State, Urgency};
@@ -19,8 +20,7 @@ fn ev(kind: CodexHookKind) -> CodexHookEvent {
         turn_id: Some("turn-1".into()),
         cwd: Some("/work".into()),
         tool_name: None,
-        decision: None,
-        turn_complete_done: false,
+        stop_hook_active: false,
         last_message: None,
         tool_use_id: None,
     }
@@ -47,7 +47,6 @@ fn parses_snake_case_pre_tool_use() {
     assert_eq!(e.turn_id.as_deref(), Some("x"));
     assert_eq!(e.cwd.as_deref(), Some("/p"));
     assert_eq!(e.tool_name.as_deref(), Some("Bash"));
-    assert!(e.decision.is_none());
 }
 
 #[test]
@@ -69,53 +68,36 @@ fn parses_thread_id_alias() {
 }
 
 #[test]
-fn parses_plain_decision_allow() {
-    let json = r#"{"session_id":"t","hook_event_name":"PermissionRequest","decision":"allow"}"#;
+fn stop_hook_active_is_parsed() {
+    let json = r#"{"session_id":"t","hook_event_name":"Stop","stop_hook_active":true}"#;
+    assert!(CodexHookEvent::parse(json).unwrap().stop_hook_active);
+    let json2 = r#"{"session_id":"t","hook_event_name":"Stop"}"#;
+    assert!(!CodexHookEvent::parse(json2).unwrap().stop_hook_active);
+}
+
+// ── parsing: no inbound decision / no SessionEnd (the 2026 Codex contract) ────
+
+#[test]
+fn session_end_is_not_a_modelled_event() {
+    // REGRESSION (item 2): Codex has NO `SessionEnd` hook. A payload naming it must
+    // parse to Other (forward-compatible), NEVER to a death-driving variant.
+    let e = CodexHookEvent::parse(r#"{"session_id":"t","hook_event_name":"SessionEnd"}"#).unwrap();
+    assert_eq!(e.kind, CodexHookKind::Other("SessionEnd".into()));
+}
+
+#[test]
+fn inbound_decision_field_is_not_parsed() {
+    // REGRESSION (item 3): a `PermissionRequest` `decision` is a hook OUTPUT, not an
+    // inbound event. A payload carrying one still parses as a fresh PermissionRequest
+    // (the decision is ignored) — there is no `decision`/`is_approval_response` API.
+    let json = r#"{"session_id":"t","hook_event_name":"PermissionRequest","decision":"allow","tool_name":"Bash"}"#;
     let e = CodexHookEvent::parse(json).unwrap();
-    assert_eq!(e.decision, Some(ApprovalDecision::Allow));
-    assert!(e.is_approval_response());
-}
-
-#[test]
-fn parses_structured_decision_deny() {
-    let json = r#"{"session_id":"t","hook_event_name":"PermissionRequest","decision":{"kind":"permission","permission":"deny"}}"#;
-    let e = CodexHookEvent::parse(json).unwrap();
-    assert_eq!(e.decision, Some(ApprovalDecision::Deny));
-    assert!(e.is_approval_response());
-}
-
-#[test]
-fn decision_token_variants_map_correctly() {
-    for tok in ["allow", "approve", "accept", "once", "always", "yes"] {
-        let json = format!(
-            r#"{{"session_id":"t","hook_event_name":"PermissionRequest","decision":"{tok}"}}"#
-        );
-        assert_eq!(
-            CodexHookEvent::parse(&json).unwrap().decision,
-            Some(ApprovalDecision::Allow),
-            "{tok} should map to Allow"
-        );
-    }
-    for tok in ["deny", "reject", "no", "abort"] {
-        let json = format!(
-            r#"{{"session_id":"t","hook_event_name":"PermissionRequest","decision":"{tok}"}}"#
-        );
-        assert_eq!(
-            CodexHookEvent::parse(&json).unwrap().decision,
-            Some(ApprovalDecision::Deny),
-            "{tok} should map to Deny"
-        );
-    }
-}
-
-#[test]
-fn stop_done_marker_parsed() {
-    let json = r#"{"session_id":"t","hook_event_name":"Stop","turn_complete":true}"#;
-    assert!(CodexHookEvent::parse(json).unwrap().turn_complete_done);
-    let json2 = r#"{"session_id":"t","hook_event_name":"Stop","reason":"completed"}"#;
-    assert!(CodexHookEvent::parse(json2).unwrap().turn_complete_done);
-    let json3 = r#"{"session_id":"t","hook_event_name":"Stop"}"#;
-    assert!(!CodexHookEvent::parse(json3).unwrap().turn_complete_done);
+    assert_eq!(e.kind, CodexHookKind::PermissionRequest);
+    // And it drives the gate (waiting), never an auto-resolve.
+    let mut m = CodexStateMachine::new("t");
+    m.apply(&e);
+    assert_eq!(m.state(), State::Waiting);
+    assert_eq!(m.confidence(), Confidence::High);
 }
 
 // ── parsing: error / drift handling (never panics, never overstates) ─────────
@@ -171,7 +153,7 @@ fn unknown_payload_fields_are_ignored_not_fatal() {
     assert_eq!(e.kind, CodexHookKind::PreToolUse);
 }
 
-// ── transitions: SessionStart → idle ─────────────────────────────────────────
+// ── transitions: SessionStart → idle (liveness only, no dead-revive) ─────────
 
 #[test]
 fn new_machine_starts_idle_inferred() {
@@ -183,22 +165,13 @@ fn new_machine_starts_idle_inferred() {
 }
 
 #[test]
-fn session_start_on_live_thread_is_noop() {
+fn session_start_on_live_thread_is_liveness_noop() {
     let mut m = machine();
     m.apply(&ev(CodexHookKind::UserPromptSubmit)); // working
     let t = m.apply(&ev(CodexHookKind::SessionStart));
     assert_eq!(m.state(), State::Working, "SessionStart must not reset a live thread");
     assert!(!t.changed);
-}
-
-#[test]
-fn session_start_revives_dead_thread() {
-    let mut m = machine();
-    m.apply(&ev(CodexHookKind::SessionEnd)); // dead
-    assert_eq!(m.state(), State::Dead);
-    let t = m.apply(&ev(CodexHookKind::SessionStart));
-    assert_eq!(m.state(), State::Idle, "resume revives a dead thread to idle");
-    assert!(t.changed);
+    assert!(t.liveness, "SessionStart is a liveness ping");
 }
 
 // ── transitions: activity → working ──────────────────────────────────────────
@@ -257,6 +230,17 @@ fn compaction_hooks_are_liveness_only() {
     }
 }
 
+#[test]
+fn unmodelled_hook_is_a_bare_noop() {
+    // An `Other(_)` kind is an idempotent no-op — not even a liveness ping.
+    let mut m = machine();
+    m.apply(&ev(CodexHookKind::UserPromptSubmit)); // working
+    let t = m.apply(&ev(CodexHookKind::Other("Frobnicate".into())));
+    assert_eq!(m.state(), State::Working);
+    assert!(!t.changed);
+    assert!(!t.liveness);
+}
+
 // ── transitions: PermissionRequest → waiting+approval (HIGH) ─────────────────
 
 #[test]
@@ -288,134 +272,103 @@ fn waiting_run_snapshot_has_waiting_since_and_high() {
     assert_eq!(run.agent_kind, AgentKind::Codex);
 }
 
-// ── S12/S13: approval response → working (auto-resolve) ──────────────────────
+// ── S13: auto-resolve happens via SUBSEQUENT ACTIVITY (no decision event) ─────
 
 #[test]
-fn approval_response_allow_resolves_to_working() {
-    let mut m = machine();
-    m.apply(&tool_ev(CodexHookKind::PermissionRequest, "Bash")); // waiting
-    let mut resp = ev(CodexHookKind::PermissionRequest);
-    resp.decision = Some(ApprovalDecision::Allow);
-    let t = m.apply(&resp);
-    assert_eq!(m.state(), State::Working, "answering resumes the run");
-    assert!(m.urgency().is_none());
-    assert!(!m.awaiting_approval());
-    assert_eq!(m.confidence(), Confidence::Inferred);
-    assert!(t.resolved_approval);
-    assert!(t.changed);
-}
-
-#[test]
-fn approval_response_deny_also_resolves_to_working() {
-    let mut m = machine();
-    m.apply(&tool_ev(CodexHookKind::PermissionRequest, "Bash"));
-    let mut resp = ev(CodexHookKind::PermissionRequest);
-    resp.decision = Some(ApprovalDecision::Deny);
-    let t = m.apply(&resp);
-    // Both allow and deny clear the gate — the run is no longer blocked.
-    assert_eq!(m.state(), State::Working);
-    assert!(t.resolved_approval);
-}
-
-#[test]
-fn activity_after_permission_auto_resolves_without_explicit_response() {
-    // S13: the user answers in the terminal; Codex resumes and fires PreToolUse.
-    // No explicit decision event is required — fresh activity clears the gate.
+fn activity_after_permission_auto_resolves() {
+    // The user answers in the terminal; Codex resumes and fires PreToolUse. No
+    // inbound decision event exists — fresh activity clears the gate.
     let mut m = machine();
     m.apply(&tool_ev(CodexHookKind::PermissionRequest, "Bash")); // waiting
     let t = m.apply(&tool_ev(CodexHookKind::PreToolUse, "Bash"));
     assert_eq!(m.state(), State::Working);
     assert!(!m.awaiting_approval());
+    assert_eq!(m.confidence(), Confidence::Inferred);
     assert!(t.resolved_approval, "auto-resolve flagged");
     assert!(t.changed);
 }
 
 #[test]
-fn stop_during_waiting_clears_approval() {
+fn stop_during_waiting_clears_approval_to_done() {
     let mut m = machine();
     m.apply(&tool_ev(CodexHookKind::PermissionRequest, "Bash"));
     let t = m.apply(&ev(CodexHookKind::Stop));
-    assert_eq!(m.state(), State::Idle);
+    assert_eq!(m.state(), State::Done, "a real Stop ends the turn → done");
     assert!(!m.awaiting_approval());
     assert!(t.resolved_approval);
 }
 
-#[test]
-fn approval_response_without_pending_is_noop() {
-    // A stray decision when nothing is pending must not invent a transition.
-    let mut m = machine();
-    m.apply(&ev(CodexHookKind::UserPromptSubmit)); // working, no approval
-    let mut resp = ev(CodexHookKind::PermissionRequest);
-    resp.decision = Some(ApprovalDecision::Allow);
-    let t = m.apply(&resp);
-    assert_eq!(m.state(), State::Working);
-    assert!(!t.changed, "no pending approval ⇒ no-op");
-}
-
-// ── transitions: Stop → idle / done ──────────────────────────────────────────
+// ── transitions: Stop → done (the turn-complete signal) ──────────────────────
 
 #[test]
-fn stop_goes_idle() {
+fn stop_goes_done() {
     let mut m = machine();
     m.apply(&ev(CodexHookKind::UserPromptSubmit)); // working
     let t = m.apply(&ev(CodexHookKind::Stop));
-    assert_eq!(m.state(), State::Idle);
+    assert_eq!(m.state(), State::Done, "the Stop event IS the turn-complete signal");
     assert!(m.urgency().is_none());
     assert_eq!(m.confidence(), Confidence::Inferred);
     assert!(t.changed);
 }
 
 #[test]
-fn stop_with_completion_goes_done() {
+fn stop_from_within_stop_hook_is_liveness_only_not_done() {
+    // stop_hook_active=true → a continuation, NOT a real turn boundary → stays
+    // working (a liveness ping), never a completion claim.
     let mut m = machine();
-    m.apply(&ev(CodexHookKind::UserPromptSubmit));
+    m.apply(&ev(CodexHookKind::UserPromptSubmit)); // working
     let mut stop = ev(CodexHookKind::Stop);
-    stop.turn_complete_done = true;
+    stop.stop_hook_active = true;
     let t = m.apply(&stop);
-    assert_eq!(m.state(), State::Done, "completion marker → done (D9 distinct)");
-    assert!(t.changed);
+    assert_eq!(m.state(), State::Working);
+    assert!(!t.changed);
+    assert!(t.liveness);
 }
 
 #[test]
 fn done_and_idle_are_distinct() {
-    // D9: done must never collapse into idle.
-    let mut a = machine();
-    a.apply(&ev(CodexHookKind::UserPromptSubmit));
-    a.apply(&ev(CodexHookKind::Stop));
+    // D9: done must never collapse into idle. Idle = fresh thread (nothing
+    // produced); Done = a real Stop (turn finished).
+    let a = machine();
     let mut b = machine();
     b.apply(&ev(CodexHookKind::UserPromptSubmit));
-    let mut stop = ev(CodexHookKind::Stop);
-    stop.turn_complete_done = true;
-    b.apply(&stop);
+    b.apply(&ev(CodexHookKind::Stop));
     assert_ne!(a.state(), b.state());
     assert_eq!(a.state(), State::Idle);
     assert_eq!(b.state(), State::Done);
 }
 
-// ── transitions: SessionEnd → dead ───────────────────────────────────────────
+// ── the REAL death path: reporter liveness timeout (Codex has no SessionEnd) ──
 
 #[test]
-fn session_end_goes_dead_high() {
-    let mut m = machine();
-    m.apply(&ev(CodexHookKind::UserPromptSubmit));
-    let t = m.apply(&ev(CodexHookKind::SessionEnd));
-    assert_eq!(m.state(), State::Dead);
-    assert!(m.urgency().is_none());
-    assert_eq!(m.confidence(), Confidence::High, "confirmed exit is authoritative");
-    assert!(t.changed);
-}
+fn codex_run_reaches_dead_via_reporter_liveness_timeout() {
+    // REGRESSION (item 2): with no `SessionEnd`, a Codex run's death is driven by
+    // the reporter's liveness timeout — NOT by any hook. Drive a real
+    // UpsertRun(working) from the Codex adapter into a ReporterCore, go silent past
+    // the timeout, and assert `reap_timeouts` marks the run dead.
+    use crate::reporter::{ReporterConfig, ReporterCore};
+    use std::time::Duration;
 
-#[test]
-fn dead_is_terminal_until_resume() {
-    let mut m = machine();
-    m.apply(&ev(CodexHookKind::SessionEnd)); // dead
-                                             // Stray activity for a dead thread does NOT silently revive it (only
-                                             // SessionStart does), so we don't resurrect on a late hook.
-    let t = m.apply(&tool_ev(CodexHookKind::PreToolUse, "Bash"));
-    // PreToolUse transitions to working per the model — but verify it is the
-    // explicit working edge, not a ghost. (Codex would only emit PreToolUse for a
-    // live thread; the resume edge sends SessionStart first in practice.)
-    assert!(t.changed || m.state() == State::Working);
+    let mut a = CodexAdapter::new();
+    let cmds = a.ingest(&ev(CodexHookKind::UserPromptSubmit)).0;
+    let run = match &cmds[0] {
+        ReporterCommand::UpsertRun(r) => r.clone(),
+        other => panic!("expected UpsertRun(working), got {other:?}"),
+    };
+    assert_eq!(run.state, State::Working);
+
+    let mut config = ReporterConfig::new("sess-codex");
+    config.liveness_timeout = Duration::from_secs(30);
+    let timeout = config.liveness_timeout;
+    let mut core = ReporterCore::new(config);
+    core.apply(ReporterCommand::UpsertRun(run.clone()));
+    // Within the grace: still alive, nothing reaped.
+    core.advance_to(timeout);
+    assert!(core.reap_timeouts().is_empty(), "alive within grace");
+    // Past the grace with no further liveness → reaped dead (the real path).
+    core.advance_to(timeout + Duration::from_secs(1));
+    let dead = core.reap_timeouts();
+    assert_eq!(dead, vec![run.run_id.clone()], "silent Codex run is reaped dead");
 }
 
 // ── thread-id routing guard ──────────────────────────────────────────────────
@@ -446,7 +399,7 @@ fn cwd_is_captured_from_hooks() {
 // ── full lifecycle sequence (S11→S13 end to end) ─────────────────────────────
 
 #[test]
-fn full_lifecycle_working_waiting_working_idle() {
+fn full_lifecycle_working_waiting_working_done() {
     let mut m = machine();
     let seq = [
         (CodexHookKind::SessionStart, State::Idle),
@@ -459,12 +412,12 @@ fn full_lifecycle_working_waiting_working_idle() {
         m.apply(&e);
         assert_eq!(m.state(), expect);
     }
-    // answer the approval in-terminal → resume
+    // answer the approval in-terminal → resume via activity
     m.apply(&tool_ev(CodexHookKind::PreToolUse, "Bash"));
     assert_eq!(m.state(), State::Working);
-    // turn ends
+    // turn ends → done
     m.apply(&ev(CodexHookKind::Stop));
-    assert_eq!(m.state(), State::Idle);
+    assert_eq!(m.state(), State::Done);
 }
 
 // ── adapter: hook stream → ReporterCommands ──────────────────────────────────
@@ -539,14 +492,15 @@ fn adapter_ingest_json_parse_error_yields_no_commands() {
 }
 
 #[test]
-fn adapter_ingest_json_full_approval_cycle() {
+fn adapter_ingest_json_approval_then_activity_resolves() {
     let mut a = CodexAdapter::new();
     let req = r#"{"session_id":"tX","hook_event_name":"PermissionRequest","tool_name":"Bash"}"#;
     let cmds = a.ingest_json(req);
     assert_eq!(cmds.len(), 1);
     assert_eq!(a.state_of("tX"), Some(State::Waiting));
-    let resp = r#"{"session_id":"tX","hook_event_name":"PermissionRequest","decision":"allow"}"#;
-    let cmds = a.ingest_json(resp);
+    // Resolve via subsequent activity (there is no inbound decision event).
+    let act = r#"{"session_id":"tX","hook_event_name":"PreToolUse","tool_name":"Bash"}"#;
+    let cmds = a.ingest_json(act);
     assert_eq!(cmds.len(), 1);
     assert_eq!(a.state_of("tX"), Some(State::Working));
 }
@@ -554,19 +508,19 @@ fn adapter_ingest_json_full_approval_cycle() {
 // ── CONFIDENCE HONESTY INVARIANT (G2) ────────────────────────────────────────
 
 #[test]
-fn high_confidence_only_ever_from_permission_request_or_confirmed_exit() {
-    // Drive the machine through every event kind from every reachable state and
-    // assert High confidence appears ONLY when the run is Waiting (from a
-    // PermissionRequest) or Dead (from a confirmed SessionEnd) — never from a mere
-    // activity/idle/done hook.
+fn high_confidence_only_ever_from_permission_request() {
+    // Drive the machine through every event kind and assert High confidence appears
+    // ONLY when the run is Waiting (from a PermissionRequest) — the machine never
+    // reaches Dead itself (no SessionEnd), so Waiting is the sole High path.
     for kind in all_kinds() {
         let mut m = machine();
         let mut e = ev(kind.clone());
         e.tool_name = Some("Bash".into());
         m.apply(&e);
         if m.confidence() == Confidence::High {
-            assert!(
-                matches!(m.state(), State::Waiting | State::Dead),
+            assert_eq!(
+                m.state(),
+                State::Waiting,
                 "High confidence leaked into state {:?} via {:?}",
                 m.state(),
                 kind
@@ -583,7 +537,6 @@ fn all_kinds() -> Vec<CodexHookKind> {
         CodexHookKind::PostToolUse,
         CodexHookKind::PermissionRequest,
         CodexHookKind::Stop,
-        CodexHookKind::SessionEnd,
         CodexHookKind::PreCompact,
         CodexHookKind::PostCompact,
         CodexHookKind::Other("Weird".into()),
@@ -600,7 +553,6 @@ fn arb_kind() -> impl Strategy<Value = CodexHookKind> {
         Just(CodexHookKind::PostToolUse),
         Just(CodexHookKind::PermissionRequest),
         Just(CodexHookKind::Stop),
-        Just(CodexHookKind::SessionEnd),
         Just(CodexHookKind::PreCompact),
         Just(CodexHookKind::PostCompact),
     ]
@@ -609,13 +561,14 @@ fn arb_kind() -> impl Strategy<Value = CodexHookKind> {
 #[derive(Debug, Clone)]
 struct ArbEvent {
     kind: CodexHookKind,
-    decision: Option<bool>,
-    done: bool,
+    stop_hook_active: bool,
 }
 
 fn arb_event() -> impl Strategy<Value = ArbEvent> {
-    (arb_kind(), proptest::option::of(any::<bool>()), any::<bool>())
-        .prop_map(|(kind, decision, done)| ArbEvent { kind, decision, done })
+    (arb_kind(), any::<bool>()).prop_map(|(kind, stop_hook_active)| ArbEvent {
+        kind,
+        stop_hook_active,
+    })
 }
 
 fn legal_states() -> [State; 6] {
@@ -628,20 +581,15 @@ proptest! {
     /// For ANY sequence of hook events, the machine:
     ///  - never panics,
     ///  - always rests in one of the six legal States,
-    ///  - keeps the confidence-honesty invariant (High ⇒ Waiting or Dead),
-    ///  - keeps `urgency=approval ⇔ state=waiting` (no urgency without waiting,
-    ///    no waiting without approval urgency),
-    ///  - keeps `awaiting_approval ⇒ waiting`.
+    ///  - keeps the confidence-honesty invariant (High ⇒ Waiting),
+    ///  - keeps `urgency=approval ⇔ state=waiting` and `awaiting_approval ⇒ waiting`.
     #[test]
     fn no_illegal_edge(events in prop::collection::vec(arb_event(), 0..200)) {
         let mut m = machine();
         for ae in events {
             let mut e = ev(ae.kind.clone());
             e.tool_name = Some("Bash".into());
-            e.turn_complete_done = ae.done;
-            if ae.kind == CodexHookKind::PermissionRequest {
-                e.decision = ae.decision.map(|b| if b { ApprovalDecision::Allow } else { ApprovalDecision::Deny });
-            }
+            e.stop_hook_active = ae.stop_hook_active;
             let t = m.apply(&e);
 
             // Rests in a legal state.
@@ -649,10 +597,9 @@ proptest! {
             // Transition's reported state matches the machine.
             prop_assert_eq!(t.state, m.state());
 
-            // Confidence honesty.
+            // Confidence honesty: High only ever accompanies Waiting.
             if m.confidence() == Confidence::High {
-                prop_assert!(matches!(m.state(), State::Waiting | State::Dead),
-                    "High leaked into {:?}", m.state());
+                prop_assert_eq!(m.state(), State::Waiting, "High leaked into {:?}", m.state());
             }
             // urgency=approval IFF waiting.
             match m.state() {
@@ -676,7 +623,7 @@ proptest! {
         let mut m = machine();
         for ae in events {
             let mut e = ev(ae.kind.clone());
-            e.turn_complete_done = ae.done;
+            e.stop_hook_active = ae.stop_hook_active;
             m.apply(&e);
         }
         let run = m.to_run("r", "2026-06-08T00:00:00Z");
@@ -691,17 +638,29 @@ proptest! {
 // ── real Codex payload fidelity (last_assistant_message + tool_use_id) ───────
 
 #[test]
-fn codex_stop_surfaces_last_assistant_message_as_idle_preview() {
+fn codex_stop_surfaces_last_assistant_message_as_done_preview() {
     let json = r#"{"session_id":"t","hook_event_name":"Stop","stop_hook_active":false,
         "last_assistant_message":"Refactored the parser; all green."}"#;
     let e = CodexHookEvent::parse(json).unwrap();
     assert_eq!(e.last_message.as_deref(), Some("Refactored the parser; all green."));
     let mut m = CodexStateMachine::new("t");
     m.apply(&e);
-    assert_eq!(m.state(), State::Idle);
+    assert_eq!(m.state(), State::Done);
     assert_eq!(
         m.to_run("r", "2026-06-08T00:00:00Z").last_message.as_deref(),
         Some("Refactored the parser; all green.")
+    );
+}
+
+#[test]
+fn codex_done_preview_falls_back_to_task_complete() {
+    // A Stop with no last_assistant_message → the generic "Task complete." preview.
+    let mut m = CodexStateMachine::new("t");
+    m.apply(&CodexHookEvent::parse(r#"{"session_id":"t","hook_event_name":"Stop"}"#).unwrap());
+    assert_eq!(m.state(), State::Done);
+    assert_eq!(
+        m.to_run("r", "t").last_message.as_deref(),
+        Some("Task complete.")
     );
 }
 
@@ -713,32 +672,53 @@ fn codex_pre_tool_use_parses_tool_use_id() {
 }
 
 #[test]
-fn codex_stop_inside_stop_hook_is_not_done() {
-    // Even with a completion marker, stop_hook_active:true → idle, never done.
-    let json = r#"{"session_id":"t","hook_event_name":"Stop","stop_hook_active":true,"task_complete":true}"#;
-    let e = CodexHookEvent::parse(json).unwrap();
-    assert!(!e.turn_complete_done, "stop_hook_active suppresses the done claim");
-    let mut m = CodexStateMachine::new("t");
-    m.apply(&CodexHookEvent::parse(r#"{"session_id":"t","hook_event_name":"UserPromptSubmit"}"#).unwrap());
-    m.apply(&e);
-    assert_eq!(m.state(), State::Idle);
-}
-
-#[test]
 fn codex_permission_request_is_authoritative_waiting_high() {
-    // The key Codex advantage: PermissionRequest is a real waiting signal → High.
     let mut m = CodexStateMachine::new("t");
     m.apply(&CodexHookEvent::parse(r#"{"session_id":"t","hook_event_name":"PermissionRequest","tool_name":"Bash","tool_use_id":"tool_1"}"#).unwrap());
     assert_eq!(m.state(), State::Waiting);
     assert_eq!(m.confidence(), Confidence::High, "PermissionRequest is authoritative");
 }
 
+// ── last_message inbox previews for each state ───────────────────────────────
+
+#[test]
+fn waiting_preview_names_the_tool_or_is_generic() {
+    // Waiting WITH a tool → "Approve <tool>?"; without → "Approval required".
+    let mut m = machine();
+    m.apply(&tool_ev(CodexHookKind::PermissionRequest, "Bash"));
+    assert_eq!(m.to_run("r", "t").last_message.as_deref(), Some("Approve Bash?"));
+
+    let mut m2 = machine();
+    m2.apply(&ev(CodexHookKind::PermissionRequest)); // no tool_name
+    assert_eq!(m2.to_run("r", "t").last_message.as_deref(), Some("Approval required"));
+}
+
+#[test]
+fn working_preview_names_the_running_tool() {
+    let mut m = machine();
+    m.apply(&tool_ev(CodexHookKind::PreToolUse, "Bash"));
+    assert_eq!(m.to_run("r", "t").last_message.as_deref(), Some("Running Bash…"));
+}
+
+#[test]
+fn idle_and_error_states_have_no_preview() {
+    // Idle (fresh thread) has no preview, and any un-modelled state (here Error,
+    // which the machine never emits via hooks) falls through to None.
+    let m = machine();
+    assert_eq!(m.state(), State::Idle);
+    assert!(m.to_run("r", "t").last_message.is_none());
+
+    let mut e = machine();
+    e.state = State::Error;
+    let run = e.to_run("r", "2026-06-08T00:00:00Z");
+    assert_eq!(run.state, State::Error);
+    assert!(run.last_message.is_none(), "an un-modelled state yields no preview");
+}
+
 // ── CodexHookKind::name(): every variant round-trips its wire token ───────────
 
 #[test]
 fn hook_kind_name_round_trips_every_variant() {
-    // `name()` is the inverse of `from_name()` for every modelled variant, and an
-    // `Other(s)` returns its borrowed payload verbatim (forward-compatible token).
     let cases = [
         (CodexHookKind::SessionStart, "SessionStart"),
         (CodexHookKind::UserPromptSubmit, "UserPromptSubmit"),
@@ -746,79 +726,27 @@ fn hook_kind_name_round_trips_every_variant() {
         (CodexHookKind::PostToolUse, "PostToolUse"),
         (CodexHookKind::PermissionRequest, "PermissionRequest"),
         (CodexHookKind::Stop, "Stop"),
-        (CodexHookKind::SessionEnd, "SessionEnd"),
         (CodexHookKind::PreCompact, "PreCompact"),
         (CodexHookKind::PostCompact, "PostCompact"),
     ];
     for (kind, token) in cases {
         assert_eq!(kind.name(), token, "name() must emit the wire token");
-        // Inverse: the token parses back to the same kind.
         assert_eq!(CodexHookKind::from_name(token), kind);
     }
-    // Other(s) surfaces the raw token unchanged (schema-drift forward-compat).
+    // Other(s) surfaces the raw token unchanged (schema-drift forward-compat), and
+    // `SessionEnd` is no longer a modelled variant → it parses to Other.
     let other = CodexHookKind::Other("FutureHook".to_string());
     assert_eq!(other.name(), "FutureHook");
     assert_eq!(
-        CodexHookKind::from_name("FutureHook"),
-        CodexHookKind::Other("FutureHook".to_string())
+        CodexHookKind::from_name("SessionEnd"),
+        CodexHookKind::Other("SessionEnd".to_string())
     );
-}
-
-// ── RawDecision::Structured via `decision`/`action` keys, and unknown token ───
-
-#[test]
-fn structured_decision_uses_decision_key_when_no_permission() {
-    // The Structured arm prefers `permission`, then falls back to `decision`, then
-    // `action`. Here only `decision` is present → exercises the `.or(decision)` leg.
-    let json = r#"{"session_id":"t","hook_event_name":"PermissionRequest","decision":{"kind":"approval","decision":"approved"}}"#;
-    let e = CodexHookEvent::parse(json).unwrap();
-    assert_eq!(e.decision, Some(ApprovalDecision::Allow));
-    assert!(e.is_approval_response());
-}
-
-#[test]
-fn structured_decision_uses_action_key_as_last_resort() {
-    // Only `action` present → exercises the final `.or(action)` leg.
-    let json = r#"{"session_id":"t","hook_event_name":"PermissionRequest","decision":{"action":"reject"}}"#;
-    let e = CodexHookEvent::parse(json).unwrap();
-    assert_eq!(e.decision, Some(ApprovalDecision::Deny));
-}
-
-#[test]
-fn structured_decision_all_keys_absent_yields_no_decision() {
-    // None of permission/decision/action present → the `?` short-circuits to None,
-    // so this is a *fresh* request, not a response (the `?` None-propagation path).
-    let json = r#"{"session_id":"t","hook_event_name":"PermissionRequest","decision":{"kind":"approval"}}"#;
-    let e = CodexHookEvent::parse(json).unwrap();
-    assert!(e.decision.is_none(), "no token ⇒ not a decision");
-    assert!(!e.is_approval_response(), "a request with no decision is fresh");
-    // And it really drives the waiting gate, not an auto-resolve.
-    let mut m = CodexStateMachine::new("t");
-    m.apply(&e);
-    assert_eq!(m.state(), State::Waiting);
-    assert_eq!(m.confidence(), Confidence::High);
-}
-
-#[test]
-fn unrecognised_decision_token_maps_to_none() {
-    // A token that is neither an allow- nor a deny-synonym → the `_ => None` arm.
-    // The event must NOT count as an approval response (honesty: we don't guess).
-    let json = r#"{"session_id":"t","hook_event_name":"PermissionRequest","decision":"maybe"}"#;
-    let e = CodexHookEvent::parse(json).unwrap();
-    assert!(e.decision.is_none(), "unknown token ⇒ no decision");
-    assert!(!e.is_approval_response());
-    // It behaves as a fresh request, raising the gate rather than resolving it.
-    let mut m = CodexStateMachine::new("t");
-    m.apply(&e);
-    assert_eq!(m.state(), State::Waiting);
 }
 
 // ── CodexHookEvent::from_value: the serde_json::Value entry point ─────────────
 
 #[test]
 fn from_value_parses_a_json_value() {
-    // The socket layer can hand us an already-deserialized Value; from_value must
-    // produce the same event as parsing the equivalent string.
     let v: serde_json::Value = serde_json::json!({
         "session_id": "tv",
         "hook_event_name": "PreToolUse",
@@ -834,8 +762,6 @@ fn from_value_parses_a_json_value() {
 
 #[test]
 fn from_value_wrong_shape_is_invalid_json_error() {
-    // A non-object Value cannot deserialize into RawCodexHook → InvalidJson, not a
-    // panic (the from_value error-mapping leg).
     let v = serde_json::json!(["not", "an", "object"]);
     assert!(matches!(
         CodexHookEvent::from_value(v),
@@ -845,30 +771,10 @@ fn from_value_wrong_shape_is_invalid_json_error() {
 
 #[test]
 fn from_value_missing_thread_id_errors() {
-    // from_raw's identity-honesty guard still applies through the Value path.
     let v = serde_json::json!({ "hook_event_name": "PreToolUse" });
     assert_eq!(
         CodexHookEvent::from_value(v),
         Err(CodexParseError::MissingThreadId)
-    );
-}
-
-// ── last_message fall-through for a non-modelled State (State::Error) ─────────
-
-#[test]
-fn last_message_for_error_state_is_none() {
-    // The Codex state machine never *emits* State::Error via real hooks, but
-    // last_message() must stay total: any state it does not specially preview
-    // (here Error) falls through to None. We set the private state field directly
-    // (same-module test) and assert the real resulting run snapshot carries no
-    // preview — the honest "nothing to show" outcome for an un-modelled state.
-    let mut m = machine();
-    m.state = State::Error;
-    let run = m.to_run("r", "2026-06-08T00:00:00Z");
-    assert_eq!(run.state, State::Error);
-    assert!(
-        run.last_message.is_none(),
-        "an un-modelled state yields no inbox preview"
     );
 }
 
@@ -878,12 +784,10 @@ fn last_message_for_error_state_is_none() {
 fn adapter_machine_of_borrows_tracked_thread() {
     let mut a = CodexAdapter::new();
     a.ingest(&tool_ev(CodexHookKind::PermissionRequest, "Bash"));
-    // A tracked thread hands back its live machine, reflecting real state.
     let m = a.machine_of(THREAD).expect("thread is tracked");
     assert_eq!(m.state(), State::Waiting);
     assert_eq!(m.confidence(), Confidence::High);
     assert_eq!(m.thread_id(), THREAD);
-    // An unknown thread yields None.
     assert!(a.machine_of("no-such-thread").is_none());
 }
 
@@ -892,13 +796,10 @@ fn adapter_forget_drops_thread_and_reports_presence() {
     let mut a = CodexAdapter::new();
     a.ingest(&ev(CodexHookKind::UserPromptSubmit));
     assert_eq!(a.thread_count(), 1);
-    // Forgetting a tracked thread returns true and actually removes it.
     assert!(a.forget(THREAD), "forget returns true for a tracked thread");
     assert_eq!(a.thread_count(), 0);
     assert!(a.state_of(THREAD).is_none());
-    // Forgetting an absent thread returns false (idempotent, no panic).
     assert!(!a.forget(THREAD), "forget returns false for an absent thread");
-    // A later event for the same id starts a fresh run with a NEW run-id.
     a.ingest(&ev(CodexHookKind::UserPromptSubmit));
     assert_eq!(a.thread_count(), 1);
     assert_eq!(a.state_of(THREAD), Some(State::Working));

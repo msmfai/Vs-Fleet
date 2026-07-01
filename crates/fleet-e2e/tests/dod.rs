@@ -327,16 +327,15 @@ async fn dod_04_answer_in_terminal_auto_resolves_within_2s() {
         "a waiting approval fires a notification"
     );
 
-    // The user answers IN THE REAL TERMINAL — the reporter observes the approval
-    // *response* and reports working. NO Fleet command is sent.
+    // The user answers IN THE REAL TERMINAL — Codex resumes and fires the next
+    // activity hook (there is no inbound approval-response event). The reporter
+    // observes that activity and reports working. NO Fleet command is sent.
     drive_codex_thread(
         &mut hub,
         &sid,
         "th",
         &mut codex,
-        [fixtures::codex_permission_response(
-            "th", "/task", "shell", true,
-        )],
+        [fixtures::codex_pre_tool("th", "/task", "shell")],
     )
     .await;
 
@@ -431,15 +430,14 @@ async fn dod_05_jump_to_next_unread_focuses_right_window_and_clears() {
     );
 
     // Clearing unread: the Hub command for it is a focus/read; here we model the
-    // auto-resolve clear (answering in terminal) which clears unread Hub-side.
+    // auto-resolve clear — answering in the terminal makes Codex resume and fire
+    // the next activity hook, which clears the waiting (and unread) Hub-side.
     drive_codex_thread(
         &mut hub,
         "w-b",
         "thb",
         &mut codex,
-        [fixtures::codex_permission_response(
-            "thb", "/w-b", "shell", true,
-        )],
+        [fixtures::codex_pre_tool("thb", "/w-b", "shell")],
     )
     .await;
     assert!(
@@ -829,7 +827,8 @@ async fn dod_10_observer_not_owner_no_agent_launched_through_fleet() {
         fixtures::codex_session_start("th", "/s"),
         fixtures::codex_prompt("th", "/s"),
         fixtures::codex_permission_request("th", "/s", "shell"),
-        fixtures::codex_permission_response("th", "/s", "shell", true),
+        // Answered in-terminal → Codex resumes via the next activity hook.
+        fixtures::codex_pre_tool("th", "/s", "shell"),
         fixtures::codex_stop("th", "/s"),
     ] {
         for cmd in codex.ingest_json(&line) {
