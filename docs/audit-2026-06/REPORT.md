@@ -1,16 +1,23 @@
 # VS Fleet code-smell + refactor audit — 2026-06
 
 > **Status (branch `refactor/audit-2026-06`):**
-> **APPLIED (safe, mechanical, CI-verified):** Tier 3 dead deps (`serde`+`serde_json` in
-> host-core, `thiserror` in protocol), `ws_port` magic constant → `DEFAULT_WS_PORT`,
-> `sort_tab_refs` `ptr_arg`, dead `removeRow()` + broken `npm run check` scripts; Tier 4.2
-> `cargo audit` RUSTSEC CI gate.
-> **DEFERRED — needs a decision (see Questions):** Tier 1 correctness (esp. T1.1 agent
-> contracts), Tier 2 cross-cutting refactors, T2.1 date-dep choice. Held because the goal
-> gates structural/behavioral changes on review, and the two design questions below.
-> **DEFERRED — needs node (CI-only) or entangled:** T4.1 commit JS lockfiles (needs
-> pnpm/npm), confidence.rs delete-vs-wire, `send_command`/menu (tied to T1.8), the
-> `coverage(off)` restructures + Tier 5 test-smell pass.
+> **TIER 3 + 4.2 APPLIED (CI-verified):** dead deps, `ws_port`→`DEFAULT_WS_PORT`,
+> `sort_tab_refs` ptr_arg, dead `removeRow()` + broken `npm check`, `cargo audit` gate.
+> **TIER 1 APPLIED (4 commits, each fix has a fails-before regression test):**
+> - T1.2 hub SQLite I/O → `spawn_blocking` + RwLock snapshot cache · T1.3 mute/solo
+>   append-first w/ rollback · T1.6 empty-rollup→Idle + clear unread · env-race `ENV_LOCK`.
+> - T1.4 host spawn → `#[tauri::command(async)]`+`spawn_blocking` · T1.5 accept-loop backoff
+>   (no die on transient err) · T1.8 deleted dead dynamic-menu machinery (kept live `cmd:`).
+> - T1.1 reporter REAL detection: Stop→Done, Codex dead via timeout, killed phantom-field +
+>   approval-response paths, wired transcript corroboration into serve.rs, count parse-drops.
+> - T1.7 node `__TAURI__` boot guard.
+> - **DECISIONS FLAGGED FOR REVIEW:** (a) reporter chose real `Stop→Done` (per-turn) — flip to
+>   `Idle` if you want conservative-idle (costs `Done` reachability). (b) native-menu
+>   per-server switching was dead code, now removed (rail switching is the path).
+> **TIER 2 — NEXT (staged):** jiff date seam (T2.1, decided), reporter 4-machine dedup (T2.2),
+> hub delta-vocab (T2.3), node UI boilerplate (T2.4), smaller dup seams (T2.5), tab_transition.
+> **STILL DEFERRED (needs node or entangled):** T4.1 commit JS lockfiles, confidence.rs
+> delete-vs-wire, Tier 5 test-smell pass.
 
 
 Fresh-model pass, six parallel surface audits, every non-trivial assumption web-verified
