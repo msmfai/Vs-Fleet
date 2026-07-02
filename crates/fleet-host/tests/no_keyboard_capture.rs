@@ -46,6 +46,10 @@ fn fleet_shell_has_no_app_wide_keyboard_capture() {
     }
 }
 
+// The native shell-menu shape is macOS/Linux (app menu + mirrored menus); Windows'
+// menu differs and is alpha (see WINDOWS-ALPHA.md). Runs on Linux, so unaffected by
+// the coverage gate.
+#[cfg(not(target_os = "windows"))]
 #[test]
 fn fleet_installs_one_static_native_shell_menu() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
