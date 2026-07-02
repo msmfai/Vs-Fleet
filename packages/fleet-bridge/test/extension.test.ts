@@ -976,7 +976,11 @@ describe("bridgeTarget", () => {
   });
 });
 
-describe("unix socket transport", () => {
+// The ws+unix transport is a macOS/Linux path (FLEET_BRIDGE_SOCKET); on Windows
+// the bridge uses the TCP FLEET_BRIDGE_URL fallback, so these filesystem-socket
+// tests are skipped there. They still run on Linux, so the coverage gate is
+// unaffected. (Windows is alpha — see WINDOWS-ALPHA.md.)
+describe.skipIf(process.platform === "win32")("unix socket transport", () => {
   it("connects + sends hello over FLEET_BRIDGE_SOCKET (ws+unix), not TCP", async () => {
     // Stand up a ws server bound to a UNIX socket; the bridge must dial it via
     // the ws+unix URL form and register over the filesystem socket (no TCP).

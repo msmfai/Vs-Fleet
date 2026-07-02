@@ -862,6 +862,7 @@ async fn dod_10_observer_not_owner_no_agent_launched_through_fleet() {
 // §21.11 — The suite runs on macOS + Linux.
 // ──────────────────────────────────────────────────────────────────────────────
 
+#[cfg(not(target_os = "windows"))]
 #[tokio::test]
 async fn dod_11_suite_runs_on_macos_and_linux() {
     // The whole harness is loopback-WebSocket based, which binds identically on
