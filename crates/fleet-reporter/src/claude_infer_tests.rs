@@ -586,6 +586,21 @@ fn waiting_last_message_with_tool_names_it() {
 }
 
 #[test]
+fn idle_last_message_is_none() {
+    // A fresh (Idle) machine's snapshot carries no inbox preview — this exercises
+    // the `_ => None` fall-through arm of last_message (state = Idle, i.e. none of
+    // Waiting/Working/Done/Dead).
+    let m = machine();
+    assert_eq!(m.state(), State::Idle);
+    assert!(
+        m.to_run("run-idle", "2026-06-24T00:00:00Z")
+            .last_message
+            .is_none(),
+        "an Idle inferred run has no preview line"
+    );
+}
+
+#[test]
 fn dead_last_message_on_session_end() {
     // SessionEnd → Dead → the Dead arm of last_message (line 520).
     let mut m = machine();

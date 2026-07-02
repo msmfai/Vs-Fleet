@@ -655,11 +655,14 @@ mod tests {
             let mut step_b: Vec<Event> = Vec::new();
             collect_events_for_step(&mut face_a, step, &mut step_a).await;
             collect_events_for_step(&mut face_b, step, &mut step_b).await;
+            // Static message: a runtime-evaluated format arg (e.g. `step.label()`)
+            // would only run on assertion FAILURE, leaving it uncovered on the
+            // (always-passing) happy path — the aggregate asserts below carry the
+            // diagnostics instead.
             assert_eq!(
                 serde_json::to_value(&step_a).unwrap(),
                 serde_json::to_value(&step_b).unwrap(),
-                "both faces must see the identical event sequence for step '{}' (§4.3)",
-                step.label()
+                "both faces must see the identical per-step event sequence (§4.3)"
             );
             seq_a.extend(step_a);
             seq_b.extend(step_b);

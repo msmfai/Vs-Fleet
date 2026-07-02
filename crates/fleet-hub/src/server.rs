@@ -445,7 +445,7 @@ where
     };
     let (mut sink, mut source) = ws.split();
     // The broadcast receiver is (re)attached ATOMICALLY with the snapshot when the
-    // client sends `subscribe` (see `dispatch_client_message`), not at connection
+    // client sends `subscribe` (see `handle_client_message`), not at connection
     // time — so this face's stream is exactly {snapshot} + {broadcasts after it},
     // with no dependency on rx-attach-before-subscribe ordering. `rx` starts as a
     // placeholder receiver whose deltas are never forwarded until `subscribed`.
@@ -460,10 +460,11 @@ where
                     Some(Ok(Message::Text(txt))) => {
                         match serde_json::from_str::<ClientMessage>(&txt) {
                             Ok(msg) => {
-                                if !dispatch_client_message(
-                                    &state, msg, &mut sink, &mut rx, &mut subscribed,
-                                ).await {
-                                    break;
+                                let reply = handle_client_message(
+                                    &state, msg, &mut rx, &mut subscribed,
+                                ).await;
+                                if let Some(reply) = reply {
+                                    if sink.send(encode(&reply)).await.is_err() { break; }
                                 }
                             }
                             Err(e) => tracing::warn!(error = %e, "undecodable client message"),
@@ -472,10 +473,11 @@ where
                     Some(Ok(Message::Binary(bin))) => {
                         match serde_json::from_slice::<ClientMessage>(&bin) {
                             Ok(msg) => {
-                                if !dispatch_client_message(
-                                    &state, msg, &mut sink, &mut rx, &mut subscribed,
-                                ).await {
-                                    break;
+                                let reply = handle_client_message(
+                                    &state, msg, &mut rx, &mut subscribed,
+                                ).await;
+                                if let Some(reply) = reply {
+                                    if sink.send(encode(&reply)).await.is_err() { break; }
                                 }
                             }
                             Err(e) => tracing::warn!(error = %e, "undecodable binary message"),
@@ -501,34 +503,28 @@ where
     }
 }
 
-/// Handle one decoded inbound client message on a connection. Returns `true` to
-/// keep the connection open, `false` to close it (a sink write failed).
+/// Route one decoded inbound client message, returning the optional immediate
+/// reply the caller must send back (the snapshot for `subscribe`). No I/O here —
+/// the actual sink write stays in [`serve_ws_connection`]'s covered send path.
 ///
-/// `subscribe` is special-cased here so the snapshot reply and the broadcast
-/// receiver are obtained ATOMICALLY ([`HubState::subscribe_with_snapshot`]) and
-/// the receiver replaces `rx` — this is the subscribe-atomicity join point. Every
-/// other message is a mutation/no-op routed through [`HubState::apply`].
-async fn dispatch_client_message<Si>(
+/// `subscribe` is special-cased so the snapshot AND the broadcast receiver are
+/// obtained ATOMICALLY ([`HubState::subscribe_with_snapshot`]) and the receiver
+/// replaces `rx` — the subscribe-atomicity join point. Every other message is a
+/// mutation/no-op routed through [`HubState::apply`] (which never replies).
+async fn handle_client_message(
     state: &HubState,
     msg: ClientMessage,
-    sink: &mut Si,
     rx: &mut broadcast::Receiver<Event>,
     subscribed: &mut bool,
-) -> bool
-where
-    Si: SinkExt<Message> + Unpin,
-{
+) -> Option<Event> {
     match msg {
         ClientMessage::Subscribe => {
             let (snapshot, receiver) = state.subscribe_with_snapshot();
             *rx = receiver;
             *subscribed = true;
-            sink.send(encode(&Event::snapshot(snapshot))).await.is_ok()
+            Some(Event::snapshot(snapshot))
         }
-        other => match state.apply(other).await {
-            Some(reply) => sink.send(encode(&reply)).await.is_ok(),
-            None => true,
-        },
+        other => state.apply(other).await,
     }
 }
 

@@ -244,6 +244,20 @@ fn log_dropped_marks(session_id: &str, dropped: usize) {
     }
 }
 
+/// The [`Session`] carried by a `session.updated` event, else `None`.
+///
+/// Coverage: the flag ops (mute/unmute/solo) only ever emit `SessionUpdated`, so
+/// the `_ => None` arm is unreachable defensive code (kept for forward-compat if
+/// those ops ever emit another event kind). Excluded from the nightly gate; a
+/// no-op on stable.
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn session_of_updated(ev: &Event) -> Option<&Session> {
+    match ev {
+        Event::SessionUpdated { session, .. } => Some(session),
+        _ => None,
+    }
+}
+
 /// Apply one [`PersistEvent`] to a [`MergeEngine`]. Shared by replay and (via
 /// [`StateStore`]) by live writes, so the projection is computed identically on
 /// restore and at runtime.
@@ -515,14 +529,15 @@ impl StateStore {
     ) -> Result<Vec<Event>, PersistError> {
         let before = self.engine.snapshot();
         let events = project(&mut self.engine);
-        for ev in &events {
-            if let Event::SessionUpdated { session, .. } = ev {
-                if let Err(e) = self.log.append(&PersistEvent::SessionUpsert {
-                    session: Box::new(session.clone()),
-                }) {
-                    self.engine.restore(before);
-                    return Err(e);
-                }
+        // Flag ops only ever emit `session.updated`, so `session_of_updated`
+        // always yields — the loop body is fully exercised, and the unreachable
+        // non-match is isolated in that coverage-off helper (no dead region here).
+        for session in events.iter().filter_map(session_of_updated) {
+            if let Err(e) = self.log.append(&PersistEvent::SessionUpsert {
+                session: Box::new(session.clone()),
+            }) {
+                self.engine.restore(before);
+                return Err(e);
             }
         }
         Ok(events)
