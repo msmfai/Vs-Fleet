@@ -6,6 +6,11 @@
 //! against the same runtime dir makes the second process refuse and exit with
 //! the distinct lock exit code (2), while the first stays up.
 
+// Unix-only: the single-instance guard is a PID-based `InstanceLock` (unix
+// `kill(0)`); on Windows pid-liveness differs, so this daemon-level test is
+// unix-scoped (Windows is alpha — see docs/WINDOWS-ALPHA.md).
+#![cfg(unix)]
+
 use std::process::Command;
 use std::time::Duration;
 
