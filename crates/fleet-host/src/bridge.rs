@@ -14,6 +14,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc, Mutex,
 };
+use std::time::Instant;
 
 use futures_util::{SinkExt, StreamExt};
 use tauri::{AppHandle, Emitter};
@@ -27,6 +28,13 @@ use crate::mux::Server;
 /// Event emitted to the rail whenever the registered-server set changes.
 pub const SERVERS_CHANGED: &str = "servers-changed";
 const BRIDGE_DROP_GRACE: Duration = Duration::from_secs(8);
+/// The bridge extension pings Fleet on this cadence; a server not heard from for
+/// [`LIVENESS_TIMEOUT`] (≈3 missed pings) is forgotten by the liveness GC even if
+/// its WS connection is still (half-)open. This catches stale/half-open sockets
+/// that the connection-drop grace never sees.
+const LIVENESS_TIMEOUT: Duration = Duration::from_secs(60);
+/// How often the liveness GC sweeps the registry for silent servers.
+const LIVENESS_GC_TICK: Duration = Duration::from_secs(15);
 
 /// A live bridge connection's outbound sender (JSON command frames).
 type Tx = tokio::sync::mpsc::UnboundedSender<String>;
@@ -38,6 +46,9 @@ struct ServerConnSet {
     /// True once the user renamed this server; a subsequent phone-home re-register
     /// then keeps the user's label instead of overwriting it with the reported one.
     renamed: bool,
+    /// When Fleet last heard from this server (hello / ping / any inbound frame).
+    /// The liveness GC forgets a server whose `last_seen` exceeds [`LIVENESS_TIMEOUT`].
+    last_seen: Instant,
     conns: BTreeMap<u64, Tx>,
 }
 
@@ -113,6 +124,42 @@ impl BridgeRegistry {
         false
     }
 
+    /// Bump a server's last-seen to now. Called on every inbound bridge frame
+    /// (hello, ping, command), so a continuously-pinging server is never reaped by
+    /// the liveness GC.
+    fn touch(&self, server_id: &str) {
+        if let Some(entry) = self.lock_map().get_mut(server_id) {
+            entry.last_seen = Instant::now();
+        }
+    }
+
+    /// Forget every server not heard from within `timeout` (its extension stopped
+    /// phoning home). Returns the forgotten ids so the caller can emit a change.
+    fn reap_stale(&self, timeout: Duration) -> Vec<String> {
+        let mut map = self.lock_map();
+        let stale: Vec<String> = map
+            .iter()
+            .filter(|(_, c)| c.last_seen.elapsed() > timeout)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in &stale {
+            map.remove(id);
+        }
+        drop(map);
+        if !stale.is_empty() {
+            tracing::info!(?stale, "liveness GC forgot silent servers (no phone-home)");
+        }
+        stale
+    }
+
+    /// Test-only: backdate a server's `last_seen` to exercise the liveness GC.
+    #[cfg(test)]
+    pub(crate) fn set_last_seen_for_test(&self, server_id: &str, when: Instant) {
+        if let Some(entry) = self.lock_map().get_mut(server_id) {
+            entry.last_seen = when;
+        }
+    }
+
     pub fn rename(&self, server_id: &str, label: &str) -> bool {
         if let Some(conn) = self.lock_map().get_mut(server_id) {
             conn.label = label.to_string();
@@ -148,6 +195,7 @@ impl BridgeRegistry {
                 if label_changes {
                     entry.label = label;
                 }
+                entry.last_seen = Instant::now();
                 entry.conns.insert(generation, tx);
                 changed
             }
@@ -158,6 +206,7 @@ impl BridgeRegistry {
                         url,
                         label,
                         renamed: false,
+                        last_seen: Instant::now(),
                         conns: BTreeMap::from([(generation, tx)]),
                     },
                 );
@@ -422,6 +471,23 @@ pub async fn serve(
     // reach the bridge over the host gateway.
     let addr = std::env::var("FLEET_BRIDGE_ADDR").unwrap_or_else(|_| "127.0.0.1".into());
     let listener = TcpListener::bind((addr.as_str(), port)).await?;
+
+    // Liveness GC: periodically forget servers whose extension stopped phoning home
+    // (no ping within LIVENESS_TIMEOUT), even if the WS socket is still half-open.
+    {
+        let app = app.clone();
+        let registry = registry.clone();
+        tokio::spawn(async move {
+            loop {
+                sleep(LIVENESS_GC_TICK).await;
+                if !registry.reap_stale(LIVENESS_TIMEOUT).is_empty() {
+                    let _ = app.emit(SERVERS_CHANGED, registry.servers());
+                    crate::mux::refresh_menu(&app);
+                }
+            }
+        });
+    }
+
     {
         let app = app.clone();
         let registry = registry.clone();
@@ -577,7 +643,10 @@ async fn run_bridge_connection<S, F>(
             },
             inbound = read.next() => match inbound {
                 Some(Ok(Message::Close(_))) | None => break,
-                Some(Ok(_)) => {}
+                // Any inbound frame (the extension's ~20s ping, a re-hello, a
+                // command ack) is a liveness signal — refresh last_seen so the GC
+                // never reaps a server that's still talking.
+                Some(Ok(_)) => registry.touch(&hello.server_id),
                 Some(Err(_)) => break,
             },
         }
@@ -966,6 +1035,42 @@ mod tests {
         assert!(registry.servers().is_empty());
         // Forgetting again is a no-op.
         assert!(!registry.forget("server-1"));
+    }
+
+    #[test]
+    fn liveness_gc_forgets_a_silent_server_but_keeps_a_pinging_one() {
+        let reg = BridgeRegistry::new();
+        reg.register_test_server("stale", "url-a", "Stale");
+        reg.register_test_server("fresh", "url-b", "Fresh");
+        // "stale" hasn't been heard from in 2 minutes; "fresh" is current.
+        reg.set_last_seen_for_test("stale", Instant::now() - Duration::from_secs(120));
+
+        let reaped = reg.reap_stale(LIVENESS_TIMEOUT);
+
+        assert_eq!(reaped, vec!["stale".to_string()]);
+        let ids: Vec<String> = reg.servers().into_iter().map(|s| s.id).collect();
+        assert_eq!(ids, vec!["fresh".to_string()]);
+    }
+
+    #[test]
+    fn touch_refreshes_last_seen_so_the_gc_keeps_the_server() {
+        let reg = BridgeRegistry::new();
+        reg.register_test_server("s", "url", "S");
+        // Backdate past the timeout, then a ping arrives → touch refreshes it.
+        reg.set_last_seen_for_test("s", Instant::now() - Duration::from_secs(120));
+        reg.touch("s");
+
+        assert!(reg.reap_stale(LIVENESS_TIMEOUT).is_empty());
+        assert!(reg.servers().iter().any(|srv| srv.id == "s"));
+    }
+
+    #[test]
+    fn reap_stale_keeps_everything_when_none_are_stale() {
+        let reg = BridgeRegistry::new();
+        reg.register_test_server("a", "url", "A");
+        // Freshly registered → last_seen is ~now → nothing reaped.
+        assert!(reg.reap_stale(LIVENESS_TIMEOUT).is_empty());
+        assert_eq!(reg.servers().len(), 1);
     }
 
     #[test]
