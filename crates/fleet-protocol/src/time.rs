@@ -23,17 +23,17 @@ pub fn now_iso8601() -> String {
 /// interpreted as UTC, matching the behavior of the hand-rolled parsers this
 /// replaces. Returns `None` for anything jiff can't parse as an instant.
 pub fn parse_epoch_secs(s: &str) -> Option<i64> {
-    // Absolute forms: `…Z` and `…±HH:MM`.
+    // Absolute forms carry `Z` or a numeric offset (`±HH:MM`).
     if let Ok(ts) = s.parse::<Timestamp>() {
         return Some(ts.as_second());
     }
-    // Fallback: a naive civil datetime (no offset) is read as UTC.
-    if let Ok(dt) = s.parse::<jiff::civil::DateTime>() {
-        if let Ok(zoned) = dt.to_zoned(jiff::tz::TimeZone::UTC) {
-            return Some(zoned.timestamp().as_second());
-        }
-    }
-    None
+    // A naive datetime (no offset) is read as UTC: append `Z` and retry as an
+    // instant. (Using jiff's civil parser + `to_zoned(UTC)` would work too, but
+    // that conversion is infallible for UTC, leaving a dead error arm.)
+    format!("{s}Z")
+        .parse::<Timestamp>()
+        .ok()
+        .map(|ts| ts.as_second())
 }
 
 #[cfg(test)]
