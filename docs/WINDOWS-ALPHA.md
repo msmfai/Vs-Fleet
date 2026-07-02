@@ -29,6 +29,19 @@ gated so they run on macOS + Linux but are skipped on Windows, rather than faili
 These gates run on **Linux**, so the 100%-coverage gate (which runs on Linux) is
 unaffected — no Windows-only code paths are being hidden from coverage.
 
+## Windows CI is non-blocking (alpha)
+Beyond the clearly-unix tests above, the Windows runner also surfaces **timing
+flakes** (debounce/tick tests that are stable on macOS/Linux but marginal on the
+slower, differently-scheduled Windows runner). Chasing every one is not worth it
+while Windows is alpha, so the ci.yml **`Rust (windows)` and `Host (windows)` jobs
+are `continue-on-error`** — they run for signal but do **not** gate the workflow.
+The Windows **build** is still validated on every release by the `release.yml`
+`windows-x64`/`windows-arm64` bundle lanes (which produce the shipped `.exe`
+installers). `pnpm (windows)` remains a hard gate (it passes).
+
+To promote Windows out of alpha, make the unix-shaped behaviors cross-platform,
+de-flake the timing tests on Windows, then drop `continue-on-error`.
+
 ## To promote Windows out of alpha
 Validate + fix the unix-shaped behaviors on Windows (path/`PATH`/spawn, and either
 a Windows AF_UNIX transport or a first-class TCP path with the same guarantees),
