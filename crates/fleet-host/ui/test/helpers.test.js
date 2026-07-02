@@ -109,11 +109,6 @@ describe("dismiss / forget / retry predicates", () => {
     expect(window.canDismissAgent({}, "idle")).toBe(false);
     expect(window.canDismissAgent(null, "dead")).toBe(false);
   });
-  it("canForgetAgentOnly requires agentOnly + agent", () => {
-    expect(window.canForgetAgentOnly({ agentOnly: true }, {})).toBe(true);
-    expect(window.canForgetAgentOnly({ agentOnly: false }, {})).toBe(false);
-    expect(window.canForgetAgentOnly({ agentOnly: true }, null)).toBe(false);
-  });
   it("canRetryServer requires pending+owned+error state", () => {
     const srv = { pending: true, owned: true };
     expect(window.canRetryServer(srv, { state: "error" })).toBe(true);

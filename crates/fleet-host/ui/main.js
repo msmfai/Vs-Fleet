@@ -295,10 +295,6 @@ function canDismissAgent(agent, state) {
   return Boolean(agent && (state === "dead" || state === "error"));
 }
 
-function canForgetAgentOnly(srv, agent) {
-  return Boolean(srv && srv.agentOnly && agent);
-}
-
 function canRetryServer(srv, pendingState) {
   return Boolean(srv && srv.pending && isOwned(srv) && pendingState && pendingState.state === "error");
 }
@@ -556,13 +552,6 @@ function rowMenuItems(id) {
       label: "Dismiss",
       disabled: busy || !inbox.connected,
       action: () => dismissRow(id),
-    });
-  } else if (canForgetAgentOnly(model.srv, model.agent)) {
-    items.push({
-      id: "forget-session",
-      label: "Forget Session",
-      disabled: busy || !inbox.connected,
-      action: () => forgetAgentOnlyRow(id),
     });
   }
 
@@ -1391,12 +1380,19 @@ async function closeServer(id) {
   const target = displayed().find((srv) => srv.id === id);
   const owned = isOwned(target);
   const wasPending = pending.some((p) => p.id === id);
+  // Optimistic removal: drop the row from every local source the rail renders
+  // from (registered servers, pending starts, and any inbox tab) and clear the
+  // selection so it vanishes immediately — no wait on the close_server round-trip.
+  // The backend forget stays authoritative; refreshServers + the 60s liveness GC
+  // reconcile the truth. Mirrors dismissRow/removeInboxSession/clearLocalSelection.
+  servers = servers.filter((s) => s.id !== id);
+  pending = pending.filter((p) => p.id !== id);
+  removeInboxSession(id);
+  clearLocalSelection(id);
   closing.add(id);
   render();
   try {
     const killed = await invoke("close_server", { id });
-    pending = pending.filter((p) => p.id !== id);
-    clearLocalSelection(id);
     if (!killed && !wasPending && owned) {
       showHostStatus({
         level: "warning",
@@ -1530,17 +1526,6 @@ function dismissRow(id) {
   if (!guardRowAction(id, {
     canDo: () => canDismissAgent(agent, agent && agent.state),
     emptyMsg: "nothing to dismiss",
-    needsConnection: true,
-  })) return;
-  dismissSession(id);
-}
-
-function forgetAgentOnlyRow(id) {
-  const srv = displayed().find((item) => item.id === id);
-  const agent = agentFor(id);
-  if (!guardRowAction(id, {
-    canDo: () => canForgetAgentOnly(srv, agent),
-    emptyMsg: "nothing to forget",
     needsConnection: true,
   })) return;
   dismissSession(id);
