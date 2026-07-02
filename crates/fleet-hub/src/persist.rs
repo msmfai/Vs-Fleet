@@ -40,7 +40,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 use std::time::Duration;
 
-use fleet_protocol::{AgentRun, Event, Session, State};
+use fleet_protocol::{parse_epoch_secs, AgentRun, Event, Session, State};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
@@ -258,9 +258,14 @@ fn session_of_updated(ev: &Event) -> Option<&Session> {
     }
 }
 
-/// Apply one [`PersistEvent`] to a [`MergeEngine`]. Shared by replay and (via
-/// [`StateStore`]) by live writes, so the projection is computed identically on
-/// restore and at runtime.
+/// The **single** mapping from a [`PersistEvent`] mutation to its
+/// [`MergeEngine`] projection. This is the one source of truth for
+/// "which engine method does each mutation kind invoke", shared by both the
+/// replay path ([`EventLog::replay_into`]) and every live writer (via
+/// [`StateStore::log_and_apply`]). Keeping it in one place is what stops the
+/// restore-time and runtime projections from silently drifting apart if the
+/// mutation vocabulary grows (audit T2.2): before, each live `apply_*` method
+/// re-encoded the same PersistEvent→engine correspondence a second time.
 fn apply_to_engine(engine: &mut MergeEngine, ev: PersistEvent) -> Vec<Event> {
     match ev {
         PersistEvent::SessionUpsert { session } => vec![engine.upsert_session(*session)],
@@ -362,13 +367,26 @@ impl StateStore {
         self.engine.snapshot()
     }
 
+    /// Append a mutation to the durable log **then** project it into the engine,
+    /// returning the broadcast events. The one seam every live writer funnels
+    /// through: it pairs each [`PersistEvent`] with its engine projection via the
+    /// shared [`apply_to_engine`] mapping, so the live-apply path can never map a
+    /// mutation differently from the replay path (audit T2.2). Append-first is
+    /// preserved — a failed append surfaces via `?` before the engine is touched,
+    /// so memory never diverges ahead of the log.
+    fn log_and_apply(&mut self, ev: PersistEvent) -> Result<Vec<Event>, PersistError> {
+        self.log.append(&ev)?;
+        Ok(apply_to_engine(&mut self.engine, ev))
+    }
+
     /// Persist + apply a reporter session upsert. Returns the broadcast event.
     pub fn apply_session_upsert(&mut self, mut session: Session) -> Result<Event, PersistError> {
         self.preserve_hub_owned_fields(&mut session);
-        self.log.append(&PersistEvent::SessionUpsert {
-            session: Box::new(session.clone()),
+        let mut events = self.log_and_apply(PersistEvent::SessionUpsert {
+            session: Box::new(session),
         })?;
-        Ok(self.engine.upsert_session(session))
+        // A session upsert always projects to exactly one event (added/updated).
+        Ok(events.remove(0))
     }
 
     fn preserve_hub_owned_fields(&self, session: &mut Session) {
@@ -387,10 +405,9 @@ impl StateStore {
         if self.engine.session(session_id).is_none() {
             return Ok(Vec::new());
         }
-        self.log.append(&PersistEvent::SessionRemove {
+        let evs = self.log_and_apply(PersistEvent::SessionRemove {
             session_id: session_id.to_string(),
         })?;
-        let evs = self.engine.remove_session_events(session_id);
         // Invariant 3: drop the session's reclaim bookkeeping (its buffered-delta
         // dedup queue) atomically with the state entry. After this, a later
         // genuinely-fresh delta for one of these durable ids is admitted from
@@ -409,11 +426,10 @@ impl StateStore {
         if self.engine.session(session_id).is_none() {
             return Ok(Vec::new()); // unknown session: no-op, don't pollute the log
         }
-        self.log.append(&PersistEvent::RunUpsert {
+        self.log_and_apply(PersistEvent::RunUpsert {
             session_id: session_id.to_string(),
-            run: Box::new(run.clone()),
-        })?;
-        Ok(self.engine.upsert_run(session_id, run))
+            run: Box::new(run),
+        })
     }
 
     /// Persist + apply a run upsert **gated by durable identity** (S6).
@@ -591,11 +607,10 @@ impl StateStore {
         let Some(durable) = durable else {
             return Ok(Vec::new()); // session/run absent: no-op, nothing logged
         };
-        self.log.append(&PersistEvent::RunRemove {
+        let evs = self.log_and_apply(PersistEvent::RunRemove {
             session_id: session_id.to_string(),
             run_id: run_id.to_string(),
         })?;
-        let evs = self.engine.remove_run(session_id, run_id);
         // A removed run's dedup state goes with it: a future relaunch under the
         // same durable id is admitted fresh, not rejected as a stale duplicate.
         // Only prune the index/mark if no *other* run under this session still
@@ -681,53 +696,22 @@ impl StateStore {
 /// `now` makes the cutoff equal to `now` → nothing older-than-cutoff, i.e. we
 /// never over-reap on a malformed clock).
 fn subtract(now: &str, d: Duration) -> String {
-    match parse_iso(now) {
+    match parse_epoch_secs(now) {
         Some(secs) => format_iso(secs.saturating_sub(d.as_secs() as i64)),
         None => now.to_string(),
     }
 }
 
-/// Lexicographic-on-normalized-form comparison of two ISO-8601 UTC instants.
-/// Both are normalized to epoch seconds when parseable; if either fails to
-/// parse we conservatively return `false` (treat as "not older" → not reaped).
+/// Chronological comparison of two ISO-8601 / RFC-3339 instants. Both are
+/// normalized to epoch seconds via the shared [`parse_epoch_secs`] seam (jiff-
+/// backed: `Z`, numeric offsets, and fractional seconds all handled); if either
+/// fails to parse we conservatively return `false` (treat as "not older" → not
+/// reaped).
 fn timestamp_lt(a: &str, b: &str) -> bool {
-    match (parse_iso(a), parse_iso(b)) {
+    match (parse_epoch_secs(a), parse_epoch_secs(b)) {
         (Some(x), Some(y)) => x < y,
         _ => false,
     }
-}
-
-/// Minimal ISO-8601 parser for `YYYY-MM-DDTHH:MM:SS[.fff]Z` → epoch seconds.
-///
-/// We avoid a chrono dependency: the protocol emits UTC `Z` timestamps in this
-/// fixed shape, and a self-contained parser keeps the crate's dependency
-/// surface (and the G1 audit) small. Returns `None` on any deviation, which the
-/// callers treat as "do not reap" — the safe default.
-fn parse_iso(s: &str) -> Option<i64> {
-    let bytes = s.as_bytes();
-    if bytes.len() < 20 {
-        return None;
-    }
-    let num = |a: usize, b: usize| -> Option<i64> { s.get(a..b)?.parse::<i64>().ok() };
-    if bytes[4] != b'-' || bytes[7] != b'-' || bytes[10] != b'T' {
-        return None;
-    }
-    if bytes[13] != b':' || bytes[16] != b':' {
-        return None;
-    }
-    let year = num(0, 4)?;
-    let month = num(5, 7)?;
-    let day = num(8, 10)?;
-    let hour = num(11, 13)?;
-    let min = num(14, 16)?;
-    let sec = num(17, 19)?;
-    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
-        return None;
-    }
-    if hour > 23 || min > 59 || sec > 60 {
-        return None;
-    }
-    Some(days_from_civil(year, month, day) * 86_400 + hour * 3600 + min * 60 + sec)
 }
 
 /// The current wall-clock instant as an ISO-8601 UTC string (the format the
@@ -752,17 +736,9 @@ fn format_iso(epoch: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}T{hour:02}:{min:02}:{sec:02}Z")
 }
 
-/// Days since the Unix epoch for a civil date (Howard Hinnant's algorithm).
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = if y >= 0 { y } else { y - 399 } / 400;
-    let yoe = y - era * 400;
-    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
-}
-
-/// Inverse of [`days_from_civil`] → `(year, month, day)`.
+/// Civil `(year, month, day)` for a day count since the Unix epoch (Howard
+/// Hinnant's algorithm) — the inverse used by [`format_iso`]. The forward
+/// direction (parsing) now lives in the shared [`parse_epoch_secs`] seam.
 fn civil_from_days(z: i64) -> (i64, i64, i64) {
     let z = z + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
@@ -815,31 +791,18 @@ mod tests {
         )
     }
 
-    // ---- ISO parse/format round-trip & ordering -------------------------------
+    // ---- ISO format round-trip & ordering -------------------------------------
+    // (Parsing is the shared `fleet_protocol::parse_epoch_secs` seam, tested in
+    // fleet-protocol; here we cover only the still-local `format_iso` formatter
+    // and the reap/sweep BEHAVIOR built on the seam.)
 
     #[test]
-    fn iso_parse_known_epochs() {
-        // 1970-01-01T00:00:00Z = 0
-        assert_eq!(parse_iso("1970-01-01T00:00:00Z"), Some(0));
-        // 2026-06-08T00:00:00Z — sanity that it's positive and round-trips.
-        let e = parse_iso("2026-06-08T12:34:56Z").unwrap();
+    fn format_iso_round_trips_epoch_seconds() {
+        // 1970-01-01T00:00:00Z = epoch 0.
+        assert_eq!(format_iso(0), "1970-01-01T00:00:00Z");
+        // A parseable instant formats back to its canonical `Z` form.
+        let e = parse_epoch_secs("2026-06-08T12:34:56Z").unwrap();
         assert_eq!(format_iso(e), "2026-06-08T12:34:56Z");
-    }
-
-    #[test]
-    fn iso_parse_tolerates_fractional_seconds() {
-        // The fixed-width parser reads through the seconds; a fractional suffix
-        // is ignored, which is what we want for second-granularity reaping.
-        let a = parse_iso("2026-06-08T00:00:00.123Z").unwrap();
-        let b = parse_iso("2026-06-08T00:00:00Z").unwrap();
-        assert_eq!(a, b);
-    }
-
-    #[test]
-    fn iso_parse_rejects_garbage() {
-        assert_eq!(parse_iso("not-a-time"), None);
-        assert_eq!(parse_iso(""), None);
-        assert_eq!(parse_iso("2026/06/08 00:00:00"), None);
     }
 
     #[test]
@@ -1688,33 +1651,8 @@ mod tests {
     #[test]
     fn now_iso_round_trips_through_parse() {
         let s = now_iso();
-        let secs = parse_iso(&s).expect("now_iso emits a parseable ISO instant");
+        let secs = parse_epoch_secs(&s).expect("now_iso emits a parseable ISO instant");
         assert_eq!(format_iso(secs), s, "now_iso output is canonical");
         assert!(secs > 0, "wall clock is after the epoch");
-    }
-
-    // ---- parse_iso structural rejections ---------------------------------------
-
-    #[test]
-    fn parse_iso_rejects_each_structural_deviation() {
-        // Too short.
-        assert_eq!(parse_iso("2026-06-08T00:00"), None);
-        // Wrong date separators (positions 4/7/10).
-        assert_eq!(parse_iso("2026.06-08T00:00:00Z"), None);
-        assert_eq!(parse_iso("2026-06.08T00:00:00Z"), None);
-        assert_eq!(parse_iso("2026-06-08X00:00:00Z"), None);
-        // Wrong time separators (positions 13/16).
-        assert_eq!(parse_iso("2026-06-08T00.00:00Z"), None);
-        assert_eq!(parse_iso("2026-06-08T00:00.00Z"), None);
-        // Out-of-range month / day.
-        assert_eq!(parse_iso("2026-13-08T00:00:00Z"), None);
-        assert_eq!(parse_iso("2026-06-32T00:00:00Z"), None);
-        // Out-of-range hour / minute / second.
-        assert_eq!(parse_iso("2026-06-08T24:00:00Z"), None);
-        assert_eq!(parse_iso("2026-06-08T00:60:00Z"), None);
-        assert_eq!(parse_iso("2026-06-08T00:00:61Z"), None);
-        // A valid leap-second-ish second (60) is accepted; a normal one too.
-        assert!(parse_iso("2026-06-08T00:00:60Z").is_some());
-        assert!(parse_iso("2026-06-08T23:59:59Z").is_some());
     }
 }
