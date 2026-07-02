@@ -709,7 +709,7 @@ fn idle_and_error_states_have_no_preview() {
     assert!(m.to_run("r", "t").last_message.is_none());
 
     let mut e = machine();
-    e.state = State::Error;
+    e.set_state_for_test(State::Error);
     let run = e.to_run("r", "2026-06-08T00:00:00Z");
     assert_eq!(run.state, State::Error);
     assert!(run.last_message.is_none(), "an un-modelled state yields no preview");

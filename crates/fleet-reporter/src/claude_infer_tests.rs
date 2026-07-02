@@ -137,7 +137,7 @@ fn activity_auto_resolves_inferred_waiting() {
     assert_eq!(m.state(), State::Waiting);
     let t = m.apply(&ev(&pre_tool_json()), WINDOW + 500);
     assert_eq!(m.state(), State::Working);
-    assert!(t.resolved_inference, "fresh activity auto-resolves the inference");
+    assert!(t.resolved_approval, "fresh activity auto-resolves the inference");
     assert!(!m.is_inferred_waiting());
 }
 
@@ -149,7 +149,7 @@ fn stop_resolves_inferred_waiting_to_done() {
     assert_eq!(m.state(), State::Waiting);
     let t = m.apply(&ev(&stop_idle_json()), WINDOW + 1);
     assert_eq!(m.state(), State::Done, "a real Stop ends the turn → done");
-    assert!(t.resolved_inference);
+    assert!(t.resolved_approval);
     assert_eq!(m.confidence(), Confidence::Inferred);
 }
 
@@ -161,7 +161,7 @@ fn user_prompt_resolves_inferred_waiting_to_working() {
     assert_eq!(m.state(), State::Waiting);
     let t = m.apply(&ev(&prompt_json()), WINDOW + 1);
     assert_eq!(m.state(), State::Working);
-    assert!(t.resolved_inference);
+    assert!(t.resolved_approval);
 }
 
 // ── transcript JSONL drift-guard verdicts ─────────────────────────────────────
@@ -223,7 +223,7 @@ fn resolved_corroboration_auto_resolves_raised_waiting() {
     m.tick(WINDOW);
     assert_eq!(m.state(), State::Waiting);
     let t = m.corroborate(Corroboration::Resolved);
-    assert!(t.resolved_inference);
+    assert!(t.resolved_approval);
     assert_eq!(m.state(), State::Working);
     assert_eq!(m.confidence(), Confidence::Inferred);
 }

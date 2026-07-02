@@ -197,7 +197,7 @@ fn window_session_base(id: &str) -> Session {
         unread: false,
         tags: vec![],
         policy: None,
-        updated_at: fleet_reporter::fake::now_iso8601(),
+        updated_at: fleet_protocol::now_iso8601(),
         extra: Extra::new(),
     }
 }
@@ -273,7 +273,7 @@ fn local_session(id: &str) -> Session {
         unread: false,
         tags: vec![],
         policy: None,
-        updated_at: fleet_reporter::fake::now_iso8601(),
+        updated_at: fleet_protocol::now_iso8601(),
         extra: Extra::new(),
     }
 }
@@ -288,7 +288,7 @@ fn local_run(run_id: &str, state: State) -> AgentRun {
             .unwrap_or_else(|_| "/".into()),
         state,
         Confidence::Inferred,
-        fleet_reporter::fake::now_iso8601(),
+        fleet_protocol::now_iso8601(),
     )
 }
 

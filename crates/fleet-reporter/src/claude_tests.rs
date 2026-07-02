@@ -774,13 +774,13 @@ fn waiting_like_state_has_no_inbox_preview_fallthrough_arm() {
     // The preview match in `last_message()` special-cases Working/Idle/Done/Dead
     // and has a `_ => None` fall-through for any other State (only Waiting remains
     // in the six-variant model). S15 never *enters* Waiting through a transition,
-    // so to exercise the fall-through we put a machine into Waiting directly (the
-    // test module is inside claude.rs, so it can touch the private `state` field)
-    // and assert the run snapshot carries no preview line for that state.
+    // so to exercise the fall-through we put a machine into Waiting directly (via
+    // the test-only `set_state_for_test` seam) and assert the run snapshot carries
+    // no preview line for that state.
     let mut m = machine();
     m.apply(&ev(ClaudeHookKind::UserPromptSubmit)); // Working, with a real message set below
     m.last_assistant_message = Some("ignored while waiting".to_string());
-    m.state = State::Waiting;
+    m.set_state_for_test(State::Waiting);
     let run = m.to_run("r", "t");
     assert_eq!(run.state, State::Waiting);
     assert!(

@@ -63,8 +63,10 @@
 
 use serde::Deserialize;
 
-use fleet_protocol::{AgentKind, AgentRun, Confidence, Extra, State, SCHEMA_VERSION};
+use fleet_protocol::{AgentKind, AgentRun, Confidence, State};
 
+pub use crate::machine::Transition;
+use crate::machine::{AdapterCore, Core};
 use crate::reporter::ReporterCommand;
 
 /// The set of Claude hook events this S15 adapter understands. Unknown event
@@ -254,28 +256,13 @@ impl ClaudeHookEvent {
 /// - **`done` is derived from `Stop`, never from `PostToolUse`** (#31285).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClaudeStateMachine {
-    session_id: String,
-    cwd: String,
-    state: State,
-    confidence: Confidence,
-    last_tool: Option<String>,
+    /// The shared lifecycle state (session_id anchor, cwd, state, confidence,
+    /// last tool). S15 never uses the core's `urgency`/`pending_approval` — it
+    /// never models `waiting` — so they stay `None`/`false` throughout.
+    core: Core,
     /// The assistant's last message (from a `Stop`'s `last_assistant_message`),
-    /// surfaced as the idle/done inbox preview.
+    /// surfaced as the idle/done inbox preview. Claude-specific.
     last_assistant_message: Option<String>,
-}
-
-/// A single state transition the machine decided, returned by
-/// [`ClaudeStateMachine::apply`]. `changed` is `false` for a no-op.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Transition {
-    /// The run's state after the event.
-    pub state: State,
-    /// The run's confidence after the event.
-    pub confidence: Confidence,
-    /// Whether the run-relevant fields actually changed (vs. a no-op).
-    pub changed: bool,
-    /// Whether this event is a pure liveness signal (refresh the timeout window).
-    pub liveness: bool,
 }
 
 impl ClaudeStateMachine {
@@ -283,30 +270,31 @@ impl ClaudeStateMachine {
     /// alive but has not yet been seen to do work).
     pub fn new(session_id: impl Into<String>) -> Self {
         ClaudeStateMachine {
-            session_id: session_id.into(),
-            cwd: "/".to_string(),
-            state: State::Idle,
-            confidence: Confidence::Inferred,
-            last_tool: None,
+            core: Core::new(session_id),
             last_assistant_message: None,
         }
     }
 
     /// The session's durable id (Claude `session_id`).
     pub fn session_id(&self) -> &str {
-        &self.session_id
+        self.core.native_id()
     }
     /// The run's current state.
     pub fn state(&self) -> State {
-        self.state
+        self.core.state()
+    }
+    /// Test-only: force an arbitrary state (see [`Core::set_state_for_test`]).
+    #[cfg(test)]
+    pub(crate) fn set_state_for_test(&mut self, s: State) {
+        self.core.set_state_for_test(s);
     }
     /// The run's current confidence.
     pub fn confidence(&self) -> Confidence {
-        self.confidence
+        self.core.confidence()
     }
     /// The session's last-known working directory.
     pub fn cwd(&self) -> &str {
-        &self.cwd
+        self.core.cwd()
     }
 
     /// Apply a parsed hook event, mutating the machine and returning the
@@ -315,17 +303,11 @@ impl ClaudeStateMachine {
     pub fn apply(&mut self, ev: &ClaudeHookEvent) -> Transition {
         // Session-id mismatch: the caller routes per session, but guard anyway —
         // a foreign event must never mutate this machine.
-        if ev.session_id != self.session_id {
-            return self.no_op(false);
+        if ev.session_id != self.core.native_id() {
+            return self.core.no_op(false);
         }
-        if let Some(c) = &ev.cwd {
-            if !c.is_empty() {
-                self.cwd = c.clone();
-            }
-        }
-        if let Some(t) = &ev.tool_name {
-            self.last_tool = Some(t.clone());
-        }
+        self.core.note_cwd(ev.cwd.as_deref());
+        self.core.note_tool(ev.tool_name.as_deref());
         if let Some(m) = &ev.last_message {
             self.last_assistant_message = Some(m.clone());
         }
@@ -333,14 +315,9 @@ impl ClaudeStateMachine {
         match &ev.kind {
             // ── activity hooks → working ─────────────────────────────────────
             ClaudeHookKind::UserPromptSubmit | ClaudeHookKind::PreToolUse => {
-                let was_working = self.state == State::Working;
-                self.enter_working();
-                Transition {
-                    state: self.state,
-                    confidence: self.confidence,
-                    changed: !was_working,
-                    liveness: true,
-                }
+                let was_working = self.core.state() == State::Working;
+                self.core.enter_working();
+                self.core.transition(!was_working, false, true)
             }
 
             // ── turn complete → done (NEVER from PostToolUse) ─────────────────
@@ -348,45 +325,32 @@ impl ClaudeStateMachine {
                 if ev.stop_hook_active {
                     // A Stop fired from inside a Stop hook's own continuation loop
                     // is NOT a real turn boundary: pure liveness, no completion.
-                    return self.no_op(true);
+                    return self.core.no_op(true);
                 }
                 // The Stop event firing IS the turn-complete signal (hooks carry no
                 // task-vs-turn field), so a real Stop is the honest "assistant
                 // finished this turn" → Done (D9-distinct from idle).
-                let changed = self.state != State::Done;
-                self.state = State::Done;
-                self.confidence = Confidence::Inferred;
-                Transition {
-                    state: self.state,
-                    confidence: self.confidence,
-                    changed,
-                    liveness: false,
-                }
+                let changed = self.core.state() != State::Done;
+                self.core.set_done();
+                self.core.transition(changed, false, false)
             }
 
             // ── session closed → dead ────────────────────────────────────────
             ClaudeHookKind::SessionEnd => {
-                let changed = self.state != State::Dead;
-                self.state = State::Dead;
-                self.confidence = Confidence::High; // confirmed exit is authoritative
-                Transition {
-                    state: self.state,
-                    confidence: self.confidence,
-                    changed,
-                    liveness: false,
-                }
+                let changed = self.core.state() != State::Dead;
+                self.core.set_dead(); // confirmed exit is authoritative (High)
+                self.core.transition(changed, false, false)
             }
 
             // ── session opened → idle ────────────────────────────────────────
             ClaudeHookKind::SessionStart => {
                 // Re-opening a closed session (resume/continue) revives it to idle;
                 // an already-live session stays where it is (no spurious reset).
-                if self.state == State::Dead {
-                    self.state = State::Idle;
-                    self.confidence = Confidence::Inferred;
-                    self.no_op(false).into_changed()
+                if self.core.state() == State::Dead {
+                    self.core.revive_idle();
+                    self.core.no_op(false).into_changed()
                 } else {
-                    self.no_op(false)
+                    self.core.no_op(false)
                 }
             }
 
@@ -398,55 +362,27 @@ impl ClaudeStateMachine {
             // the run to idle/done.
             ClaudeHookKind::PostToolUse
             | ClaudeHookKind::SubagentStop
-            | ClaudeHookKind::PreCompact => self.no_op(true),
-            ClaudeHookKind::Other(_) => self.no_op(false),
+            | ClaudeHookKind::PreCompact => self.core.no_op(true),
+            ClaudeHookKind::Other(_) => self.core.no_op(false),
         }
     }
 
     /// Build the current [`AgentRun`] snapshot for this session, stamped with the
     /// given timestamp. The run's `native_id` is the Claude `session_id` (durable
-    /// anchor), so the reporter framework keys identity on it.
+    /// anchor), so the reporter framework keys identity on it. S15 never produces a
+    /// waiting/urgent state, so `urgency`/`waiting_since` stay `None` (via `Core`).
     pub fn to_run(&self, run_id: impl Into<String>, updated_at: impl Into<String>) -> AgentRun {
-        let updated_at = updated_at.into();
-        AgentRun {
-            schema_version: SCHEMA_VERSION,
-            run_id: run_id.into(),
-            agent_kind: AgentKind::ClaudeCode,
-            native_id: self.session_id.clone(),
-            cwd: self.cwd.clone(),
-            state: self.state,
-            // S15 never produces a waiting/urgent state (see module docs).
-            urgency: None,
-            last_message: self.last_message(),
-            // S15 never produces a waiting state, so never a waiting_since.
-            waiting_since: None,
-            confidence: self.confidence,
-            diff_summary: None,
-            updated_at,
-            extra: Extra::new(),
-        }
-    }
-
-    // ── internal transitions ─────────────────────────────────────────────────
-
-    fn enter_working(&mut self) {
-        self.state = State::Working;
-        // Honesty: working is inferred from activity, not an authoritative signal.
-        self.confidence = Confidence::Inferred;
-    }
-
-    fn no_op(&self, liveness: bool) -> Transition {
-        Transition {
-            state: self.state,
-            confidence: self.confidence,
-            changed: false,
-            liveness,
-        }
+        self.core.to_run(
+            AgentKind::ClaudeCode,
+            run_id.into(),
+            updated_at.into(),
+            self.last_message(),
+        )
     }
 
     fn last_message(&self) -> Option<String> {
-        match self.state {
-            State::Working => self.last_tool.as_ref().map(|t| format!("Running {t}…")),
+        match self.core.state() {
+            State::Working => self.core.last_tool().map(|t| format!("Running {t}…")),
             // After a turn ends, show what Claude actually said (real `Stop`
             // payloads carry `last_assistant_message`) — a far better inbox
             // preview than a generic line. Falls back to the generic when absent.
@@ -460,6 +396,15 @@ impl ClaudeStateMachine {
             State::Dead => Some("Session closed.".to_string()),
             _ => None,
         }
+    }
+}
+
+impl crate::machine::RunMachine for ClaudeStateMachine {
+    fn run_state(&self) -> State {
+        self.core.state()
+    }
+    fn build_run(&self, run_id: String, updated_at: String) -> AgentRun {
+        self.to_run(run_id, updated_at)
     }
 }
 
@@ -477,14 +422,6 @@ pub(crate) fn preview(msg: &str) -> String {
     }
 }
 
-impl Transition {
-    /// Mark a no-op transition as having changed (used for the resume edge).
-    fn into_changed(mut self) -> Self {
-        self.changed = true;
-        self
-    }
-}
-
 /// The Claude **adapter** (S15): a thin map from a stream of Claude hook events
 /// (multiplexed across sessions, since one reporter shell can host several
 /// `claude` invocations) to [`ReporterCommand`]s the reporter framework already
@@ -499,42 +436,43 @@ impl Transition {
 /// - a pure-liveness telemetry hook with no state change →
 ///   [`ReporterCommand::Liveness`];
 /// - a `SessionEnd` → an `UpsertRun(dead)` (confirmed-exit confidence).
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ClaudeAdapter {
-    sessions: std::collections::HashMap<String, ClaudeSession>,
-    run_counter: u64,
+    core: AdapterCore<ClaudeStateMachine>,
 }
 
-#[derive(Debug)]
-struct ClaudeSession {
-    machine: ClaudeStateMachine,
-    run_id: String,
+impl Default for ClaudeAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ClaudeAdapter {
     /// A fresh adapter tracking no sessions.
     pub fn new() -> Self {
-        Self::default()
+        ClaudeAdapter {
+            core: AdapterCore::new("claude"),
+        }
     }
 
     /// Number of distinct Claude sessions currently tracked.
     pub fn session_count(&self) -> usize {
-        self.sessions.len()
+        self.core.session_count()
     }
 
     /// The current run state for a session, if tracked (for assertions/UX).
     pub fn state_of(&self, session_id: &str) -> Option<State> {
-        self.sessions.get(session_id).map(|s| s.machine.state())
+        self.core.state_of(session_id)
     }
 
     /// The Fleet run-id minted for a session, if tracked.
     pub fn run_id_of(&self, session_id: &str) -> Option<&str> {
-        self.sessions.get(session_id).map(|s| s.run_id.as_str())
+        self.core.run_id_of(session_id)
     }
 
     /// Borrow a session's state machine (tests).
     pub fn machine_of(&self, session_id: &str) -> Option<&ClaudeStateMachine> {
-        self.sessions.get(session_id).map(|s| &s.machine)
+        self.core.machine_of(session_id)
     }
 
     /// Ingest one **raw** recorded hook-event JSON line, producing the
@@ -550,41 +488,17 @@ impl ClaudeAdapter {
 
     /// Ingest a parsed hook event, returning `(commands, transition)`.
     pub fn ingest(&mut self, ev: &ClaudeHookEvent) -> (Vec<ReporterCommand>, Transition) {
-        // First sighting of a session mints its Fleet run-id and machine.
-        if !self.sessions.contains_key(&ev.session_id) {
-            self.run_counter += 1;
-            let run_id = format!("claude:{}:run-{}", ev.session_id, self.run_counter);
-            self.sessions.insert(
-                ev.session_id.clone(),
-                ClaudeSession {
-                    machine: ClaudeStateMachine::new(ev.session_id.clone()),
-                    run_id,
-                },
-            );
-        }
-        let session = self
-            .sessions
-            .get_mut(&ev.session_id)
-            .expect("just inserted");
-        let transition = session.machine.apply(ev);
-        let run_id = session.run_id.clone();
-
-        let mut cmds = Vec::new();
-        if transition.changed {
-            let run = session
-                .machine
-                .to_run(run_id.clone(), crate::fake::now_iso8601());
-            cmds.push(ReporterCommand::UpsertRun(run));
-        } else if transition.liveness {
-            cmds.push(ReporterCommand::Liveness { run_id });
-        }
-        (cmds, transition)
+        self.core.apply_and_commands(
+            &ev.session_id,
+            || ClaudeStateMachine::new(ev.session_id.clone()),
+            |m| m.apply(ev),
+        )
     }
 
     /// Forget a session entirely (e.g. its `SessionEnd` was already delivered and
     /// the run reaped). A later event for the same session starts a fresh run.
     pub fn forget(&mut self, session_id: &str) -> bool {
-        self.sessions.remove(session_id).is_some()
+        self.core.forget(session_id)
     }
 }
 

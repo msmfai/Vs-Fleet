@@ -72,7 +72,7 @@ impl FakeReporter {
     /// `step_delay` between steps. Returns when the sequence is complete or on
     /// error.
     pub async fn run(&self) -> Result<()> {
-        let ts = now_iso8601();
+        let ts = fleet_protocol::now_iso8601();
         let script = TransitionScript::new(&self.config.session_id, &self.config.run_id);
         let steps = script.generate(&ts);
 
@@ -155,96 +155,9 @@ impl FakeReporter {
     }
 }
 
-/// Current time as an ISO-8601 string (UTC, second precision).
-///
-/// Uses a simple manual formatter to avoid pulling in `chrono`/`time` at this
-/// stage. REPCORE (S5) will introduce a proper time abstraction.
-pub fn now_iso8601() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let s = secs % 60;
-    let m = (secs / 60) % 60;
-    let h = (secs / 3600) % 24;
-    let days = secs / 86400;
-    let (y, mo, d) = days_to_ymd(days);
-    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}Z")
-}
-
-pub fn days_to_ymd(days: u64) -> (u64, u64, u64) {
-    let mut y = 1970u64;
-    let mut rem = days;
-    loop {
-        let dy = if is_leap(y) { 366 } else { 365 };
-        if rem < dy {
-            break;
-        }
-        rem -= dy;
-        y += 1;
-    }
-    let month_days: [u64; 12] = if is_leap(y) {
-        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    } else {
-        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    };
-    let mut mo = 1u64;
-    for &md in &month_days {
-        if rem < md {
-            break;
-        }
-        rem -= md;
-        mo += 1;
-    }
-    (y, mo, rem + 1)
-}
-
-pub fn is_leap(y: u64) -> bool {
-    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ── ISO-8601 formatter ───────────────────────────────────────────────────
-
-    #[test]
-    fn now_iso8601_is_well_formed() {
-        let s = now_iso8601();
-        assert_eq!(s.len(), 20, "ISO-8601 string must be 20 chars: got '{s}'");
-        assert!(s.ends_with('Z'));
-        assert_eq!(&s[4..5], "-");
-        assert_eq!(&s[7..8], "-");
-        assert_eq!(&s[10..11], "T");
-        assert_eq!(&s[13..14], ":");
-        assert_eq!(&s[16..17], ":");
-    }
-
-    #[test]
-    fn days_to_ymd_epoch() {
-        assert_eq!(days_to_ymd(0), (1970, 1, 1));
-    }
-
-    #[test]
-    fn days_to_ymd_known_date() {
-        // 2026-06-08 = 20612 days since epoch (see transition tests for derivation)
-        let (y, mo, d) = days_to_ymd(20612);
-        assert_eq!(y, 2026);
-        assert_eq!(mo, 6);
-        assert_eq!(d, 8);
-    }
-
-    #[test]
-    fn days_to_ymd_in_a_leap_year_uses_29_day_february() {
-        // 2024 is a leap year. 2024-02-29 = 19782 days since epoch. Landing on
-        // Feb 29 exercises the leap-year `month_days` table (the 29-day branch).
-        let (y, mo, d) = days_to_ymd(19782);
-        assert_eq!((y, mo, d), (2024, 2, 29), "leap-year Feb has a 29th");
-        // And the day after rolls into March, confirming February held 29 days.
-        assert_eq!(days_to_ymd(19783), (2024, 3, 1));
-    }
 
     #[test]
     fn default_config_has_the_binary_defaults() {
@@ -255,15 +168,6 @@ mod tests {
         assert_eq!(cfg.session_id, "sess-fake-0001");
         assert_eq!(cfg.run_id, "run-fake-0001");
         assert_eq!(cfg.step_delay, Duration::from_millis(200));
-    }
-
-    #[test]
-    fn is_leap_known_values() {
-        assert!(is_leap(2000));
-        assert!(is_leap(2024));
-        assert!(!is_leap(1900));
-        assert!(!is_leap(2100));
-        assert!(!is_leap(2023));
     }
 
     // ── step_to_message mapping ──────────────────────────────────────────────
@@ -547,7 +451,7 @@ mod tests {
 
         // Reporter in the same task: step-by-step send + face reads.
         let (mut rep, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-        let ts = now_iso8601();
+        let ts = fleet_protocol::now_iso8601();
         let script = crate::transition::TransitionScript::new("sess-integ", "run-integ");
         let steps = script.generate(&ts);
 
@@ -638,7 +542,7 @@ mod tests {
         // delta is broadcast atomically to both already-subscribed faces in one
         // order.
         let (mut rep, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-        let ts = now_iso8601();
+        let ts = fleet_protocol::now_iso8601();
         let script = crate::transition::TransitionScript::new("sess-two-face", "run-two-face");
         let steps = script.generate(&ts);
 
