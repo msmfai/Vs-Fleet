@@ -195,3 +195,36 @@ on literals, `debug_assert_eq!` (compiled out in `--release`). Worth a dedicated
   zero-date-dep and just harden them in place?
 - **Refactor appetite:** green-light Tiers 3 + 4 for me to apply now behind CI, and I hold Tiers 1–2
   for per-item review? Or a different cut.
+
+---
+
+## Followups (audit-followups/2026-07 branch)
+
+**Applied:**
+- A: pinned release `@tauri-apps/cli@2.11.3` (was floating `^2`) — reproducible builds.
+- B: schema mislabel fixed — outer `$schema` → Draft 2020-12 (matches the `$defs`/nested
+  dialect schemars 1.2 actually emits); conformance test → `Draft202012`; artifact regenerated.
+- B: focus/dismiss-by-run now use a borrowing `session_id_of_run` (no full-state clone).
+- C (node, CI-verified): `setInterval` age-only tick (no full DOM rebuild), a real `ws+unix`
+  bridge test, and `termSend` shell-integration readiness (in progress).
+
+**Re-deferred (with why):**
+- A commit JS lockfiles — generation needs pnpm/npm (no local node); needs a CI-generate-then-
+  commit step or the user's environment. High value, but infra-blocked here.
+- B persist log compaction — a real always-on-daemon scalability item, but a substantial feature
+  (checkpoint + truncation + replay changes); warrants a dedicated design pass, not a followup.
+- B `Urgency::None` serde `"null"` token — fixing is wire-breaking (schema_version bump) for a
+  value that's normalized away on most paths; low value/risk ratio.
+- B server.rs wire→store ladder — genuinely needs the on-disk log or wire types to change (the
+  T2.3 rationale still holds).
+- D CLI `connect_ws/connect_unix` reader dedup — the only real divergence is a log line; unifying
+  the match into one generic reader is 100%-coverage-gate-fiddly (each arm needs a test) for ~nil gain.
+- D `fleet_hub::now_iso` — marginal; needs a seam `format_epoch_secs` to also retire `format_iso`
+  (still used by sweep `subtract`), which is more surface than the win.
+- D `confidence.rs` BadgeMarker/badge_for — wire-vs-delete is a PRODUCT decision (surface a
+  confidence badge in the rail = feature; delete = discard built+tested work). Needs your call.
+- C main.js ES-module split — large, coupled to the vitest column-0 harness; pure maintainability.
+- E test-smell sweep (Tier 5) — valuable but a big, coverage-gate-sensitive pass; dedicated effort.
+- E Codex live-validation — needs a real `codex` binary (not on this machine); external.
+- E CLI UX (`fleet ls` redraw, `init --reporter-socket` re-init) — real but minor; init-socket is a
+  moderate init-logic change with its own tests.
