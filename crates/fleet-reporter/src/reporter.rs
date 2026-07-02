@@ -320,14 +320,14 @@ impl ReporterCore {
                 "/",
                 State::Dead,
                 fleet_protocol::Confidence::High,
-                crate::fake::now_iso8601(),
+                fleet_protocol::now_iso8601(),
             )
         };
         r.state = State::Dead;
         // Confidence honesty: a confirmed exit / timeout IS an authoritative
         // signal about liveness.
         r.confidence = fleet_protocol::Confidence::High;
-        r.updated_at = crate::fake::now_iso8601();
+        r.updated_at = fleet_protocol::now_iso8601();
         r.last_message = Some(reason.to_string());
         r
     }

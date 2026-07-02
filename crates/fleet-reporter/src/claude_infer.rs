@@ -42,9 +42,11 @@
 //! No path here produces [`Confidence::High`] for a waiting state. The only `High`
 //! it emits is on a confirmed `SessionEnd` exit (authoritative), like S15.
 
-use fleet_protocol::{AgentKind, AgentRun, Confidence, Extra, State, Urgency, SCHEMA_VERSION};
+use fleet_protocol::{AgentKind, AgentRun, Confidence, State, Urgency};
 
 use crate::claude::{ClaudeHookEvent, ClaudeHookKind};
+pub use crate::machine::Transition;
+use crate::machine::{AdapterCore, Core};
 use crate::reporter::ReporterCommand;
 
 /// The default `PreToolUse`-without-`Stop` debounce window, in milliseconds.
@@ -190,12 +192,10 @@ pub fn corroborate_jsonl_for(body: &str, tool_use_id: &str) -> Corroboration {
 /// The pure S16 **inference state machine** for one Claude `session_id`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClaudeInferMachine {
-    session_id: String,
-    cwd: String,
-    state: State,
-    urgency: Option<Urgency>,
-    confidence: Confidence,
-    last_tool: Option<String>,
+    /// The shared lifecycle state (session_id anchor, cwd, state, urgency,
+    /// confidence, last tool). S16 tracks *waiting* via its own debounce fields
+    /// below, not the core's `pending_approval`.
+    core: Core,
     debounce_ms: u64,
     armed_since: Option<u64>,
     inferred_waiting: bool,
@@ -209,23 +209,6 @@ pub struct ClaudeInferMachine {
     armed_transcript_path: Option<String>,
 }
 
-/// A single state transition the machine decided. `changed` is `false` for a no-op.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Transition {
-    /// The run's state after the event/tick.
-    pub state: State,
-    /// The run's urgency after the event/tick.
-    pub urgency: Option<Urgency>,
-    /// The run's confidence after the event/tick.
-    pub confidence: Confidence,
-    /// Whether the run-relevant fields actually changed (vs. a no-op).
-    pub changed: bool,
-    /// Whether this transition cleared an inferred `waiting` (auto-resolve).
-    pub resolved_inference: bool,
-    /// Whether this event is a pure liveness signal.
-    pub liveness: bool,
-}
-
 impl ClaudeInferMachine {
     /// A new machine for a session, starting `idle`, using [`DEFAULT_DEBOUNCE_MS`].
     pub fn new(session_id: impl Into<String>) -> Self {
@@ -235,12 +218,7 @@ impl ClaudeInferMachine {
     /// A new machine with an explicit debounce window (for tuning / tests).
     pub fn with_debounce_ms(session_id: impl Into<String>, debounce_ms: u64) -> Self {
         ClaudeInferMachine {
-            session_id: session_id.into(),
-            cwd: "/".to_string(),
-            state: State::Idle,
-            urgency: None,
-            confidence: Confidence::Inferred,
-            last_tool: None,
+            core: Core::new(session_id),
             debounce_ms,
             armed_since: None,
             inferred_waiting: false,
@@ -251,23 +229,23 @@ impl ClaudeInferMachine {
 
     /// The session's durable id (Claude `session_id`).
     pub fn session_id(&self) -> &str {
-        &self.session_id
+        self.core.native_id()
     }
     /// The run's current state.
     pub fn state(&self) -> State {
-        self.state
+        self.core.state()
     }
     /// The run's current urgency.
     pub fn urgency(&self) -> Option<Urgency> {
-        self.urgency
+        self.core.urgency()
     }
     /// The run's current confidence.
     pub fn confidence(&self) -> Confidence {
-        self.confidence
+        self.core.confidence()
     }
     /// The session's last-known working directory.
     pub fn cwd(&self) -> &str {
-        &self.cwd
+        self.core.cwd()
     }
     /// The configured debounce window (ms).
     pub fn debounce_ms(&self) -> u64 {
@@ -301,48 +279,32 @@ impl ClaudeInferMachine {
 
     /// Apply a parsed lifecycle hook event at monotonic millisecond time `now_ms`.
     pub fn apply(&mut self, ev: &ClaudeHookEvent, now_ms: u64) -> Transition {
-        if ev.session_id != self.session_id {
-            return self.no_op(false);
+        if ev.session_id != self.core.native_id() {
+            return self.core.no_op(false);
         }
-        if let Some(c) = &ev.cwd {
-            if !c.is_empty() {
-                self.cwd = c.clone();
-            }
-        }
-        if let Some(t) = &ev.tool_name {
-            self.last_tool = Some(t.clone());
-        }
+        self.core.note_cwd(ev.cwd.as_deref());
+        self.core.note_tool(ev.tool_name.as_deref());
 
         match &ev.kind {
             ClaudeHookKind::PreToolUse => {
                 let resolved = self.clear_inference();
-                let was_working = self.state == State::Working && self.urgency.is_none();
-                self.enter_working();
+                let was_working =
+                    self.core.state() == State::Working && self.core.urgency().is_none();
+                self.core.enter_working();
                 self.armed_since = Some(now_ms);
                 // Pin the precise correlation anchor + transcript for this arming.
                 self.armed_tool_use_id = ev.tool_use_id.clone();
                 self.armed_transcript_path = ev.transcript_path.clone();
-                Transition {
-                    state: self.state,
-                    urgency: self.urgency,
-                    confidence: self.confidence,
-                    changed: !was_working || resolved,
-                    resolved_inference: resolved,
-                    liveness: true,
-                }
+                self.core
+                    .transition(!was_working || resolved, resolved, true)
             }
             ClaudeHookKind::UserPromptSubmit => {
                 let resolved = self.clear_inference();
-                let was_working = self.state == State::Working && self.urgency.is_none();
-                self.enter_working();
-                Transition {
-                    state: self.state,
-                    urgency: self.urgency,
-                    confidence: self.confidence,
-                    changed: !was_working || resolved,
-                    resolved_inference: resolved,
-                    liveness: true,
-                }
+                let was_working =
+                    self.core.state() == State::Working && self.core.urgency().is_none();
+                self.core.enter_working();
+                self.core
+                    .transition(!was_working || resolved, resolved, true)
             }
             ClaudeHookKind::Stop => {
                 let resolved = self.clear_inference();
@@ -350,78 +312,47 @@ impl ClaudeInferMachine {
                     // A continuation Stop is not a real turn boundary: the agent is
                     // looping on, so it is activity — cancel any inference, stay
                     // working (never a completion claim).
-                    let was_working = self.state == State::Working && self.urgency.is_none();
-                    self.enter_working();
-                    return Transition {
-                        state: self.state,
-                        urgency: self.urgency,
-                        confidence: self.confidence,
-                        changed: !was_working || resolved,
-                        resolved_inference: resolved,
-                        liveness: true,
-                    };
+                    let was_working =
+                        self.core.state() == State::Working && self.core.urgency().is_none();
+                    self.core.enter_working();
+                    return self
+                        .core
+                        .transition(!was_working || resolved, resolved, true);
                 }
                 // The Stop event firing IS the turn-complete signal → Done.
-                let changed = self.state != State::Done || self.urgency.is_some();
-                self.state = State::Done;
-                self.urgency = None;
-                self.confidence = Confidence::Inferred;
-                Transition {
-                    state: self.state,
-                    urgency: self.urgency,
-                    confidence: self.confidence,
-                    changed: changed || resolved,
-                    resolved_inference: resolved,
-                    liveness: false,
-                }
+                let changed = self.core.state() != State::Done || self.core.urgency().is_some();
+                self.core.set_done();
+                self.core.transition(changed || resolved, resolved, false)
             }
             ClaudeHookKind::SessionEnd => {
                 self.armed_since = None;
                 self.inferred_waiting = false;
-                let changed = self.state != State::Dead;
-                self.state = State::Dead;
-                self.urgency = None;
-                self.confidence = Confidence::High; // confirmed exit is authoritative
-                Transition {
-                    state: self.state,
-                    urgency: self.urgency,
-                    confidence: self.confidence,
-                    changed,
-                    resolved_inference: false,
-                    liveness: false,
-                }
+                let changed = self.core.state() != State::Dead;
+                self.core.set_dead(); // confirmed exit is authoritative (High)
+                self.core.transition(changed, false, false)
             }
             ClaudeHookKind::SessionStart => {
-                if self.state == State::Dead {
-                    self.state = State::Idle;
-                    self.urgency = None;
-                    self.confidence = Confidence::Inferred;
+                if self.core.state() == State::Dead {
+                    self.core.revive_idle();
                     self.armed_since = None;
                     self.inferred_waiting = false;
-                    self.no_op(false).into_changed()
+                    self.core.no_op(false).into_changed()
                 } else {
-                    self.no_op(false)
+                    self.core.no_op(false)
                 }
             }
             ClaudeHookKind::PostToolUse => {
                 let resolved = self.clear_inference();
                 if resolved {
-                    self.enter_working();
-                    Transition {
-                        state: self.state,
-                        urgency: self.urgency,
-                        confidence: self.confidence,
-                        changed: true,
-                        resolved_inference: true,
-                        liveness: true,
-                    }
+                    self.core.enter_working();
+                    self.core.transition(true, true, true)
                 } else {
                     self.armed_since = None;
-                    self.no_op(true)
+                    self.core.no_op(true)
                 }
             }
-            ClaudeHookKind::SubagentStop | ClaudeHookKind::PreCompact => self.no_op(true),
-            ClaudeHookKind::Other(_) => self.no_op(false),
+            ClaudeHookKind::SubagentStop | ClaudeHookKind::PreCompact => self.core.no_op(true),
+            ClaudeHookKind::Other(_) => self.core.no_op(false),
         }
     }
 
@@ -433,7 +364,7 @@ impl ClaudeInferMachine {
             Some(armed_at) if now_ms.saturating_sub(armed_at) >= self.debounce_ms => {
                 self.fire_inference()
             }
-            _ => self.no_op(false),
+            _ => self.core.no_op(false),
         }
     }
 
@@ -448,62 +379,33 @@ impl ClaudeInferMachine {
             Corroboration::Resolved => {
                 let resolved = self.clear_inference();
                 if resolved {
-                    self.enter_working();
-                    Transition {
-                        state: self.state,
-                        urgency: self.urgency,
-                        confidence: self.confidence,
-                        changed: true,
-                        resolved_inference: true,
-                        liveness: false,
-                    }
+                    self.core.enter_working();
+                    self.core.transition(true, true, false)
                 } else {
                     self.armed_since = None;
-                    self.no_op(false)
+                    self.core.no_op(false)
                 }
             }
-            Corroboration::Stuck | Corroboration::Unknown => self.no_op(false),
+            Corroboration::Stuck | Corroboration::Unknown => self.core.no_op(false),
         }
     }
 
     /// Build the current [`AgentRun`] snapshot.
     pub fn to_run(&self, run_id: impl Into<String>, updated_at: impl Into<String>) -> AgentRun {
-        let updated_at = updated_at.into();
-        AgentRun {
-            schema_version: SCHEMA_VERSION,
-            run_id: run_id.into(),
-            agent_kind: AgentKind::ClaudeCode,
-            native_id: self.session_id.clone(),
-            cwd: self.cwd.clone(),
-            state: self.state,
-            urgency: self.urgency,
-            last_message: self.last_message(),
-            waiting_since: if self.state == State::Waiting {
-                Some(updated_at.clone())
-            } else {
-                None
-            },
-            confidence: self.confidence,
-            diff_summary: None,
-            updated_at,
-            extra: Extra::new(),
-        }
+        self.core.to_run(
+            AgentKind::ClaudeCode,
+            run_id.into(),
+            updated_at.into(),
+            self.last_message(),
+        )
     }
 
     fn fire_inference(&mut self) -> Transition {
         self.armed_since = None;
         self.inferred_waiting = true;
-        self.state = State::Waiting;
-        self.urgency = Some(Urgency::Approval);
-        self.confidence = Confidence::Inferred;
-        Transition {
-            state: self.state,
-            urgency: self.urgency,
-            confidence: self.confidence,
-            changed: true,
-            resolved_inference: false,
-            liveness: false,
-        }
+        // Inferred (never High) waiting — S16 is a heuristic by construction.
+        self.core.set_waiting_approval(Confidence::Inferred);
+        self.core.transition(true, false, false)
     }
 
     fn clear_inference(&mut self) -> bool {
@@ -515,31 +417,13 @@ impl ClaudeInferMachine {
         was_waiting
     }
 
-    fn enter_working(&mut self) {
-        self.state = State::Working;
-        self.urgency = None;
-        self.confidence = Confidence::Inferred;
-        self.inferred_waiting = false;
-    }
-
-    fn no_op(&self, liveness: bool) -> Transition {
-        Transition {
-            state: self.state,
-            urgency: self.urgency,
-            confidence: self.confidence,
-            changed: false,
-            resolved_inference: false,
-            liveness,
-        }
-    }
-
     fn last_message(&self) -> Option<String> {
-        match self.state {
-            State::Waiting => Some(match &self.last_tool {
+        match self.core.state() {
+            State::Waiting => Some(match self.core.last_tool() {
                 Some(t) => format!("Possibly waiting on {t} (inferred)"),
                 None => "Possibly waiting (inferred)".to_string(),
             }),
-            State::Working => self.last_tool.as_ref().map(|t| format!("Running {t}...")),
+            State::Working => self.core.last_tool().map(|t| format!("Running {t}...")),
             State::Done => Some("Task complete.".to_string()),
             State::Dead => Some("Session closed.".to_string()),
             _ => None,
@@ -547,10 +431,12 @@ impl ClaudeInferMachine {
     }
 }
 
-impl Transition {
-    fn into_changed(mut self) -> Self {
-        self.changed = true;
-        self
+impl crate::machine::RunMachine for ClaudeInferMachine {
+    fn run_state(&self) -> State {
+        self.core.state()
+    }
+    fn build_run(&self, run_id: String, updated_at: String) -> AgentRun {
+        self.to_run(run_id, updated_at)
     }
 }
 
@@ -559,8 +445,7 @@ impl Transition {
 /// session id.
 #[derive(Debug)]
 pub struct ClaudeInferAdapter {
-    sessions: std::collections::HashMap<String, ClaudeInferSession>,
-    run_counter: u64,
+    core: AdapterCore<ClaudeInferMachine>,
     debounce_ms: u64,
 }
 
@@ -568,12 +453,6 @@ impl Default for ClaudeInferAdapter {
     fn default() -> Self {
         Self::new()
     }
-}
-
-#[derive(Debug)]
-struct ClaudeInferSession {
-    machine: ClaudeInferMachine,
-    run_id: String,
 }
 
 impl ClaudeInferAdapter {
@@ -585,37 +464,34 @@ impl ClaudeInferAdapter {
     /// A fresh adapter with an explicit debounce window.
     pub fn with_debounce_ms(debounce_ms: u64) -> Self {
         ClaudeInferAdapter {
-            sessions: std::collections::HashMap::new(),
-            run_counter: 0,
+            core: AdapterCore::new("claude"),
             debounce_ms,
         }
     }
 
     /// Number of distinct sessions currently tracked.
     pub fn session_count(&self) -> usize {
-        self.sessions.len()
+        self.core.session_count()
     }
 
     /// The current run state for a session, if tracked.
     pub fn state_of(&self, session_id: &str) -> Option<State> {
-        self.sessions.get(session_id).map(|s| s.machine.state())
+        self.core.state_of(session_id)
     }
 
     /// The current confidence for a session, if tracked.
     pub fn confidence_of(&self, session_id: &str) -> Option<Confidence> {
-        self.sessions
-            .get(session_id)
-            .map(|s| s.machine.confidence())
+        self.core.machine_of(session_id).map(|m| m.confidence())
     }
 
     /// The Fleet run-id minted for a session, if tracked.
     pub fn run_id_of(&self, session_id: &str) -> Option<&str> {
-        self.sessions.get(session_id).map(|s| s.run_id.as_str())
+        self.core.run_id_of(session_id)
     }
 
     /// Borrow a session's state machine (tests).
     pub fn machine_of(&self, session_id: &str) -> Option<&ClaudeInferMachine> {
-        self.sessions.get(session_id).map(|s| &s.machine)
+        self.core.machine_of(session_id)
     }
 
     /// Ingest one **raw** recorded hook-event JSON line at time `now_ms`. Parse
@@ -633,14 +509,11 @@ impl ClaudeInferAdapter {
         ev: &ClaudeHookEvent,
         now_ms: u64,
     ) -> (Vec<ReporterCommand>, Transition) {
-        let session_id = ev.session_id.clone();
-        self.ensure_session(&session_id);
-        let session = self.sessions.get_mut(&session_id).expect("just inserted");
-        let transition = session.machine.apply(ev, now_ms);
-        let run_id = session.run_id.clone();
-        (
-            self.commands_for(&transition, &session_id, run_id),
-            transition,
+        let debounce_ms = self.debounce_ms;
+        self.core.apply_and_commands(
+            &ev.session_id,
+            || ClaudeInferMachine::with_debounce_ms(ev.session_id.clone(), debounce_ms),
+            |m| m.apply(ev, now_ms),
         )
     }
 
@@ -648,13 +521,8 @@ impl ClaudeInferAdapter {
     /// `UpsertRun`/`Liveness` commands.
     pub fn tick(&mut self, now_ms: u64) -> Vec<ReporterCommand> {
         let mut cmds = Vec::new();
-        let ids: Vec<String> = self.sessions.keys().cloned().collect();
-        for session_id in ids {
-            let (transition, run_id) = {
-                let session = self.sessions.get_mut(&session_id).expect("present");
-                (session.machine.tick(now_ms), session.run_id.clone())
-            };
-            cmds.extend(self.commands_for(&transition, &session_id, run_id));
+        for session_id in self.core.ids() {
+            cmds.extend(self.core.with_existing(&session_id, |m| m.tick(now_ms)));
         }
         cmds
     }
@@ -664,15 +532,10 @@ impl ClaudeInferAdapter {
     /// each transcript and corroborates the inferred `waiting` **before** the
     /// [`Self::tick`] fires it — the flagship native-UI corroboration path.
     pub fn pending_fires(&self, now_ms: u64) -> Vec<(String, Option<String>)> {
-        self.sessions
+        self.core
             .iter()
-            .filter(|(_, s)| s.machine.debounce_elapsed(now_ms))
-            .map(|(id, s)| {
-                (
-                    id.clone(),
-                    s.machine.armed_transcript_path().map(String::from),
-                )
-            })
+            .filter(|(_, m)| m.debounce_elapsed(now_ms))
+            .map(|(id, m)| (id.clone(), m.armed_transcript_path().map(String::from)))
             .collect()
     }
 
@@ -684,11 +547,8 @@ impl ClaudeInferAdapter {
         session_id: &str,
         verdict: Corroboration,
     ) -> Vec<ReporterCommand> {
-        let (transition, run_id) = match self.sessions.get_mut(session_id) {
-            Some(session) => (session.machine.corroborate(verdict), session.run_id.clone()),
-            None => return Vec::new(),
-        };
-        self.commands_for(&transition, session_id, run_id)
+        self.core
+            .with_existing(session_id, |m| m.corroborate(verdict))
     }
 
     /// Corroborate a session against a raw transcript `blob`, automatically using
@@ -697,8 +557,8 @@ impl ClaudeInferAdapter {
     /// heuristic ([`corroborate_jsonl`]) otherwise. The caller just hands over the
     /// transcript; the right correlation strategy is chosen here.
     pub fn corroborate_blob(&mut self, session_id: &str, blob: &str) -> Vec<ReporterCommand> {
-        let verdict = match self.sessions.get(session_id) {
-            Some(s) => match s.machine.armed_tool_use_id() {
+        let verdict = match self.core.machine_of(session_id) {
+            Some(m) => match m.armed_tool_use_id() {
                 Some(id) => corroborate_jsonl_for(blob, id),
                 None => corroborate_jsonl(blob),
             },
@@ -709,41 +569,7 @@ impl ClaudeInferAdapter {
 
     /// Forget a session entirely.
     pub fn forget(&mut self, session_id: &str) -> bool {
-        self.sessions.remove(session_id).is_some()
-    }
-
-    fn ensure_session(&mut self, session_id: &str) {
-        if !self.sessions.contains_key(session_id) {
-            self.run_counter += 1;
-            let run_id = format!("claude:{session_id}:run-{}", self.run_counter);
-            self.sessions.insert(
-                session_id.to_string(),
-                ClaudeInferSession {
-                    machine: ClaudeInferMachine::with_debounce_ms(
-                        session_id.to_string(),
-                        self.debounce_ms,
-                    ),
-                    run_id,
-                },
-            );
-        }
-    }
-
-    fn commands_for(
-        &self,
-        transition: &Transition,
-        session_id: &str,
-        run_id: String,
-    ) -> Vec<ReporterCommand> {
-        let mut cmds = Vec::new();
-        if transition.changed {
-            let machine = &self.sessions.get(session_id).expect("present").machine;
-            let run = machine.to_run(run_id, crate::fake::now_iso8601());
-            cmds.push(ReporterCommand::UpsertRun(run));
-        } else if transition.liveness {
-            cmds.push(ReporterCommand::Liveness { run_id });
-        }
-        cmds
+        self.core.forget(session_id)
     }
 }
 

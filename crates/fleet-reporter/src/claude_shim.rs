@@ -45,9 +45,11 @@
 //! **recorded Claude hook-event JSON fixtures** — both a native-UI fixture and a
 //! shim fixture of the *same* approval.
 
-use fleet_protocol::{AgentKind, AgentRun, Confidence, Extra, State, Urgency, SCHEMA_VERSION};
+use fleet_protocol::{AgentKind, AgentRun, Confidence, State, Urgency};
 
 use crate::claude::{ClaudeHookEvent, ClaudeHookKind, ClaudeParseError};
+pub use crate::machine::Transition;
+use crate::machine::{AdapterCore, Core};
 use crate::reporter::ReporterCommand;
 
 /// How a Claude run was launched, which **determines whether `PermissionRequest`
@@ -179,51 +181,26 @@ fn is_permission_request(kind: &ClaudeHookKind) -> bool {
 ///   `working`/`done`. There is no inbound approval-response event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClaudeShimStateMachine {
-    session_id: String,
+    /// The shared lifecycle state (session_id anchor, cwd, state, urgency,
+    /// confidence, last tool, pending-approval).
+    core: Core,
+    /// The launch context this run is fixed to — the confidence boundary for a
+    /// raised approval (S17-specific).
     ctx: LaunchContext,
-    cwd: String,
-    state: State,
-    urgency: Option<Urgency>,
-    confidence: Confidence,
-    last_tool: Option<String>,
-    pending_approval: bool,
-}
-
-/// A single transition decision, mirroring the Codex/S15 transition shape.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Transition {
-    /// The run's state after the event.
-    pub state: State,
-    /// The run's urgency after the event.
-    pub urgency: Option<Urgency>,
-    /// The run's confidence after the event.
-    pub confidence: Confidence,
-    /// Whether the run-relevant fields actually changed (vs. a no-op).
-    pub changed: bool,
-    /// Whether this transition cleared a pending approval (auto-resolve / answer).
-    pub resolved_approval: bool,
-    /// Whether this event is a pure liveness signal.
-    pub liveness: bool,
 }
 
 impl ClaudeShimStateMachine {
     /// A new machine for a session in the given launch context, starting `idle`.
     pub fn new(session_id: impl Into<String>, ctx: LaunchContext) -> Self {
         ClaudeShimStateMachine {
-            session_id: session_id.into(),
+            core: Core::new(session_id),
             ctx,
-            cwd: "/".to_string(),
-            state: State::Idle,
-            urgency: None,
-            confidence: Confidence::Inferred,
-            last_tool: None,
-            pending_approval: false,
         }
     }
 
     /// The session's durable id (Claude `session_id`).
     pub fn session_id(&self) -> &str {
-        &self.session_id
+        self.core.native_id()
     }
     /// The launch context this run is fixed to.
     pub fn context(&self) -> LaunchContext {
@@ -231,40 +208,34 @@ impl ClaudeShimStateMachine {
     }
     /// The run's current state.
     pub fn state(&self) -> State {
-        self.state
+        self.core.state()
     }
     /// The run's current urgency.
     pub fn urgency(&self) -> Option<Urgency> {
-        self.urgency
+        self.core.urgency()
     }
     /// The run's current confidence.
     pub fn confidence(&self) -> Confidence {
-        self.confidence
+        self.core.confidence()
     }
     /// Whether an approval is outstanding.
     pub fn awaiting_approval(&self) -> bool {
-        self.pending_approval
+        self.core.pending_approval()
     }
     /// The session's last-known working directory.
     pub fn cwd(&self) -> &str {
-        &self.cwd
+        self.core.cwd()
     }
 
     /// Apply a parsed S15 hook event (the lifecycle hooks: start/prompt/tool/stop/
     /// end). A `PermissionRequest` is raised as a fresh approval here too; the
     /// dedicated [`Self::apply_approval`] path is the same request-only entry.
     pub fn apply(&mut self, ev: &ClaudeHookEvent) -> Transition {
-        if ev.session_id != self.session_id {
-            return self.no_op(false);
+        if ev.session_id != self.core.native_id() {
+            return self.core.no_op(false);
         }
-        if let Some(c) = &ev.cwd {
-            if !c.is_empty() {
-                self.cwd = c.clone();
-            }
-        }
-        if let Some(t) = &ev.tool_name {
-            self.last_tool = Some(t.clone());
-        }
+        self.core.note_cwd(ev.cwd.as_deref());
+        self.core.note_tool(ev.tool_name.as_deref());
 
         // A PermissionRequest reaching the lifecycle path (e.g. routed as Other)
         // is handled as a fresh approval request.
@@ -274,79 +245,47 @@ impl ClaudeShimStateMachine {
 
         match &ev.kind {
             ClaudeHookKind::UserPromptSubmit | ClaudeHookKind::PreToolUse => {
-                let resolved = self.pending_approval;
-                let was_working = self.state == State::Working && self.urgency.is_none();
-                self.enter_working();
-                Transition {
-                    state: self.state,
-                    urgency: self.urgency,
-                    confidence: self.confidence,
-                    changed: !was_working || resolved,
-                    resolved_approval: resolved,
-                    liveness: true,
-                }
+                let resolved = self.core.pending_approval();
+                let was_working =
+                    self.core.state() == State::Working && self.core.urgency().is_none();
+                self.core.enter_working();
+                self.core
+                    .transition(!was_working || resolved, resolved, true)
             }
             ClaudeHookKind::Stop => {
-                let resolved = self.pending_approval;
+                let resolved = self.core.pending_approval();
                 if ev.stop_hook_active {
                     // A continuation Stop is not a real turn boundary — activity,
                     // not completion: cancel any pending approval, stay working.
-                    let was_working = self.state == State::Working && self.urgency.is_none();
-                    self.enter_working();
-                    return Transition {
-                        state: self.state,
-                        urgency: self.urgency,
-                        confidence: self.confidence,
-                        changed: !was_working || resolved,
-                        resolved_approval: resolved,
-                        liveness: true,
-                    };
+                    let was_working =
+                        self.core.state() == State::Working && self.core.urgency().is_none();
+                    self.core.enter_working();
+                    return self
+                        .core
+                        .transition(!was_working || resolved, resolved, true);
                 }
                 // The Stop event firing IS the turn-complete signal → Done.
-                let changed = self.state != State::Done || self.urgency.is_some();
-                self.state = State::Done;
-                self.urgency = None;
-                self.confidence = Confidence::Inferred;
-                self.pending_approval = false;
-                Transition {
-                    state: self.state,
-                    urgency: self.urgency,
-                    confidence: self.confidence,
-                    changed: changed || resolved,
-                    resolved_approval: resolved,
-                    liveness: false,
-                }
+                let changed = self.core.state() != State::Done || self.core.urgency().is_some();
+                self.core.set_done();
+                self.core.transition(changed || resolved, resolved, false)
             }
             ClaudeHookKind::SessionEnd => {
-                let changed = self.state != State::Dead;
-                self.state = State::Dead;
-                self.urgency = None;
-                self.confidence = Confidence::High; // confirmed exit is authoritative
-                self.pending_approval = false;
-                Transition {
-                    state: self.state,
-                    urgency: self.urgency,
-                    confidence: self.confidence,
-                    changed,
-                    resolved_approval: false,
-                    liveness: false,
-                }
+                let changed = self.core.state() != State::Dead;
+                self.core.set_dead(); // confirmed exit is authoritative (High)
+                self.core.transition(changed, false, false)
             }
             ClaudeHookKind::SessionStart => {
-                if self.state == State::Dead {
-                    self.state = State::Idle;
-                    self.urgency = None;
-                    self.confidence = Confidence::Inferred;
-                    self.pending_approval = false;
-                    self.no_op(false).into_changed()
+                if self.core.state() == State::Dead {
+                    self.core.revive_idle();
+                    self.core.no_op(false).into_changed()
                 } else {
-                    self.no_op(false)
+                    self.core.no_op(false)
                 }
             }
             ClaudeHookKind::PostToolUse
             | ClaudeHookKind::SubagentStop
-            | ClaudeHookKind::PreCompact => self.no_op(true),
-            ClaudeHookKind::Other(_) => self.no_op(false),
+            | ClaudeHookKind::PreCompact => self.core.no_op(true),
+            ClaudeHookKind::Other(_) => self.core.no_op(false),
         }
     }
 
@@ -356,17 +295,11 @@ impl ClaudeShimStateMachine {
     /// confidence and auto-resolves later via the subsequent activity hooks
     /// (handled in [`Self::apply`]).
     pub fn apply_approval(&mut self, req: &ApprovalRequest) -> Transition {
-        if req.session_id != self.session_id {
-            return self.no_op(false);
+        if req.session_id != self.core.native_id() {
+            return self.core.no_op(false);
         }
-        if let Some(c) = &req.cwd {
-            if !c.is_empty() {
-                self.cwd = c.clone();
-            }
-        }
-        if let Some(t) = &req.tool_name {
-            self.last_tool = Some(t.clone());
-        }
+        self.core.note_cwd(req.cwd.as_deref());
+        self.core.note_tool(req.tool_name.as_deref());
         self.raise_approval()
     }
 
@@ -374,73 +307,32 @@ impl ClaudeShimStateMachine {
     /// `session_id` durable anchor (S15-identical), so the reporter framework keys
     /// identity on it regardless of launch context.
     pub fn to_run(&self, run_id: impl Into<String>, updated_at: impl Into<String>) -> AgentRun {
-        let updated_at = updated_at.into();
-        AgentRun {
-            schema_version: SCHEMA_VERSION,
-            run_id: run_id.into(),
-            agent_kind: AgentKind::ClaudeCode,
-            native_id: self.session_id.clone(),
-            cwd: self.cwd.clone(),
-            state: self.state,
-            urgency: self.urgency,
-            last_message: self.last_message(),
-            waiting_since: if self.state == State::Waiting {
-                Some(updated_at.clone())
-            } else {
-                None
-            },
-            confidence: self.confidence,
-            diff_summary: None,
-            updated_at,
-            extra: Extra::new(),
-        }
+        self.core.to_run(
+            AgentKind::ClaudeCode,
+            run_id.into(),
+            updated_at.into(),
+            self.last_message(),
+        )
     }
 
     // ── internal transitions ─────────────────────────────────────────────────
 
     fn raise_approval(&mut self) -> Transition {
-        self.state = State::Waiting;
-        self.urgency = Some(Urgency::Approval);
         // THE confidence boundary: High iff the shim makes PermissionRequest
         // authoritative; Inferred in the native UI. This is the only High-from-
         // waiting path in the whole adapter.
-        self.confidence = self.ctx.approval_confidence();
-        self.pending_approval = true;
-        Transition {
-            state: self.state,
-            urgency: self.urgency,
-            confidence: self.confidence,
-            changed: true,
-            resolved_approval: false,
-            liveness: true,
-        }
-    }
-
-    fn enter_working(&mut self) {
-        self.state = State::Working;
-        self.urgency = None;
-        self.confidence = Confidence::Inferred;
-        self.pending_approval = false;
-    }
-
-    fn no_op(&self, liveness: bool) -> Transition {
-        Transition {
-            state: self.state,
-            urgency: self.urgency,
-            confidence: self.confidence,
-            changed: false,
-            resolved_approval: false,
-            liveness,
-        }
+        self.core
+            .set_waiting_approval(self.ctx.approval_confidence());
+        self.core.transition(true, false, true)
     }
 
     fn last_message(&self) -> Option<String> {
-        match self.state {
-            State::Waiting => Some(match &self.last_tool {
+        match self.core.state() {
+            State::Waiting => Some(match self.core.last_tool() {
                 Some(t) => format!("Approve {t}?"),
                 None => "Approval required".to_string(),
             }),
-            State::Working => self.last_tool.as_ref().map(|t| format!("Running {t}…")),
+            State::Working => self.core.last_tool().map(|t| format!("Running {t}…")),
             State::Done => Some("Task complete.".to_string()),
             State::Dead => Some("Session closed.".to_string()),
             _ => None,
@@ -448,10 +340,12 @@ impl ClaudeShimStateMachine {
     }
 }
 
-impl Transition {
-    fn into_changed(mut self) -> Self {
-        self.changed = true;
-        self
+impl crate::machine::RunMachine for ClaudeShimStateMachine {
+    fn run_state(&self) -> State {
+        self.core.state()
+    }
+    fn build_run(&self, run_id: String, updated_at: String) -> AgentRun {
+        self.to_run(run_id, updated_at)
     }
 }
 
@@ -467,14 +361,7 @@ impl Transition {
 #[derive(Debug)]
 pub struct ClaudeShimAdapter {
     ctx: LaunchContext,
-    sessions: std::collections::HashMap<String, ClaudeShimSession>,
-    run_counter: u64,
-}
-
-#[derive(Debug)]
-struct ClaudeShimSession {
-    machine: ClaudeShimStateMachine,
-    run_id: String,
+    core: AdapterCore<ClaudeShimStateMachine>,
 }
 
 impl ClaudeShimAdapter {
@@ -482,8 +369,7 @@ impl ClaudeShimAdapter {
     pub fn new(ctx: LaunchContext) -> Self {
         ClaudeShimAdapter {
             ctx,
-            sessions: std::collections::HashMap::new(),
-            run_counter: 0,
+            core: AdapterCore::new("claude"),
         }
     }
 
@@ -494,29 +380,27 @@ impl ClaudeShimAdapter {
 
     /// Number of distinct sessions currently tracked.
     pub fn session_count(&self) -> usize {
-        self.sessions.len()
+        self.core.session_count()
     }
 
     /// The current run state for a session, if tracked.
     pub fn state_of(&self, session_id: &str) -> Option<State> {
-        self.sessions.get(session_id).map(|s| s.machine.state())
+        self.core.state_of(session_id)
     }
 
     /// The current confidence for a session, if tracked.
     pub fn confidence_of(&self, session_id: &str) -> Option<Confidence> {
-        self.sessions
-            .get(session_id)
-            .map(|s| s.machine.confidence())
+        self.core.machine_of(session_id).map(|m| m.confidence())
     }
 
     /// The Fleet run-id minted for a session, if tracked.
     pub fn run_id_of(&self, session_id: &str) -> Option<&str> {
-        self.sessions.get(session_id).map(|s| s.run_id.as_str())
+        self.core.run_id_of(session_id)
     }
 
     /// Borrow a session's state machine (tests).
     pub fn machine_of(&self, session_id: &str) -> Option<&ClaudeShimStateMachine> {
-        self.sessions.get(session_id).map(|s| &s.machine)
+        self.core.machine_of(session_id)
     }
 
     /// Ingest one **raw** recorded hook-event JSON line, dispatching by event kind:
@@ -542,64 +426,27 @@ impl ClaudeShimAdapter {
 
     /// Ingest a parsed lifecycle hook event.
     pub fn ingest(&mut self, ev: &ClaudeHookEvent) -> (Vec<ReporterCommand>, Transition) {
-        let session_id = ev.session_id.clone();
-        self.ensure_session(&session_id);
-        let session = self.sessions.get_mut(&session_id).expect("just inserted");
-        let transition = session.machine.apply(ev);
-        let run_id = session.run_id.clone();
-        (
-            self.commands_for(&transition, &session_id, run_id),
-            transition,
+        let ctx = self.ctx;
+        self.core.apply_and_commands(
+            &ev.session_id,
+            || ClaudeShimStateMachine::new(ev.session_id.clone(), ctx),
+            |m| m.apply(ev),
         )
     }
 
     /// Ingest a parsed approval request.
     pub fn ingest_approval(&mut self, req: &ApprovalRequest) -> (Vec<ReporterCommand>, Transition) {
-        let session_id = req.session_id.clone();
-        self.ensure_session(&session_id);
-        let session = self.sessions.get_mut(&session_id).expect("just inserted");
-        let transition = session.machine.apply_approval(req);
-        let run_id = session.run_id.clone();
-        (
-            self.commands_for(&transition, &session_id, run_id),
-            transition,
+        let ctx = self.ctx;
+        self.core.apply_and_commands(
+            &req.session_id,
+            || ClaudeShimStateMachine::new(req.session_id.clone(), ctx),
+            |m| m.apply_approval(req),
         )
     }
 
     /// Forget a session entirely.
     pub fn forget(&mut self, session_id: &str) -> bool {
-        self.sessions.remove(session_id).is_some()
-    }
-
-    fn ensure_session(&mut self, session_id: &str) {
-        if !self.sessions.contains_key(session_id) {
-            self.run_counter += 1;
-            let run_id = format!("claude:{session_id}:run-{}", self.run_counter);
-            self.sessions.insert(
-                session_id.to_string(),
-                ClaudeShimSession {
-                    machine: ClaudeShimStateMachine::new(session_id.to_string(), self.ctx),
-                    run_id,
-                },
-            );
-        }
-    }
-
-    fn commands_for(
-        &self,
-        transition: &Transition,
-        session_id: &str,
-        run_id: String,
-    ) -> Vec<ReporterCommand> {
-        let mut cmds = Vec::new();
-        if transition.changed {
-            let machine = &self.sessions.get(session_id).expect("present").machine;
-            let run = machine.to_run(run_id, crate::fake::now_iso8601());
-            cmds.push(ReporterCommand::UpsertRun(run));
-        } else if transition.liveness {
-            cmds.push(ReporterCommand::Liveness { run_id });
-        }
-        cmds
+        self.core.forget(session_id)
     }
 }
 

@@ -51,6 +51,7 @@ pub mod codex;
 pub mod fake;
 pub mod identity;
 pub mod liveness;
+pub mod machine;
 pub mod reporter;
 pub mod serve;
 pub mod testkit;

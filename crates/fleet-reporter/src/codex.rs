@@ -65,7 +65,10 @@
 
 use serde::Deserialize;
 
-use fleet_protocol::{AgentKind, AgentRun, Confidence, Extra, State, Urgency, SCHEMA_VERSION};
+use fleet_protocol::{AgentKind, AgentRun, Confidence, State, Urgency};
+
+use crate::machine::Core;
+pub use crate::machine::Transition;
 
 /// The set of Codex hook events Fleet understands. Unknown event names are
 /// preserved as [`CodexHookKind::Other`] so a Codex version that adds a hook
@@ -249,37 +252,12 @@ impl CodexHookEvent {
 ///   or a `Stop` leaves `waiting`; there is no inbound approval-response event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodexStateMachine {
-    thread_id: String,
-    cwd: String,
-    state: State,
-    urgency: Option<Urgency>,
-    confidence: Confidence,
-    last_tool: Option<String>,
-    /// Set when a `PermissionRequest` is outstanding, so a later activity hook can
-    /// recognise it as the *auto-resolve* of that approval.
-    pending_approval: bool,
+    /// The shared lifecycle state (thread.id anchor, cwd, state, urgency,
+    /// confidence, last tool, pending-approval).
+    core: Core,
     /// The assistant's last message (from a `Stop`'s `last_assistant_message`),
-    /// surfaced as the idle/done inbox preview.
+    /// surfaced as the idle/done inbox preview. Codex-specific.
     last_assistant_message: Option<String>,
-}
-
-/// A single state transition the machine decided, returned by
-/// [`CodexStateMachine::apply`]. `changed` is `false` for a no-op (the event was
-/// understood but did not move the run — e.g. telemetry, or a duplicate).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Transition {
-    /// The run's state after the event.
-    pub state: State,
-    /// The run's urgency after the event (`None` ⇒ no urgency).
-    pub urgency: Option<Urgency>,
-    /// The run's confidence after the event.
-    pub confidence: Confidence,
-    /// Whether the run-relevant fields actually changed (vs. a no-op).
-    pub changed: bool,
-    /// Whether this transition *cleared* a pending approval (auto-resolve / answer).
-    pub resolved_approval: bool,
-    /// Whether this event is a pure liveness signal (refresh the timeout window).
-    pub liveness: bool,
 }
 
 impl CodexStateMachine {
@@ -288,41 +266,39 @@ impl CodexStateMachine {
     /// best-effort default until a hook supplies one.
     pub fn new(thread_id: impl Into<String>) -> Self {
         CodexStateMachine {
-            thread_id: thread_id.into(),
-            cwd: "/".to_string(),
-            state: State::Idle,
-            urgency: None,
-            // Idle is not an authoritative *waiting* signal; honesty ⇒ Inferred.
-            confidence: Confidence::Inferred,
-            last_tool: None,
-            pending_approval: false,
+            core: Core::new(thread_id),
             last_assistant_message: None,
         }
     }
 
     /// The thread's durable id (Codex `thread.id`).
     pub fn thread_id(&self) -> &str {
-        &self.thread_id
+        self.core.native_id()
     }
     /// The run's current state.
     pub fn state(&self) -> State {
-        self.state
+        self.core.state()
+    }
+    /// Test-only: force an arbitrary state (see [`Core::set_state_for_test`]).
+    #[cfg(test)]
+    pub(crate) fn set_state_for_test(&mut self, s: State) {
+        self.core.set_state_for_test(s);
     }
     /// The run's current urgency.
     pub fn urgency(&self) -> Option<Urgency> {
-        self.urgency
+        self.core.urgency()
     }
     /// The run's current confidence.
     pub fn confidence(&self) -> Confidence {
-        self.confidence
+        self.core.confidence()
     }
     /// Whether an approval is outstanding.
     pub fn awaiting_approval(&self) -> bool {
-        self.pending_approval
+        self.core.pending_approval()
     }
     /// The thread's last-known working directory.
     pub fn cwd(&self) -> &str {
-        &self.cwd
+        self.core.cwd()
     }
 
     /// Apply a parsed hook event, mutating the machine and returning the
@@ -331,17 +307,11 @@ impl CodexStateMachine {
     pub fn apply(&mut self, ev: &CodexHookEvent) -> Transition {
         // Thread-id mismatch: the caller routes per thread, but guard anyway —
         // a foreign event must never mutate this machine.
-        if ev.thread_id != self.thread_id {
-            return self.no_op(false);
+        if ev.thread_id != self.core.native_id() {
+            return self.core.no_op(false);
         }
-        if let Some(c) = &ev.cwd {
-            if !c.is_empty() {
-                self.cwd = c.clone();
-            }
-        }
-        if let Some(t) = &ev.tool_name {
-            self.last_tool = Some(t.clone());
-        }
+        self.core.note_cwd(ev.cwd.as_deref());
+        self.core.note_tool(ev.tool_name.as_deref());
         if let Some(m) = &ev.last_message {
             self.last_assistant_message = Some(m.clone());
         }
@@ -350,68 +320,43 @@ impl CodexStateMachine {
             // ── activity hooks → working ─────────────────────────────────────
             CodexHookKind::UserPromptSubmit | CodexHookKind::PreToolUse => {
                 // Fresh activity auto-resolves any stale pending approval.
-                let resolved = self.pending_approval;
-                let was_working = self.state == State::Working && self.urgency.is_none();
-                self.enter_working();
-                Transition {
-                    state: self.state,
-                    urgency: self.urgency,
-                    confidence: self.confidence,
-                    // Changed iff we actually moved (a working→working repeat with
-                    // no pending approval is a no-op, just a liveness ping).
-                    changed: !was_working || resolved,
-                    resolved_approval: resolved,
-                    liveness: true,
-                }
+                let resolved = self.core.pending_approval();
+                let was_working =
+                    self.core.state() == State::Working && self.core.urgency().is_none();
+                self.core.enter_working();
+                // Changed iff we actually moved (a working→working repeat with no
+                // pending approval is a no-op, just a liveness ping).
+                self.core
+                    .transition(!was_working || resolved, resolved, true)
             }
 
             // ── permission gate ──────────────────────────────────────────────
             CodexHookKind::PermissionRequest => {
                 // A `PermissionRequest` is always a fresh request (there is no
-                // inbound response event) → waiting+approval, authoritative. It
-                // auto-resolves later via the subsequent activity hooks.
-                self.enter_waiting_approval();
-                Transition {
-                    state: self.state,
-                    urgency: self.urgency,
-                    confidence: self.confidence,
-                    changed: true,
-                    resolved_approval: false,
-                    liveness: true,
-                }
+                // inbound response event) → waiting+approval, authoritative
+                // (`High` — the only High path). It auto-resolves later via the
+                // subsequent activity hooks.
+                self.core.set_waiting_approval(Confidence::High);
+                self.core.transition(true, false, true)
             }
 
             // ── turn complete → done ─────────────────────────────────────────
             CodexHookKind::Stop => {
-                let resolved = self.pending_approval;
+                let resolved = self.core.pending_approval();
                 if ev.stop_hook_active {
                     // A continuation Stop is not a real turn boundary — activity,
                     // not completion: cancel any pending approval, stay working.
-                    let was_working = self.state == State::Working && self.urgency.is_none();
-                    self.enter_working();
-                    return Transition {
-                        state: self.state,
-                        urgency: self.urgency,
-                        confidence: self.confidence,
-                        changed: !was_working || resolved,
-                        resolved_approval: resolved,
-                        liveness: true,
-                    };
+                    let was_working =
+                        self.core.state() == State::Working && self.core.urgency().is_none();
+                    self.core.enter_working();
+                    return self
+                        .core
+                        .transition(!was_working || resolved, resolved, true);
                 }
                 // The Stop event firing IS the turn-complete signal → Done.
-                let changed = self.state != State::Done || self.urgency.is_some();
-                self.state = State::Done;
-                self.urgency = None;
-                self.confidence = Confidence::Inferred;
-                self.pending_approval = false;
-                Transition {
-                    state: self.state,
-                    urgency: self.urgency,
-                    confidence: self.confidence,
-                    changed: changed || resolved,
-                    resolved_approval: resolved,
-                    liveness: false,
-                }
+                let changed = self.core.state() != State::Done || self.core.urgency().is_some();
+                self.core.set_done();
+                self.core.transition(changed || resolved, resolved, false)
             }
 
             // ── thread opened → idle (liveness) ──────────────────────────────
@@ -420,12 +365,12 @@ impl CodexStateMachine {
             // itself — a run's death is driven by the reporter's liveness timeout
             // / process-exit. A `SessionStart` on a live thread is an idempotent
             // no-op that still refreshes liveness.
-            CodexHookKind::SessionStart => self.no_op(true),
+            CodexHookKind::SessionStart => self.core.no_op(true),
 
             // ── telemetry-only hooks: liveness, no state flip ────────────────
-            CodexHookKind::PostToolUse => self.no_op(true),
-            CodexHookKind::PreCompact | CodexHookKind::PostCompact => self.no_op(true),
-            CodexHookKind::Other(_) => self.no_op(false),
+            CodexHookKind::PostToolUse => self.core.no_op(true),
+            CodexHookKind::PreCompact | CodexHookKind::PostCompact => self.core.no_op(true),
+            CodexHookKind::Other(_) => self.core.no_op(false),
         }
     }
 
@@ -433,64 +378,21 @@ impl CodexStateMachine {
     /// given timestamp. The run's `native_id` is the Codex `thread.id` (durable
     /// anchor), so the reporter framework keys identity on it.
     pub fn to_run(&self, run_id: impl Into<String>, updated_at: impl Into<String>) -> AgentRun {
-        let updated_at = updated_at.into();
-        AgentRun {
-            schema_version: SCHEMA_VERSION,
-            run_id: run_id.into(),
-            agent_kind: AgentKind::Codex,
-            native_id: self.thread_id.clone(),
-            cwd: self.cwd.clone(),
-            state: self.state,
-            urgency: self.urgency,
-            last_message: self.last_message(),
-            waiting_since: if self.state == State::Waiting {
-                Some(updated_at.clone())
-            } else {
-                None
-            },
-            confidence: self.confidence,
-            diff_summary: None,
-            updated_at,
-            extra: Extra::new(),
-        }
-    }
-
-    // ── internal transitions ─────────────────────────────────────────────────
-
-    fn enter_working(&mut self) {
-        self.state = State::Working;
-        self.urgency = None;
-        // Honesty: working is inferred from activity, not an authoritative signal.
-        self.confidence = Confidence::Inferred;
-        self.pending_approval = false;
-    }
-
-    fn enter_waiting_approval(&mut self) {
-        self.state = State::Waiting;
-        self.urgency = Some(Urgency::Approval);
-        // The ONLY path to High confidence: an authoritative PermissionRequest.
-        self.confidence = Confidence::High;
-        self.pending_approval = true;
-    }
-
-    fn no_op(&self, liveness: bool) -> Transition {
-        Transition {
-            state: self.state,
-            urgency: self.urgency,
-            confidence: self.confidence,
-            changed: false,
-            resolved_approval: false,
-            liveness,
-        }
+        self.core.to_run(
+            AgentKind::Codex,
+            run_id.into(),
+            updated_at.into(),
+            self.last_message(),
+        )
     }
 
     fn last_message(&self) -> Option<String> {
-        match self.state {
-            State::Waiting => Some(match &self.last_tool {
+        match self.core.state() {
+            State::Waiting => Some(match self.core.last_tool() {
                 Some(t) => format!("Approve {t}?"),
                 None => "Approval required".to_string(),
             }),
-            State::Working => self.last_tool.as_ref().map(|t| format!("Running {t}…")),
+            State::Working => self.core.last_tool().map(|t| format!("Running {t}…")),
             // A real `Stop` ends the turn → Done, carrying what Codex said (real
             // `Stop` carries `last_assistant_message`); falls back when absent.
             State::Done => Some(
@@ -503,6 +405,15 @@ impl CodexStateMachine {
             // level (no Codex `SessionEnd`), so it never previews here.
             _ => None,
         }
+    }
+}
+
+impl crate::machine::RunMachine for CodexStateMachine {
+    fn run_state(&self) -> State {
+        self.core.state()
+    }
+    fn build_run(&self, run_id: String, updated_at: String) -> AgentRun {
+        self.to_run(run_id, updated_at)
     }
 }
 
@@ -527,44 +438,46 @@ impl CodexStateMachine {
 /// The adapter is sync and Hub-free; it returns commands for the caller to feed
 /// into a [`crate::reporter::ReporterHandle`]. This keeps it exhaustively testable
 /// without a runtime, while reusing the gated REPCORE/IDENTITY framework verbatim.
-#[derive(Debug, Default)]
-pub struct CodexAdapter {
-    threads: std::collections::HashMap<String, CodexThread>,
-    run_counter: u64,
-}
-
 #[derive(Debug)]
-struct CodexThread {
-    machine: CodexStateMachine,
-    run_id: String,
+pub struct CodexAdapter {
+    core: AdapterCore<CodexStateMachine>,
 }
 
+impl Default for CodexAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+use crate::machine::AdapterCore;
 use crate::reporter::ReporterCommand;
 
 impl CodexAdapter {
     /// A fresh adapter tracking no threads.
     pub fn new() -> Self {
-        Self::default()
+        CodexAdapter {
+            core: AdapterCore::new("codex"),
+        }
     }
 
     /// Number of distinct Codex threads currently tracked.
     pub fn thread_count(&self) -> usize {
-        self.threads.len()
+        self.core.session_count()
     }
 
     /// The current run state for a thread, if tracked (for assertions/UX).
     pub fn state_of(&self, thread_id: &str) -> Option<State> {
-        self.threads.get(thread_id).map(|t| t.machine.state())
+        self.core.state_of(thread_id)
     }
 
     /// The Fleet run-id minted for a thread, if tracked.
     pub fn run_id_of(&self, thread_id: &str) -> Option<&str> {
-        self.threads.get(thread_id).map(|t| t.run_id.as_str())
+        self.core.run_id_of(thread_id)
     }
 
     /// Borrow a thread's state machine (tests).
     pub fn machine_of(&self, thread_id: &str) -> Option<&CodexStateMachine> {
-        self.threads.get(thread_id).map(|t| &t.machine)
+        self.core.machine_of(thread_id)
     }
 
     /// Ingest one **raw** recorded hook-event JSON line, producing the
@@ -583,40 +496,17 @@ impl CodexAdapter {
     /// transition is exposed so callers/tests can assert on the state-machine
     /// decision independently of the wire commands.
     pub fn ingest(&mut self, ev: &CodexHookEvent) -> (Vec<ReporterCommand>, Transition) {
-        // First sighting of a thread mints its Fleet run-id and machine.
-        if !self.threads.contains_key(&ev.thread_id) {
-            self.run_counter += 1;
-            let run_id = format!("codex:{}:run-{}", ev.thread_id, self.run_counter);
-            self.threads.insert(
-                ev.thread_id.clone(),
-                CodexThread {
-                    machine: CodexStateMachine::new(ev.thread_id.clone()),
-                    run_id,
-                },
-            );
-        }
-        let thread = self.threads.get_mut(&ev.thread_id).expect("just inserted");
-        let transition = thread.machine.apply(ev);
-        let run_id = thread.run_id.clone();
-
-        let mut cmds = Vec::new();
-        if transition.changed {
-            let run = thread
-                .machine
-                .to_run(run_id.clone(), crate::fake::now_iso8601());
-            cmds.push(ReporterCommand::UpsertRun(run));
-        } else if transition.liveness {
-            // Pure liveness refresh (PostToolUse / compaction): no Hub delta, just
-            // keep the run from being timed out while it is genuinely busy.
-            cmds.push(ReporterCommand::Liveness { run_id });
-        }
-        (cmds, transition)
+        self.core.apply_and_commands(
+            &ev.thread_id,
+            || CodexStateMachine::new(ev.thread_id.clone()),
+            |m| m.apply(ev),
+        )
     }
 
     /// Forget a thread entirely (e.g. its run was reaped as dead). A later event
     /// for the same thread starts a fresh run.
     pub fn forget(&mut self, thread_id: &str) -> bool {
-        self.threads.remove(thread_id).is_some()
+        self.core.forget(thread_id)
     }
 }
 
