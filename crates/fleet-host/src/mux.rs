@@ -931,26 +931,14 @@ fn blank_singleton_editor(app: &AppHandle, state: &State<'_, MuxState>) {
 }
 
 // Glue: reads supervisor + registry from managed state via the live `AppHandle`.
+// Reuses `servers_for_app` (the same merge+dedup+id-sort seam), then returns the
+// first id that isn't `exclude` — instead of re-implementing that ordering.
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn first_server_id(app: &AppHandle, exclude: Option<&str>) -> Option<String> {
-    let mut seen = std::collections::HashSet::new();
-    let mut ids = Vec::new();
-    if let Some(sup) = app.try_state::<crate::spawn::ServerSupervisor>() {
-        for server in sup.servers() {
-            if exclude != Some(server.id.as_str()) && seen.insert(server.id.clone()) {
-                ids.push(server.id);
-            }
-        }
-    }
-    if let Some(reg) = app.try_state::<crate::bridge::BridgeRegistry>() {
-        for server in reg.servers() {
-            if exclude != Some(server.id.as_str()) && seen.insert(server.id.clone()) {
-                ids.push(server.id);
-            }
-        }
-    }
-    ids.sort();
-    ids.into_iter().next()
+    servers_for_app(app)
+        .into_iter()
+        .map(|s| s.id)
+        .find(|id| exclude != Some(id.as_str()))
 }
 
 // Glue: evaluates a selection-sync JS hook in the rail webview.

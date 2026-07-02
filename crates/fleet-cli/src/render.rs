@@ -58,6 +58,19 @@ pub struct Row {
     pub runs: Vec<RunRow>,
 }
 
+/// Recompute a session's rolled-up state + urgency from its current `runs` list.
+/// `Urgency::None` normalizes to absent (`None`), matching the wire contract.
+fn recompute_rollups(sess: &mut Session) {
+    sess.rollup_state = rollup_state(&sess.runs).unwrap_or(RunState::Idle);
+    sess.rollup_urgency = rollup_urgency(&sess.runs).and_then(|u| {
+        if u == Urgency::None {
+            None
+        } else {
+            Some(u)
+        }
+    });
+}
+
 /// A rendered per-run sub-row embedded within a [`Row`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunRow {
@@ -208,14 +221,7 @@ impl CliState {
                         sess.runs.push(run);
                     }
                     // Recompute rollups from the local runs list.
-                    sess.rollup_state = rollup_state(&sess.runs).unwrap_or(RunState::Idle);
-                    sess.rollup_urgency = rollup_urgency(&sess.runs).and_then(|u| {
-                        if u == Urgency::None {
-                            None
-                        } else {
-                            Some(u)
-                        }
-                    });
+                    recompute_rollups(sess);
                 }
                 // If session_id is unknown we drop the delta (harmless — a
                 // session.added event will arrive from a fresh snapshot).
@@ -227,14 +233,7 @@ impl CliState {
                 if let Some(sess) = self.sessions.get_mut(&session_id) {
                     sess.runs.retain(|r| r.run_id != run_id);
                     // Recompute rollups.
-                    sess.rollup_state = rollup_state(&sess.runs).unwrap_or(RunState::Idle);
-                    sess.rollup_urgency = rollup_urgency(&sess.runs).and_then(|u| {
-                        if u == Urgency::None {
-                            None
-                        } else {
-                            Some(u)
-                        }
-                    });
+                    recompute_rollups(sess);
                 }
             }
         }
