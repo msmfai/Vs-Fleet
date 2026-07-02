@@ -969,6 +969,15 @@ function createMenuItem(label, action, options = {}) {
   return item;
 }
 
+// Clamp a desired (x, y) menu origin so a menu of size `rect` stays fully within
+// the viewport with an 8px margin. Returns { left, top }.
+function clampToViewport(x, y, rect) {
+  return {
+    left: Math.max(8, Math.min(x, window.innerWidth - rect.width - 8)),
+    top: Math.max(8, Math.min(y, window.innerHeight - rect.height - 8)),
+  };
+}
+
 function renderCreateMenu() {
   if (!createMenuEl || !createMenu.open) return;
   createMenuEl.replaceChildren();
@@ -980,8 +989,7 @@ function renderCreateMenu() {
   createMenuEl.appendChild(createMenuItem("Open Folder...", openFolderPrompt));
 
   const rect = createMenuEl.getBoundingClientRect();
-  const left = Math.max(8, Math.min(createMenu.x, window.innerWidth - rect.width - 8));
-  const top = Math.max(8, Math.min(createMenu.y, window.innerHeight - rect.height - 8));
+  const { left, top } = clampToViewport(createMenu.x, createMenu.y, rect);
   createMenuEl.style.left = `${left}px`;
   createMenuEl.style.top = `${top}px`;
 }
@@ -1046,8 +1054,7 @@ function closeRowMenu() {
 function positionRowMenu() {
   if (!rowMenuEl || !rowMenu.open) return;
   const rect = rowMenuEl.getBoundingClientRect();
-  const left = Math.max(8, Math.min(rowMenu.x, window.innerWidth - rect.width - 8));
-  const top = Math.max(8, Math.min(rowMenu.y, window.innerHeight - rect.height - 8));
+  const { left, top } = clampToViewport(rowMenu.x, rowMenu.y, rect);
   rowMenuEl.style.left = `${left}px`;
   rowMenuEl.style.top = `${top}px`;
 }
@@ -1219,22 +1226,29 @@ function clearRecoveredStatus() {
   clearStatusOverride();
 }
 
-async function setSessionMuted(id, muted) {
-  const key = actionKey(id, "mute");
+// Optimistic session mutation with generation-guarded rollback. Applies a local
+// mutation, renders, then fires the backend invoke; on error it rolls back to
+// the pre-mutation inbox snapshot ONLY IF no newer inbox has landed meanwhile
+// (inboxRevision unchanged) — that generation guard is what defeats stale async
+// races, so it must stay exact. `errCopy` is { level, message(e) }. `invokeCall`
+// is a thunk that performs the literal backend invoke with its command name and
+// arg object inline — kept inline so the IPC-contract check can still see them.
+async function runOptimistic({ id, action, invokeCall, localMutate, errCopy }) {
+  const key = actionKey(id, action);
   if (sessionActions.has(key)) return;
   const previousInbox = inbox;
   sessionActions.add(key);
-  applyLocalMute(id, muted);
+  localMutate();
   const optimisticRevision = inboxRevision;
   render();
   try {
-    await invoke("set_session_muted", { sessionId: id, muted });
+    await invokeCall();
   } catch (e) {
     if (inboxRevision === optimisticRevision) setInbox(previousInbox);
     showHostStatus({
-      level: "error",
+      level: errCopy.level,
       source: "rail",
-      message: `${muted ? "mute" : "unmute"} failed: ${String(e)}`,
+      message: errCopy.message(e),
     });
   } finally {
     sessionActions.delete(key);
@@ -1242,27 +1256,30 @@ async function setSessionMuted(id, muted) {
   }
 }
 
-async function setSessionSoloed(id, soloed) {
-  const key = actionKey(id, "solo");
-  if (sessionActions.has(key)) return;
-  const previousInbox = inbox;
-  sessionActions.add(key);
-  applyLocalSolo(id, soloed);
-  const optimisticRevision = inboxRevision;
-  render();
-  try {
-    await invoke("set_session_soloed", { sessionId: id, soloed });
-  } catch (e) {
-    if (inboxRevision === optimisticRevision) setInbox(previousInbox);
-    showHostStatus({
+function setSessionMuted(id, muted) {
+  return runOptimistic({
+    id,
+    action: "mute",
+    invokeCall: () => invoke("set_session_muted", { sessionId: id, muted }),
+    localMutate: () => applyLocalMute(id, muted),
+    errCopy: {
       level: "error",
-      source: "rail",
-      message: `${soloed ? "alert focus" : "clear alert focus"} failed: ${String(e)}`,
-    });
-  } finally {
-    sessionActions.delete(key);
-    render();
-  }
+      message: (e) => `${muted ? "mute" : "unmute"} failed: ${String(e)}`,
+    },
+  });
+}
+
+function setSessionSoloed(id, soloed) {
+  return runOptimistic({
+    id,
+    action: "solo",
+    invokeCall: () => invoke("set_session_soloed", { sessionId: id, soloed }),
+    localMutate: () => applyLocalSolo(id, soloed),
+    errCopy: {
+      level: "error",
+      message: (e) => `${soloed ? "alert focus" : "clear alert focus"} failed: ${String(e)}`,
+    },
+  });
 }
 
 async function dismissSession(id) {
@@ -1287,28 +1304,18 @@ async function dismissSession(id) {
   }
 }
 
-async function focusSession(id) {
+function focusSession(id) {
   if (!inbox.connected) return;
-  const key = actionKey(id, "focus");
-  if (sessionActions.has(key)) return;
-  const previousInbox = inbox;
-  sessionActions.add(key);
-  applyLocalFocus(id);
-  const optimisticRevision = inboxRevision;
-  render();
-  try {
-    await invoke("focus_session", { sessionId: id });
-  } catch (e) {
-    if (inboxRevision === optimisticRevision) setInbox(previousInbox);
-    showHostStatus({
+  return runOptimistic({
+    id,
+    action: "focus",
+    invokeCall: () => invoke("focus_session", { sessionId: id }),
+    localMutate: () => applyLocalFocus(id),
+    errCopy: {
       level: "warning",
-      source: "rail",
-      message: `focus ack failed: ${String(e)}`,
-    });
-  } finally {
-    sessionActions.delete(key);
-    render();
-  }
+      message: (e) => `focus ack failed: ${String(e)}`,
+    },
+  });
 }
 
 async function spawnServer(request = {}) {
@@ -1415,86 +1422,78 @@ function showRailInfo(message) {
   showHostStatus({ level: "info", source: "rail", message });
 }
 
-function toggleMuteRow(id) {
-  if (sessionActionBusy(id)) {
+// Shared precondition gate for the row action handlers. Order matters and is
+// identical across all five: (1) in-flight busy check (some also treat a global
+// `spawning` as busy), (2) an action-specific "is there anything to do" check
+// with its own empty message, (3) an optional hub-connection requirement. On the
+// first failed check it surfaces the matching rail info and returns false;
+// returns true when the action may proceed. Callers keep any state they need
+// (e.g. the agent) since the pure lookups have no side effects.
+function guardRowAction(id, { alsoBusyWhen = false, canDo, emptyMsg, needsConnection = false }) {
+  if (sessionActionBusy(id) || alsoBusyWhen) {
     showRailInfo("action in progress");
-    return;
+    return false;
   }
-  const agent = agentFor(id);
-  if (!agent) {
-    showRailInfo("no agent state to mute");
-    return;
+  if (!canDo()) {
+    showRailInfo(emptyMsg);
+    return false;
   }
-  if (!inbox.connected) {
+  if (needsConnection && !inbox.connected) {
     showRailInfo("hub disconnected");
-    return;
+    return false;
   }
+  return true;
+}
+
+function toggleMuteRow(id) {
+  const agent = agentFor(id);
+  if (!guardRowAction(id, {
+    canDo: () => Boolean(agent),
+    emptyMsg: "no agent state to mute",
+    needsConnection: true,
+  })) return;
   setSessionMuted(id, !agent.muted);
 }
 
 function toggleSoloRow(id) {
-  if (sessionActionBusy(id)) {
-    showRailInfo("action in progress");
-    return;
-  }
   const agent = agentFor(id);
-  if (!agent) {
-    showRailInfo("no alert state for this session");
-    return;
-  }
-  if (!inbox.connected) {
-    showRailInfo("hub disconnected");
-    return;
-  }
+  if (!guardRowAction(id, {
+    canDo: () => Boolean(agent),
+    emptyMsg: "no alert state for this session",
+    needsConnection: true,
+  })) return;
   setSessionSoloed(id, !agent.soloed);
 }
 
 function retryRow(id) {
-  if (sessionActionBusy(id) || spawning) {
-    showRailInfo("action in progress");
-    return;
-  }
   const srv = displayed().find((item) => item.id === id);
   const pendingState = srv && srv.pending ? pendingVisual(srv) : null;
-  if (!canRetryServer(srv, pendingState)) {
-    showRailInfo("nothing to retry");
-    return;
-  }
+  if (!guardRowAction(id, {
+    alsoBusyWhen: spawning,
+    canDo: () => canRetryServer(srv, pendingState),
+    emptyMsg: "nothing to retry",
+  })) return;
   retryServer(id);
 }
 
 function dismissRow(id) {
-  if (sessionActionBusy(id)) {
-    showRailInfo("action in progress");
-    return;
-  }
   const agent = agentFor(id);
-  if (!canDismissAgent(agent, agent && agent.state)) {
-    showRailInfo("nothing to dismiss");
-    return;
-  }
-  if (!inbox.connected) {
-    showRailInfo("hub disconnected");
-    return;
-  }
+  if (!guardRowAction(id, {
+    canDo: () => canDismissAgent(agent, agent && agent.state),
+    emptyMsg: "nothing to dismiss",
+    needsConnection: true,
+  })) return;
   dismissSession(id);
 }
 
 function forgetAgentOnlyRow(id) {
-  if (sessionActionBusy(id)) {
-    showRailInfo("action in progress");
-    return;
-  }
   const srv = displayed().find((item) => item.id === id);
   const agent = agentFor(id);
-  if (!canForgetAgentOnly(srv, agent)) {
-    showRailInfo("nothing to forget");
-    return;
-  }
-  if (!inbox.connected) {
-    showRailInfo("hub disconnected");
-    return;
-  }
+  if (!guardRowAction(id, {
+    canDo: () => canForgetAgentOnly(srv, agent),
+    emptyMsg: "nothing to forget",
+    needsConnection: true,
+  })) return;
   dismissSession(id);
 }
 
