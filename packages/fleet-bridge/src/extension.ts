@@ -110,6 +110,12 @@ export function bridgeTarget(env: NodeJS.ProcessEnv): string | null {
 const BACKOFF_START_MS = 1000;
 const BACKOFF_MAX_MS = 30000;
 
+// App-level heartbeat: while connected, the extension sends a `{type:"ping"}` frame
+// on this cadence so Fleet has a continuous "I'm up" signal. Fleet's liveness GC
+// forgets a server it hasn't heard from in ~3 missed pings — this catches stale /
+// half-open sockets that a clean WS close never reports.
+const PING_INTERVAL_MS = 20000;
+
 // Upper bound on how long termSend waits for a freshly-created terminal's shell
 // integration to activate before sending anyway. The common case resolves via
 // the readiness event well before this; the cap only bites for shells that never
@@ -199,6 +205,14 @@ export function activate(context: vscode.ExtensionContext): void {
   let retry: ReturnType<typeof setTimeout> | null = null;
   // Current reconnect delay; reset to BACKOFF_START_MS on every successful open.
   let backoffMs = BACKOFF_START_MS;
+  // Heartbeat timer for the live connection; cleared on drop/dispose.
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  const clearHeartbeat = (): void => {
+    if (heartbeat) {
+      clearInterval(heartbeat);
+      heartbeat = null;
+    }
+  };
 
   const connect = (): void => {
     /* c8 ignore next -- defensive: dispose() clears the retry timer, so connect()
@@ -228,6 +242,17 @@ export function activate(context: vscode.ExtensionContext): void {
         })}`
       );
       socket.send(JSON.stringify(registration));
+
+      // Start the heartbeat once connected; each ping refreshes Fleet's last_seen
+      // so a live editor is never reaped by the liveness GC.
+      clearHeartbeat();
+      heartbeat = setInterval(() => {
+        try {
+          socket.send(JSON.stringify({ type: "ping" }));
+        } catch {
+          // Send failed (socket closing) — the close handler reconnects.
+        }
+      }, PING_INTERVAL_MS);
     });
 
     const send = (obj: unknown): void => socket.send(JSON.stringify(obj));
@@ -515,6 +540,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     const reconnect = (): void => {
       if (disposed || retry || ws !== socket) return;
+      clearHeartbeat();
       const delay = backoffMs;
       // Grow the delay for the NEXT attempt; a successful open resets it.
       backoffMs = nextBackoff(backoffMs);
@@ -534,6 +560,7 @@ export function activate(context: vscode.ExtensionContext): void {
     dispose() {
       disposed = true;
       if (retry) clearTimeout(retry);
+      clearHeartbeat();
       ws?.close();
     },
   });
