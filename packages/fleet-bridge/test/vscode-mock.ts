@@ -17,6 +17,7 @@ export const state: {
   extensions: any[];
   // controllable handler/returns
   shellExecCb: ((e: any) => void) | null;
+  shellIntegrationCb: ((e: any) => void) | null;
   executeCommandImpl: (id: string, ...args: any[]) => Promise<any>;
   openTextDocumentImpl: (uri: any) => Promise<any>;
   showTextDocumentImpl: (doc: any, opts: any) => Promise<any>;
@@ -35,6 +36,7 @@ export function resetVscodeMock(): void {
   state.diagnostics = [];
   state.extensions = [];
   state.shellExecCb = null;
+  state.shellIntegrationCb = null;
   state.executeCommandImpl = async () => undefined;
   state.openTextDocumentImpl = async (uri: any) => ({
     uri,
@@ -77,6 +79,10 @@ export const window = {
   showTextDocument: vi.fn((doc: any, opts: any) => state.showTextDocumentImpl(doc, opts)),
   onDidStartTerminalShellExecution: vi.fn((cb: (e: any) => void) => {
     state.shellExecCb = cb;
+    return { dispose: vi.fn() };
+  }),
+  onDidChangeTerminalShellIntegration: vi.fn((cb: (e: any) => void) => {
+    state.shellIntegrationCb = cb;
     return { dispose: vi.fn() };
   }),
 };

@@ -21,6 +21,15 @@ function fakeContext(): Fake {
   return { subscriptions: [] };
 }
 
+/** Poll `pred` on real timers until true (or throw after `ms`). */
+async function waitFor(pred: () => boolean, ms = 1000): Promise<void> {
+  const start = Date.now();
+  while (!pred()) {
+    if (Date.now() - start > ms) throw new Error("waitFor: condition not met in time");
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
 const savedEnv: Record<string, string | undefined> = {};
 const ENV_KEYS = [
   "FLEET_BRIDGE_URL",
@@ -328,11 +337,10 @@ describe("termSend action", () => {
     await h.close();
   });
 
-  it("creates a terminal when none found (waits 600ms)", async () => {
-    // Real timers here: the reply travels over a real socket, so the 600ms
-    // delay is wall-clock. Kept deterministic by the explicit empty terminal
-    // list forcing the create-and-wait branch.
-    const created = makeTerminal("fresh");
+  it("creates a terminal and sends at once when shell integration is already active", async () => {
+    // Fast shell: terminal.shellIntegration is already defined, so awaitShell
+    // Integration resolves immediately (no wait).
+    const created = { ...makeTerminal("fresh"), shellIntegration: {} };
     state.createTerminalImpl = () => created;
     state.terminals = [];
     state.activeTerminal = undefined;
@@ -343,6 +351,57 @@ describe("termSend action", () => {
     expect(vscodeMock.window.createTerminal).toHaveBeenCalledWith("fresh");
     expect(created.sendText).toHaveBeenCalledWith("go", true);
     await h.close();
+  });
+
+  it("creates a terminal and waits for shell integration to activate before sending", async () => {
+    // Slow shell: no shellIntegration yet. The send must be held until the
+    // readiness event fires for THIS terminal — an unrelated one must not release
+    // it — proving we no longer race the shell with a blind sleep.
+    const created = makeTerminal("fresh");
+    state.createTerminalImpl = () => created;
+    state.terminals = [];
+    state.activeTerminal = undefined;
+    const h = await startBridge();
+
+    const replyP = new Promise<any>((resolve) => {
+      h.serverSocket.once("message", (d) => resolve(JSON.parse(d.toString())));
+    });
+    h.serverSocket.send(JSON.stringify({ type: "termSend", reqId: 111, name: "fresh", text: "go" }));
+
+    // Wait until termSend created the terminal and subscribed for readiness.
+    await waitFor(() => state.shellIntegrationCb !== null);
+    expect(created.sendText).not.toHaveBeenCalled();
+
+    // A different terminal integrating does NOT release our wait…
+    state.shellIntegrationCb!({ terminal: { name: "other" } });
+    expect(created.sendText).not.toHaveBeenCalled();
+    // …ours does.
+    state.shellIntegrationCb!({ terminal: created });
+
+    const r = await replyP;
+    expect(r.ok).toBe(true);
+    expect(created.sendText).toHaveBeenCalledWith("go", true);
+    await h.close();
+  });
+
+  it("falls back to the timeout when the shell never integrates / the API is absent", async () => {
+    // No onDidChangeTerminalShellIntegration (e.g. VS Code < 1.93) and a shell
+    // that never reports integration: the send still happens after the cap.
+    const orig = vscodeMock.window.onDidChangeTerminalShellIntegration;
+    (vscodeMock.window as any).onDidChangeTerminalShellIntegration = undefined;
+    const created = makeTerminal("fresh");
+    state.createTerminalImpl = () => created;
+    state.terminals = [];
+    state.activeTerminal = undefined;
+    try {
+      const h = await startBridge();
+      const r = await h.rpc({ type: "termSend", reqId: 112, name: "fresh", text: "go" });
+      expect(r.ok).toBe(true);
+      expect(created.sendText).toHaveBeenCalledWith("go", true);
+      await h.close();
+    } finally {
+      (vscodeMock.window as any).onDidChangeTerminalShellIntegration = orig;
+    }
   });
 });
 
@@ -945,6 +1004,45 @@ describe("unix socket transport", () => {
     expect(hello.type).toBe("hello");
     expect(hello.server_id).toBe("srv-unix");
     expect(hello.label).toBe("Unix Srv");
+
+    for (const s of ctx.subscriptions) s.dispose();
+    await new Promise<void>((res) => wss.close(() => res()));
+    await new Promise<void>((res) => httpServer.close(() => res()));
+    fs.rmSync(sockPath, { force: true });
+  });
+
+  it("round-trips an action/query over the unix socket (not just hello)", async () => {
+    // The hello test above proves the bridge DIALS the fs socket; this proves a
+    // full request→reply cycle flows over it — the production ws+unix path,
+    // exercised end-to-end rather than only over a TCP loopback WebSocketServer.
+    const sockPath = path.join(
+      os.tmpdir(),
+      `fb-sock-rpc-${process.pid}-${Date.now()}.sock`
+    );
+    const httpServer = http.createServer();
+    const wss = new WebSocketServer({ server: httpServer });
+    await new Promise<void>((r) => httpServer.listen(sockPath, r));
+
+    delete process.env.FLEET_BRIDGE_URL;
+    process.env.FLEET_BRIDGE_SOCKET = sockPath;
+    process.env.FLEET_SERVER_ID = "srv-unix-rpc";
+
+    const ctx = fakeContext();
+    const connP = new Promise<WS>((resolve) => wss.once("connection", resolve));
+    activate(ctx as any);
+    const serverSocket = await connP;
+    // consume the hello registration frame
+    await new Promise<any>((resolve) =>
+      serverSocket.once("message", (d) => resolve(JSON.parse(d.toString())))
+    );
+
+    // now drive a real query and await its reply over the same filesystem socket
+    const reply = await new Promise<any>((resolve) => {
+      serverSocket.once("message", (d) => resolve(JSON.parse(d.toString())));
+      serverSocket.send(JSON.stringify({ type: "query", reqId: 77 }));
+    });
+    expect(reply).toMatchObject({ type: "result", reqId: 77, ok: true });
+    expect(reply.data).toBeDefined();
 
     for (const s of ctx.subscriptions) s.dispose();
     await new Promise<void>((res) => wss.close(() => res()));
