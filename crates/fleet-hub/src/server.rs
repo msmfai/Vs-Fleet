@@ -179,15 +179,7 @@ impl HubState {
                 self.commit_or_log("focus", move |store| {
                     let session_id = match target {
                         Target::Session { session_id } => Some(session_id),
-                        Target::Run { run_id } => {
-                            store.snapshot().into_iter().find_map(|session| {
-                                session
-                                    .runs
-                                    .iter()
-                                    .any(|run| run.run_id == run_id)
-                                    .then_some(session.session_id)
-                            })
-                        }
+                        Target::Run { run_id } => store.session_id_of_run(&run_id),
                     };
                     // apply_focus swallows its own append error and never fails;
                     // normalize its `Option<Event>` into the broadcast-events vec.
@@ -228,13 +220,7 @@ impl HubState {
             }
             Target::Run { run_id } => {
                 self.commit_or_log("dismiss run", move |store| {
-                    match store.snapshot().into_iter().find_map(|session| {
-                        session
-                            .runs
-                            .iter()
-                            .any(|run| run.run_id == run_id)
-                            .then_some(session.session_id)
-                    }) {
+                    match store.session_id_of_run(&run_id) {
                         Some(session_id) => store.apply_run_remove(&session_id, &run_id),
                         None => Ok(Vec::new()), // run id present in no session: no-op
                     }
