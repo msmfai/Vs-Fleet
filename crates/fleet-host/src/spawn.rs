@@ -1987,6 +1987,8 @@ mod tests {
         assert!(prefix.is_empty());
     }
 
+    // Unix PATH-resolution semantics; Windows is alpha (see WINDOWS-ALPHA.md).
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn editor_resolved_accepts_files_and_path_hits_only() {
         let empty_path = OsString::new();
@@ -2315,6 +2317,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    // Asserts the unix mkdir-over-a-file error; Windows fs errors differ (alpha).
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn write_spawned_server_settings_errors_when_parent_is_a_file() {
         let dir = temp_test_dir("fleet-spawn-settings-enotdir");
@@ -3612,6 +3616,8 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
         assert_eq!(trimmed, None);
     }
 
+    // Unix path/binary-resolution semantics; Windows is alpha (see WINDOWS-ALPHA.md).
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn docker_bin_honors_override_then_falls_back() {
         let _lock = lock_env();
