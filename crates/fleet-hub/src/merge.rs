@@ -61,6 +61,16 @@ impl MergeEngine {
         self.sessions.get(session_id)
     }
 
+    /// The id of the session that owns `run_id`, if any. A borrowing lookup —
+    /// used by focus/dismiss-by-run instead of cloning the whole state via
+    /// `snapshot()` just to find one run's owner.
+    pub fn session_id_of_run(&self, run_id: &str) -> Option<String> {
+        self.sessions
+            .values()
+            .find(|session| session.runs.iter().any(|run| run.run_id == run_id))
+            .map(|session| session.session_id.clone())
+    }
+
     /// The current full snapshot, in deterministic insertion order. This is the
     /// payload of the `fleet.snapshot` sent on subscribe.
     pub fn snapshot(&self) -> Vec<Session> {

@@ -367,6 +367,11 @@ impl StateStore {
         self.engine.snapshot()
     }
 
+    /// The id of the session owning `run_id` (borrowing lookup; no full clone).
+    pub fn session_id_of_run(&self, run_id: &str) -> Option<String> {
+        self.engine.session_id_of_run(run_id)
+    }
+
     /// Append a mutation to the durable log **then** project it into the engine,
     /// returning the broadcast events. The one seam every live writer funnels
     /// through: it pairs each [`PersistEvent`] with its engine projection via the
