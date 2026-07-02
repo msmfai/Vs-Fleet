@@ -17,9 +17,20 @@
 > - **DECISIONS FLAGGED FOR REVIEW:** (a) reporter chose real `Stop→Done` (per-turn) — flip to
 >   `Idle` if you want conservative-idle (costs `Done` reachability). (b) native-menu
 >   per-server switching was dead code, now removed (rail switching is the path).
-> **TIER 2 — NEXT (staged):** jiff date seam (T2.1, decided), reporter 4-machine dedup (T2.2),
-> hub delta-vocab (T2.3), node UI boilerplate (T2.4), smaller dup seams (T2.5), tab_transition.
-> **STILL DEFERRED (needs node or entangled):** T4.1 commit JS lockfiles, confidence.rs
+> **TIER 2 APPLIED (behavior-preserving refactors, all tests + coverage green):**
+> - T2.1 jiff: one `fleet_protocol::time` seam (parse+now); the 3 hand-rolled parsers in
+>   sort.rs/persist.rs/fake.rs deleted (fixes the offset→age-0 bug, regression-tested).
+> - T2.2 reporter: all 4 agent machines unified onto a shared `machine.rs` Core/AdapterCore
+>   (~541 lines of copy-paste removed); T1.1 semantics preserved.
+> - T2.3 hub: delta-vocab drift collapsed via one `log_and_apply` seam (event→engine mapping
+>   single-sourced); host-core `tab_transition`/`view_transition` merged into one
+>   `session_transition` core (policy parameterized, not duplicated).
+> - T2.4 node: `runOptimistic`/`guardRowAction`/`clampToViewport` extracted.
+> - T2.5: host `first_server_id` → reuse `servers_for_app`; CLI rollup-recompute → one helper.
+> **TIER 2 DEFERRED (documented, low-value/entangled):** CLI connect_ws/connect_unix reader
+> dedup (async glue; only divergence is a log line); `fleet_hub::now_iso` consolidation
+> (`format_iso` still needed by sweep `subtract`; thin-wrapper-only gain not worth hub churn).
+> **STILL DEFERRED (needs node or a separate pass):** T4.1 commit JS lockfiles, confidence.rs
 > delete-vs-wire, Tier 5 test-smell pass.
 
 
