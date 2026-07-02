@@ -49,6 +49,7 @@ pub mod objects;
 pub mod paths;
 pub mod rollup;
 pub mod state;
+pub mod time;
 
 #[cfg(feature = "schema")]
 pub mod schema;
@@ -70,6 +71,7 @@ pub use objects::{
 };
 pub use paths::{default_reporter_socket, REPORTER_SOCKET_ENV};
 pub use state::{Confidence, State, Urgency};
+pub use time::{now_iso8601, parse_epoch_secs};
 
 #[cfg(test)]
 mod tests {
