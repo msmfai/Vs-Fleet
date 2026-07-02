@@ -37,7 +37,7 @@ pub fn run_schema() -> Schema {
 /// describes the wire surface.
 pub fn combined_schema() -> serde_json::Value {
     serde_json::json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "fleet-protocol",
         "description": "Fleet wire protocol — Hub<->face events and commands plus the Session/AgentRun objects they carry.",
         "schemaVersion": crate::SCHEMA_VERSION,

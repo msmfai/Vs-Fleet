@@ -24,7 +24,9 @@ use fleet_protocol::state::{Confidence, State, Urgency};
 fn compile(root: &schemars::Schema) -> jsonschema::Validator {
     let value = serde_json::to_value(root).expect("schema to value");
     jsonschema::options()
-        .with_draft(jsonschema::Draft::Draft7)
+        // schemars 1.2 emits Draft 2020-12 ($defs); validate under that dialect
+        // (the artifact + nested schemas declare 2020-12 too).
+        .with_draft(jsonschema::Draft::Draft202012)
         .build(&value)
         .expect("schema compiles")
 }
