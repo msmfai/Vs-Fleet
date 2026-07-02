@@ -195,8 +195,11 @@ fn committed_schema_artifact_is_current() {
         env!("CARGO_MANIFEST_DIR"),
         "/schema/fleet-protocol.schema.json"
     );
+    // Normalize line endings: git may check the committed artifact out as CRLF on
+    // Windows (autocrlf), while serde emits LF — compare content, not EOLs.
     let on_disk = std::fs::read_to_string(path)
-        .expect("schema artifact missing — run `cargo run -p fleet-protocol --bin gen-schema`");
+        .expect("schema artifact missing — run `cargo run -p fleet-protocol --bin gen-schema`")
+        .replace("\r\n", "\n");
     let fresh = schema::combined_schema_json();
     assert_eq!(
         on_disk, fresh,
