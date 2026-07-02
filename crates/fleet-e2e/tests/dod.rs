@@ -24,7 +24,7 @@ use fleet_e2e::{
     local_session, mock_focus, FaceClient, TestHub,
 };
 use fleet_host_core::focus::{
-    cycle_next, focus_command, next_unread_tab, BackendResult, FocusOutcome, FocusPlatform,
+    focus_command, next_unread_tab, BackendResult, FocusOutcome, FocusPlatform,
 };
 use fleet_host_core::mute::{should_notify, solo_command};
 use fleet_host_core::notify::{tab_transition, NotificationOutcome};
@@ -898,6 +898,9 @@ async fn dod_11_suite_runs_on_macos_and_linux() {
         _ => unreachable!(),
     }
     // cycle_next is pure and works regardless of OS (focus selection layer).
+    // Imported locally so the top-level import isn't orphaned when this
+    // not(windows)-gated test is compiled out on Windows.
+    use fleet_host_core::focus::cycle_next;
     let v = face.model().view();
     assert_eq!(cycle_next(&v, None), Some(0));
 }
