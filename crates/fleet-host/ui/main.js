@@ -788,6 +788,7 @@ function render() {
       `srv ${state}${pinging ? " attention" : ""}${flags.includes("muted") ? " muted-state" : ""}${suppressed ? " suppressed-state" : ""}${flags.includes("solo") ? " soloed-state" : ""}${srv.id === selected ? " selected" : ""}${srv.pending ? " pending" : ""}${srv.agentOnly ? " agent-only" : ""}${pendingState && pendingState.level ? ` ${pendingState.level}` : ""}${isClosing ? " closing" : ""}${actionBusy ? " action-pending" : ""}`
     );
     row.dataset.serverId = srv.id;
+    row.dataset.tickSig = tickSignature(model);
     row.setAttribute("role", "listitem");
     row.setAttribute("aria-current", srv.id === selected ? "true" : "false");
     row.setAttribute("aria-busy", actionBusy ? "true" : "false");
@@ -826,6 +827,54 @@ function render() {
   if (paletteOpen) renderPalette();
   if (rowMenu.open) renderRowMenu();
   if (createMenu.open) renderCreateMenu();
+}
+
+// The only per-row thing that changes on the wall-clock (no backend event) is a
+// pending row's visual TIER — pendingVisual() flips working→slow→timed-out at
+// PENDING_SLOW_MS / PENDING_TIMEOUT_MS, and those flips change the row's classes,
+// glyph and preview class, not just its text. tickAges() below stamps this
+// signature at render() time and re-derives it each tick; a mismatch means a tier
+// crossed, so we fall back to a full render() instead of an in-place text poke.
+function tickSignature(model) {
+  const p = model.pendingState;
+  return p ? `p:${p.state}:${p.level}` : "s";
+}
+
+// Advance ONLY the live age labels in place (the waiting-since badge in `.right`,
+// and a pending row's "starting Ns" preview). This is the 1s tick's whole job —
+// doing it without railEl.replaceChildren() keeps in-progress text selection and
+// avoids churning dozens of nodes/handlers every second. Structural changes still
+// go through the full render() (the inbox / servers-changed handlers, and the
+// tier-crossing fallback above). Produces text identical to render()'s.
+function applyAgeText(row, model) {
+  // A closing row shows a static "closing…" — never overwrite it with an age.
+  if (model.isClosing) return;
+  if (model.pendingState) {
+    const preview = row.querySelector(".sub .preview");
+    if (preview) preview.textContent = model.pendingState.text;
+    return;
+  }
+  if (model.pinging && model.agent) {
+    const badge = row.querySelector(".right .badge");
+    if (badge) badge.textContent = waitingAge(model.agent.waiting_since);
+  }
+}
+
+function tickAges() {
+  const rows = railEl.querySelectorAll(".srv");
+  if (!rows.length) return;
+  const byId = new Map(displayed().map((srv) => [srv.id, srv]));
+  const updates = [];
+  for (const row of rows) {
+    const srv = byId.get(row.dataset.serverId);
+    // Row/membership drift (shouldn't happen between events) or a crossed pending
+    // tier → rebuild once so classes/glyphs stay correct.
+    if (!srv) return render();
+    const model = serverRowModel(srv);
+    if (row.dataset.tickSig !== tickSignature(model)) return render();
+    updates.push({ row, model });
+  }
+  for (const { row, model } of updates) applyAgeText(row, model);
 }
 
 async function activateServer(id, options = {}) {
@@ -1586,7 +1635,7 @@ function bootWhenTauriReady(attempt = 0) {
   }
 }
 bootWhenTauriReady();
-setInterval(render, 1000); // tick the "waiting Nm" age
+setInterval(tickAges, 1000); // tick the "waiting Nm" age in place (no full re-render)
 
 if (paletteInput) {
   paletteInput.addEventListener("input", () => {

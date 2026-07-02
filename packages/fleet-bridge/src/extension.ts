@@ -110,6 +110,12 @@ export function bridgeTarget(env: NodeJS.ProcessEnv): string | null {
 const BACKOFF_START_MS = 1000;
 const BACKOFF_MAX_MS = 30000;
 
+// Upper bound on how long termSend waits for a freshly-created terminal's shell
+// integration to activate before sending anyway. The common case resolves via
+// the readiness event well before this; the cap only bites for shells that never
+// integrate (or VS Code < 1.93, where the event is unavailable).
+const SHELL_START_TIMEOUT_MS = 2000;
+
 /** The next backoff delay: double the previous, capped at the ceiling. Pure. */
 export function nextBackoff(prevMs: number): number {
   return Math.min(prevMs * 2, BACKOFF_MAX_MS);
@@ -259,6 +265,46 @@ export function activate(context: vscode.ExtensionContext): void {
       return vscode.window.activeTerminal ?? vscode.window.terminals[0];
     };
 
+    // A freshly-created terminal's shell isn't up instantly; sending before the
+    // prompt exists drops the input on a slow container. VS Code signals shell
+    // readiness via `window.onDidChangeTerminalShellIntegration` (stable since
+    // 1.93), after which `terminal.shellIntegration` is defined — see
+    // https://code.visualstudio.com/api/references/vscode-api (Terminal.shell
+    // Integration + onDidChangeTerminalShellIntegration). Resolve as soon as that
+    // fires for our terminal (fast shell → no wasted wait), and cap the wait with
+    // a timeout so a shell that never integrates (e.g. cmd.exe, or a VS Code
+    // older than 1.93 where the event is absent) still eventually gets the send.
+    const shellIntegrationReady = (t: vscode.Terminal): boolean =>
+      Boolean((t as unknown as { shellIntegration?: unknown }).shellIntegration);
+
+    const awaitShellIntegration = (term: vscode.Terminal, timeoutMs: number): Promise<void> =>
+      new Promise<void>((resolve) => {
+        if (shellIntegrationReady(term)) {
+          resolve();
+          return;
+        }
+        const onChange = (
+          vscode.window as unknown as {
+            onDidChangeTerminalShellIntegration?: (
+              cb: (e: { terminal: vscode.Terminal }) => void
+            ) => vscode.Disposable;
+          }
+        ).onDidChangeTerminalShellIntegration;
+        let sub: vscode.Disposable | undefined;
+        let timer: ReturnType<typeof setTimeout>;
+        const finish = (): void => {
+          clearTimeout(timer);
+          if (sub) sub.dispose();
+          resolve();
+        };
+        if (typeof onChange === "function") {
+          sub = onChange((e) => {
+            if (e.terminal === term) finish();
+          });
+        }
+        timer = setTimeout(finish, timeoutMs);
+      });
+
     socket.on("message", (data: WebSocket.RawData) => {
       let msg: Record<string, unknown>;
       try {
@@ -332,8 +378,9 @@ export function activate(context: vscode.ExtensionContext): void {
             let term = findTerminal(name);
             if (!term) {
               term = vscode.window.createTerminal(name);
-              // give the shell a moment to come up before sending
-              await new Promise((r) => setTimeout(r, 600));
+              // wait for the shell to actually come up (readiness, not a blind
+              // sleep) before sending, capped so a non-integrating shell proceeds.
+              await awaitShellIntegration(term, SHELL_START_TIMEOUT_MS);
             }
             term.show();
             // record what we sent so terminalText has something even without
