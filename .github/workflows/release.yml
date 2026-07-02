@@ -131,7 +131,7 @@ jobs:
         # cargo skips already-built deps, so a retry mostly re-runs the bundler.
         run: |
           for attempt in 1 2 3; do
-            if npx --yes @tauri-apps/cli@^2 build --config tauri.release.conf.json --bundles ${{ matrix.bundles }}; then
+            if npx --yes @tauri-apps/cli@2.11.3 build --config tauri.release.conf.json --bundles ${{ matrix.bundles }}; then
               exit 0
             fi
             echo "::warning::tauri build attempt $attempt failed; retrying in 15s" >&2
