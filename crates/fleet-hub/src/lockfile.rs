@@ -300,6 +300,9 @@ mod tests {
         let _l2 = InstanceLock::acquire(&p).expect("re-acquire after release");
     }
 
+    // Reclaim depends on `pid_is_alive`, which is unix `kill(0)`; on non-unix it's
+    // always-true (no reclaim), so this asserts the unix path. (Windows is alpha.)
+    #[cfg(unix)]
     #[test]
     fn stale_lock_from_dead_pid_is_reclaimed() {
         let p = temp_lock_path("stale");
@@ -357,6 +360,8 @@ mod tests {
         let _ = std::fs::remove_file(&base);
     }
 
+    // Relies on unix filesystem-permission semantics for an unreadable path.
+    #[cfg(unix)]
     #[test]
     fn persistently_unreadable_lock_path_refuses_on_second_attempt() {
         // A lock path that is an existing DIRECTORY can never be opened as a
