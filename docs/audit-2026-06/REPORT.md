@@ -3,7 +3,10 @@
 > **Status (branch `refactor/audit-2026-06`):**
 > **TIER 3 + 4.2 APPLIED (CI-verified):** dead deps, `ws_port`→`DEFAULT_WS_PORT`,
 > `sort_tab_refs` ptr_arg, dead `removeRow()` + broken `npm check`, `cargo audit` gate.
-> **TIER 1 APPLIED (4 commits, each fix has a fails-before regression test):**
+> **TIER 1 COMPLETE — FULLY GREEN IN CI** (coverage gate: zero uncovered lines, both
+> workspaces; all non-Windows CI jobs pass). CI-under-load caught + we fixed a real
+> concurrency regression (hub subscribe-atomicity) the first T1.2 introduced.
+> Applied in reviewable commits, each fix has a fails-before regression test:
 > - T1.2 hub SQLite I/O → `spawn_blocking` + RwLock snapshot cache · T1.3 mute/solo
 >   append-first w/ rollback · T1.6 empty-rollup→Idle + clear unread · env-race `ENV_LOCK`.
 > - T1.4 host spawn → `#[tauri::command(async)]`+`spawn_blocking` · T1.5 accept-loop backoff
