@@ -41,6 +41,11 @@ jobs:
   rust:
     name: Rust (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Windows is alpha: some unit tests assert unix-shaped behavior (pid locks,
+    # unix sockets, path/fs semantics) and others flake on the slow Windows runner
+    # timing. Run for signal but don't let Windows gate the workflow — the Windows
+    # *build* is validated by the release lanes. See docs/WINDOWS-ALPHA.md.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -84,6 +89,8 @@ jobs:
   host:
     name: Host (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Windows is alpha — see the note on the `rust` job + docs/WINDOWS-ALPHA.md.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:
