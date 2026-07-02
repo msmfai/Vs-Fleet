@@ -36,7 +36,7 @@
 //! the model.
 
 use crate::SessionTab;
-use fleet_protocol::Urgency;
+use fleet_protocol::{parse_epoch_secs, Urgency};
 
 /// Numeric priority for sort comparison (higher = more urgent = sorts first).
 ///
@@ -61,22 +61,23 @@ pub fn urgency_sort_rank(u: Option<Urgency>) -> u8 {
 /// strictly exceed `waiting_since` (clock skew / same instant). This makes
 /// the comparison degenerate gracefully rather than panicking or mis-sorting.
 ///
-/// **Note:** to keep `fleet-host-core` free of heavyweight date-time crates
-/// (and therefore keep compile times and dependency count low), the age is
-/// computed by parsing both timestamps to whole seconds since the Unix epoch
-/// and subtracting. The parser is intentionally minimal — just enough for
-/// age comparisons on UTC Z-suffix stamps.
+/// **Time seam (T2.1):** parsing is delegated to the single shared
+/// [`fleet_protocol::parse_epoch_secs`] seam (jiff-backed), so `Z`, numeric UTC
+/// offsets (`+00:00`, `-05:00`, …), and fractional seconds are all handled
+/// correctly and identically across the workspace. The seam returns signed
+/// epoch seconds; negative (pre-1970) instants are clamped to `0` here, which is
+/// irrelevant for Fleet's live session ages but keeps the age math in `u64`.
 pub fn waiting_age_secs(waiting_since: Option<&str>, now: Option<&str>) -> u64 {
     let (since_str, now_str) = match (waiting_since, now) {
         (Some(s), Some(n)) => (s, n),
         _ => return 0,
     };
-    // parse_iso8601_secs returns None on parse failure.
-    let since_secs = match parse_iso8601_secs(since_str) {
+    // The shared seam returns None on parse failure.
+    let since_secs = match parse_epoch_secs(since_str) {
         Some(s) => s,
         None => return 0,
     };
-    let now_secs = match parse_iso8601_secs(now_str) {
+    let now_secs = match parse_epoch_secs(now_str) {
         Some(n) => n,
         None => return 0,
     };
@@ -84,68 +85,7 @@ pub fn waiting_age_secs(waiting_since: Option<&str>, now: Option<&str>) -> u64 {
     if now_secs <= since_secs {
         return 0;
     }
-    now_secs - since_secs
-}
-
-/// Minimal ISO-8601 parser that returns whole seconds since the UNIX epoch
-/// (UTC). Accepts the subset `YYYY-MM-DDTHH:MM:SSZ` (with or without
-/// fractional seconds). Returns `None` for any format it cannot parse.
-///
-/// This is intentionally minimal — just enough for age comparisons.
-fn parse_iso8601_secs(s: &str) -> Option<u64> {
-    // Strip trailing 'Z' (we treat everything as UTC).
-    let s = s.trim_end_matches('Z');
-    // Also strip fractional seconds if present: "...T10:00:00.123" → drop ".123"
-    let s = if let Some(pos) = s.rfind('.') {
-        &s[..pos]
-    } else {
-        s
-    };
-    // Expected format: "YYYY-MM-DDTHH:MM:SS" (exactly 19 chars after stripping).
-    let bytes = s.as_bytes();
-    if bytes.len() < 19 {
-        return None;
-    }
-    // Validate separator bytes before parsing digits.
-    if bytes[4] != b'-'
-        || bytes[7] != b'-'
-        || bytes[10] != b'T'
-        || bytes[13] != b':'
-        || bytes[16] != b':'
-    {
-        return None;
-    }
-    let year = parse_digits_opt(&bytes[0..4])?;
-    let month = parse_digits_opt(&bytes[5..7])?;
-    let day = parse_digits_opt(&bytes[8..10])?;
-    let hour = parse_digits_opt(&bytes[11..13])?;
-    let min = parse_digits_opt(&bytes[14..16])?;
-    let sec = parse_digits_opt(&bytes[17..19])?;
-
-    // Days since epoch (rough, good enough for age differences in the same year).
-    let y = year.saturating_sub(1970);
-    // Approximate leap-year count (good to ~±1 day, irrelevant for our purpose).
-    let leap_days = y / 4;
-    let days_per_month: [u64; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let month_idx = (month.saturating_sub(1) as usize).min(11);
-    let year_days: u64 = y * 365 + leap_days;
-    let month_days: u64 = days_per_month[..month_idx].iter().sum();
-    let total_days = year_days + month_days + day.saturating_sub(1);
-
-    Some(total_days * 86400 + hour * 3600 + min * 60 + sec)
-}
-
-/// Parse ASCII decimal digits into a `u64`. Returns `Some(n)` on success,
-/// `None` if any byte is not an ASCII digit.
-fn parse_digits_opt(bytes: &[u8]) -> Option<u64> {
-    let mut n: u64 = 0;
-    for &b in bytes {
-        if !b.is_ascii_digit() {
-            return None;
-        }
-        n = n * 10 + (b - b'0') as u64;
-    }
-    Some(n)
+    (now_secs - since_secs) as u64
 }
 
 /// The sort key for a single [`SessionTab`] given the current time.
@@ -662,7 +602,11 @@ mod tests {
         }
     }
 
-    // ── parse_iso8601_secs edge cases ─────────────────────────────────────────
+    // ── seam-backed parsing edge cases ────────────────────────────────────────
+    //
+    // Byte-level parser internals are now owned + tested by the
+    // `fleet_protocol::parse_epoch_secs` seam; here we assert only the SORT-side
+    // behavior that the seam feeds: malformed → 0 age, offsets → real age.
 
     #[test]
     fn malformed_stamp_returns_zero_age() {
@@ -673,36 +617,30 @@ mod tests {
     }
 
     #[test]
-    fn wrong_separator_byte_returns_zero_age() {
-        // A stamp long enough to pass the length check but with a bad separator
-        // byte (here 'X' where 'T' must be, index 10) must hit the separator
-        // validation `return None` path and degrade to 0 age.
-        assert_eq!(waiting_age_secs(Some("2026-06-08X10:00:00Z"), Some(NOW)), 0);
-        // 'T' present but ':' separators wrong (index 13 is '-' not ':').
-        assert_eq!(waiting_age_secs(Some("2026-06-08T10-00:00Z"), Some(NOW)), 0);
-    }
+    fn offset_timestamp_ages_correctly_and_sorts_by_real_age() {
+        // T2.1 regression: the old hand-rolled parser rejected numeric UTC
+        // offsets, so a `+00:00`-stamped waiting session parsed as unparseable
+        // and ranked as age 0 — sinking below every `Z`-stamped session. The
+        // jiff-backed seam parses the offset, so its age is now real.
+        let offset = "2026-06-08T10:00:00+00:00"; // == T_OLD instant (7200 s ago)
+        assert_eq!(
+            waiting_age_secs(Some(offset), Some(NOW)),
+            7200,
+            "offset stamp must age like its Z-equivalent, not degrade to 0"
+        );
 
-    #[test]
-    fn non_digit_in_digit_field_returns_zero_age() {
-        // Correct separators but a non-digit in a numeric field must hit the
-        // `parse_digits_opt` non-digit `return None` path → 0 age. Exercise the
-        // bad-byte `?` short-circuit in EVERY field (year..second) so each
-        // `parse_digits_opt(...)?` None-continuation is covered.
-        let bad = [
-            "X026-06-08T10:00:00Z", // year
-            "2026-X6-08T10:00:00Z", // month
-            "2026-06-X8T10:00:00Z", // day
-            "2026-06-08T1X:00:00Z", // hour
-            "2026-06-08T10:X0:00Z", // minute
-            "2026-06-08T10:00:X0Z", // second
+        // And it must SORT by that real age: the older offset-stamped tab rises
+        // above a younger Z-stamped tab at equal unread + urgency.
+        let mut tabs = vec![
+            waiting("younger-z", false, Some(Urgency::Approval), Some(T_NEW)),
+            waiting("older-offset", false, Some(Urgency::Approval), Some(offset)),
         ];
-        for s in bad {
-            assert_eq!(
-                waiting_age_secs(Some(s), Some(NOW)),
-                0,
-                "non-digit field in {s:?} must degrade to 0 age"
-            );
-        }
+        sort_tabs(&mut tabs, Some(NOW));
+        assert_eq!(
+            tabs[0].session_id, "older-offset",
+            "offset-stamped older wait must sort above younger Z wait, not as age 0"
+        );
+        assert_eq!(tabs[1].session_id, "younger-z");
     }
 
     #[test]
