@@ -1,0 +1,3 @@
+# Keep the generated schema artifact LF on all platforms so the freshness
+# drift-guard test (compares it to LF-emitting serde output) passes on Windows.
+crates/fleet-protocol/schema/*.json text eol=lf
