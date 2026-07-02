@@ -195,81 +195,90 @@ fn notification_text(tab: &SessionTab) -> (String, String) {
 /// outcomes — a muted session whose pending notification is resolved should still
 /// clear its badge.
 pub fn tab_transition(old: Option<&SessionTab>, new: Option<&SessionTab>) -> NotificationOutcome {
-    match (old, new) {
-        // Tab added: fire if it arrives in Waiting and is not muted.
-        (None, Some(new_tab)) => {
-            if new_tab.state == TabState::Waiting && !new_tab.muted {
-                let (title, body) = notification_text(new_tab);
-                NotificationOutcome::Fire(NotificationIntent {
-                    session_id: new_tab.session_id.clone(),
-                    title,
-                    body,
-                    sound: tab_urgency_to_sound(new_tab.urgency),
-                })
-            } else {
-                NotificationOutcome::Noop
-            }
+    // `tab_transition`'s policy (the standalone, list-free entry point used by
+    // tests + fleet-e2e):
+    //   - the pending boundary is *Waiting state alone*, and
+    //   - the `Fire` is separately suppressed by `muted`.
+    // Because the boundary ignores mute, a muted tab that leaves Waiting still
+    // AutoResolves (its badge clears) even though it never fired — the documented
+    // "mute suppresses Fire but NOT AutoResolve" rule. Solo has no meaning here
+    // (it needs the full tab list); that lives in `view_transition`.
+    let old_pending = old.map(is_waiting).unwrap_or(false);
+    let new_pending = new.map(is_waiting).unwrap_or(false);
+    let new_suppressed = new.map(|tab| tab.muted).unwrap_or(false);
+    session_transition(old, new, old_pending, new_pending, new_suppressed)
+}
+
+fn is_waiting(tab: &SessionTab) -> bool {
+    tab.state == TabState::Waiting
+}
+
+/// The shared per-session transition core behind both [`tab_transition`] and
+/// [`view_transition`].
+///
+/// It owns the pending-boundary + urgency-escalation + `Fire`/`AutoResolve`
+/// construction exactly once. Everything policy-specific is lifted into two
+/// caller-supplied decisions, so the mute-vs-mute+solo difference is an explicit
+/// parameter rather than duplicated logic:
+///
+/// - **`*_pending`** — is the tab inside the "a notification could be
+///   outstanding" set? Crossing this boundary drives `Fire`/`AutoResolve`.
+///   - [`tab_transition`] uses *Waiting state alone*.
+///   - [`view_transition`] uses `should_notify` (Waiting **and** not muted
+///     **and** not solo-suppressed).
+/// - **`new_suppressed`** — should a `Fire` be withheld even though the tab is
+///   pending? This is where [`tab_transition`] applies `muted`;
+///   [`view_transition`] passes `false` because `should_notify` already folds
+///   mute + solo into the boundary.
+///
+/// Truth table (with `new` present):
+///
+/// | old_pending | new_pending | outcome |
+/// |---|---|---|
+/// | false | true  | `Fire` unless `new_suppressed` → then `Noop` (entered) |
+/// | true  | false | `AutoResolve` (left the set) |
+/// | true  | true  | `Fire` iff urgency escalated and not suppressed, else `Noop` |
+/// | false | false | `Noop` |
+///
+/// When `new` is `None` (tab removed) it `AutoResolve`s iff the old tab was
+/// pending.
+fn session_transition(
+    old: Option<&SessionTab>,
+    new: Option<&SessionTab>,
+    old_pending: bool,
+    new_pending: bool,
+    new_suppressed: bool,
+) -> NotificationOutcome {
+    let fire_or_suppress = |tab: &SessionTab| {
+        if new_suppressed {
+            NotificationOutcome::Noop
+        } else {
+            fire_for(tab)
         }
+    };
 
-        // Tab transition: handle the Waiting boundary crossings.
-        (Some(old_tab), Some(new_tab)) => {
-            let was_waiting = old_tab.state == TabState::Waiting;
-            let now_waiting = new_tab.state == TabState::Waiting;
-
-            if !was_waiting && now_waiting {
-                // Entered Waiting — fire, unless muted.
-                if new_tab.muted {
-                    return NotificationOutcome::Noop;
-                }
-                let (title, body) = notification_text(new_tab);
-                NotificationOutcome::Fire(NotificationIntent {
-                    session_id: new_tab.session_id.clone(),
-                    title,
-                    body,
-                    sound: tab_urgency_to_sound(new_tab.urgency),
-                })
-            } else if was_waiting && !now_waiting {
-                // Left Waiting — auto-resolve (clear badge regardless of mute).
-                NotificationOutcome::AutoResolve {
-                    session_id: new_tab.session_id.clone(),
-                }
-            } else if was_waiting && now_waiting {
-                // Still waiting: re-fire only if urgency changed (escalation).
-                // In v1 we do not re-fire on same-urgency; changes in urgency
-                // while already waiting fire a new notification.
-                if old_tab.urgency != new_tab.urgency {
-                    if new_tab.muted {
-                        return NotificationOutcome::Noop;
-                    }
-                    let (title, body) = notification_text(new_tab);
-                    NotificationOutcome::Fire(NotificationIntent {
-                        session_id: new_tab.session_id.clone(),
-                        title,
-                        body,
-                        sound: tab_urgency_to_sound(new_tab.urgency),
-                    })
-                } else {
-                    NotificationOutcome::Noop
-                }
-            } else {
-                // Neither was waiting nor is now waiting.
-                NotificationOutcome::Noop
+    match new {
+        Some(new_tab) => match (old, old_pending, new_pending) {
+            // Entered the pending set (added, or crossed the boundary).
+            (_, false, true) => fire_or_suppress(new_tab),
+            // Left the pending set — clear the badge (boundary is mute-blind for
+            // `tab_transition`, so a muted leaver still resolves).
+            (Some(_), true, false) => NotificationOutcome::AutoResolve {
+                session_id: new_tab.session_id.clone(),
+            },
+            // Still pending: re-fire only on urgency escalation.
+            (Some(old_tab), true, true) if old_tab.urgency != new_tab.urgency => {
+                fire_or_suppress(new_tab)
             }
-        }
-
-        // Tab removed while waiting — auto-resolve.
-        (Some(old_tab), None) => {
-            if old_tab.state == TabState::Waiting {
-                NotificationOutcome::AutoResolve {
-                    session_id: old_tab.session_id.clone(),
-                }
-            } else {
-                NotificationOutcome::Noop
-            }
-        }
-
-        // No old, no new: no-op (degenerate call, should not occur in practice).
-        (None, None) => NotificationOutcome::Noop,
+            _ => NotificationOutcome::Noop,
+        },
+        // Tab removed: auto-resolve iff it was pending.
+        None => match old {
+            Some(old_tab) if old_pending => NotificationOutcome::AutoResolve {
+                session_id: old_tab.session_id.clone(),
+            },
+            _ => NotificationOutcome::Noop,
+        },
     }
 }
 
@@ -280,6 +289,10 @@ pub fn tab_transition(old: Option<&SessionTab>, new: Option<&SessionTab>) -> Not
 /// notification state is "should notify", not merely "is waiting":
 /// muting a waiting tab or soloing another tab auto-resolves its pending ping,
 /// and unmuting/unsoloing a still-waiting tab can fire a new ping.
+///
+/// Both the per-tab loop and the removal loop delegate to the shared
+/// [`session_transition`] core, passing `should_notify` as the pending boundary
+/// (so mute + solo are folded in) and `new_suppressed = false`.
 pub fn view_transition(old: &InboxView, new: &InboxView) -> Vec<NotificationOutcome> {
     let mut outcomes = Vec::new();
 
@@ -288,21 +301,12 @@ pub fn view_transition(old: &InboxView, new: &InboxView) -> Vec<NotificationOutc
             .tabs
             .iter()
             .find(|tab| tab.session_id == new_tab.session_id);
-        let old_notify = old_tab
+        let old_pending = old_tab
             .map(|tab| should_notify(tab, &old.tabs))
             .unwrap_or(false);
-        let new_notify = should_notify(new_tab, &new.tabs);
+        let new_pending = should_notify(new_tab, &new.tabs);
 
-        let outcome = match (old_tab, old_notify, new_notify) {
-            (None, _, true) => fire_for(new_tab),
-            (Some(_), false, true) => fire_for(new_tab),
-            (Some(_), true, false) => NotificationOutcome::AutoResolve {
-                session_id: new_tab.session_id.clone(),
-            },
-            (Some(old_tab), true, true) if old_tab.urgency != new_tab.urgency => fire_for(new_tab),
-            _ => NotificationOutcome::Noop,
-        };
-
+        let outcome = session_transition(old_tab, Some(new_tab), old_pending, new_pending, false);
         if outcome != NotificationOutcome::Noop {
             outcomes.push(outcome);
         }
@@ -316,10 +320,10 @@ pub fn view_transition(old: &InboxView, new: &InboxView) -> Vec<NotificationOutc
         {
             continue;
         }
-        if should_notify(old_tab, &old.tabs) {
-            outcomes.push(NotificationOutcome::AutoResolve {
-                session_id: old_tab.session_id.clone(),
-            });
+        let old_pending = should_notify(old_tab, &old.tabs);
+        let outcome = session_transition(Some(old_tab), None, old_pending, false, false);
+        if outcome != NotificationOutcome::Noop {
+            outcomes.push(outcome);
         }
     }
 
