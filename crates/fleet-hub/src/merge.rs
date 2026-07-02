@@ -82,13 +82,19 @@ impl MergeEngine {
     fn recompute_rollups(session: &mut Session) {
         // Empty run set → idle sentinel; otherwise the most-urgent run state.
         session.rollup_state = rollup::rollup_state(&session.runs).unwrap_or(State::Idle);
-        // rollup_urgency is None for an empty run set, and the most-urgent
-        // (possibly Urgency::None) otherwise. We normalize Urgency::None → None
-        // on the optional field so the wire shows absence rather than "null".
-        session.rollup_urgency = match rollup::rollup_urgency(&session.runs) {
+        session.rollup_urgency = Self::normalize_rollup_urgency(&session.runs);
+    }
+
+    /// The rolled-up urgency of `runs`, normalized for the optional wire field:
+    /// an empty run set (`None`) and an explicit [`fleet_protocol::Urgency::None`]
+    /// both collapse to `None`, so the wire shows absence rather than a "none"
+    /// token. The single source of truth for the two rollup sites
+    /// ([`Self::recompute_rollups`] and [`Self::rollup_holds`]) — audit T2.2.
+    fn normalize_rollup_urgency(runs: &[AgentRun]) -> Option<fleet_protocol::Urgency> {
+        match rollup::rollup_urgency(runs) {
             Some(fleet_protocol::Urgency::None) | None => None,
             Some(u) => Some(u),
-        };
+        }
     }
 
     fn any_soloed(&self) -> bool {
@@ -273,10 +279,7 @@ impl MergeEngine {
             None => true,
             Some(s) => session.rollup_state == s,
         };
-        let expected_urgency = match rollup::rollup_urgency(&session.runs) {
-            Some(fleet_protocol::Urgency::None) | None => None,
-            Some(u) => Some(u),
-        };
+        let expected_urgency = Self::normalize_rollup_urgency(&session.runs);
         state_ok && session.rollup_urgency == expected_urgency
     }
 
