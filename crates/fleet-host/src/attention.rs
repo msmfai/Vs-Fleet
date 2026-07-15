@@ -22,3 +22,14 @@ pub fn shared_attention() -> SharedAttention {
 pub fn get_inbox(state: tauri::State<'_, SharedAttention>) -> RenderedInbox {
     state.lock().map(|inbox| inbox.clone()).unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shared_attention_starts_with_the_default_inbox() {
+        let attention = shared_attention();
+        assert_eq!(*attention.lock().unwrap(), RenderedInbox::default());
+    }
+}
