@@ -979,9 +979,15 @@ mod tests {
     // ── item 4: transcript corroboration wired into the SERVE tick path ──────
 
     fn claude_pretool_with_transcript(session: &str, tool_use_id: &str, path: &str) -> String {
-        format!(
-            r#"{{"hook_event_name":"PreToolUse","session_id":"{session}","cwd":"/repo","tool_name":"Bash","tool_use_id":"{tool_use_id}","transcript_path":"{path}"}}"#
-        )
+        serde_json::json!({
+            "hook_event_name": "PreToolUse",
+            "session_id": session,
+            "cwd": "/repo",
+            "tool_name": "Bash",
+            "tool_use_id": tool_use_id,
+            "transcript_path": path,
+        })
+        .to_string()
     }
 
     #[test]
