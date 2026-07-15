@@ -185,4 +185,30 @@ mod tests {
         );
         assert_eq!(registry.persistent_label("one"), None);
     }
+
+    #[test]
+    fn poisoned_surface_state_fails_closed_without_panicking() {
+        let registry = SurfaceRegistry::new();
+        let _ = std::panic::catch_unwind(|| {
+            let _loaded = registry.singleton_loaded_url.lock().unwrap();
+            panic!("poison singleton navigation state");
+        });
+        assert_eq!(
+            registry.navigate_singleton("http://one/", false, || Err::<(), _>("must not run")),
+            Ok(false)
+        );
+
+        let _ = std::panic::catch_unwind(|| {
+            let _persistent = registry.persistent.lock().unwrap();
+            panic!("poison persistent surface state");
+        });
+        registry.record_persistent_navigation("one", "http://one/");
+        assert_eq!(
+            registry.layout(Some("one")),
+            SurfaceLayout {
+                active_label: None,
+                inactive_labels: Vec::new(),
+            }
+        );
+    }
 }

@@ -3973,6 +3973,10 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
             workspace_reporter_bin_from(&root.join("some/other/target/debug")),
             None
         );
+        assert_eq!(
+            workspace_reporter_bin_from(&root.join("not-crates/fleet-host/target/debug")),
+            None
+        );
 
         std::fs::remove_dir_all(&root).unwrap();
     }
