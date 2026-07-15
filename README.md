@@ -40,10 +40,9 @@ Code CLI and starts local web sessions from the Fleet app.
   supported there).
 - For **local sessions**: a VS Code installation with the `code` command
   available. VS Fleet and VS Code are separate installs — Fleet does not
-  bundle, download, or modify VS Code. Fleet itself launches without it
-  (externally started sessions phone home on their own, and the planned
-  SSH/container session paths need no local VS Code), but spawning local
-  sessions requires it.
+  bundle, download, or modify VS Code. Fleet itself launches without it and
+  externally managed sessions can phone home on their own, but creating a
+  session from a normal Fleet build requires the local VS Code CLI.
 - Rust and Node.js tooling for building from source.
 
 ## Getting Started
@@ -134,7 +133,7 @@ Current support boundary:
 | `crates/fleet-host-core` | Pure Rust inbox/view-model logic. |
 | `crates/fleet-host` | Standalone Tauri host app. |
 | `packages/fleet-bridge` | VS Code bridge extension packaged into the host app. |
-| `packages/extension` | VS Code extension face. |
+| `packages/extension` | Unshipped VS Code extension prototype; design reference only. |
 | `containers/fleet-env` | Container/eval harness material. |
 | `docs` | User and engineering documentation. |
 

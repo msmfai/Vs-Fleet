@@ -23,7 +23,7 @@ use tokio::net::TcpListener;
 use tokio::time::{sleep, Duration};
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::mux::Server;
+use crate::session::Session;
 
 /// Event emitted to the rail whenever the registered-server set changes.
 pub const SERVERS_CHANGED: &str = "servers-changed";
@@ -73,11 +73,11 @@ impl BridgeRegistry {
 
     /// The currently-registered servers (id, url, label), in id order for stable
     /// rail ordering. The multiplexer's server list.
-    pub fn servers(&self) -> Vec<Server> {
+    pub fn servers(&self) -> Vec<Session> {
         let map = self.lock_map();
-        let mut servers: Vec<Server> = map
+        let mut servers: Vec<Session> = map
             .iter()
-            .map(|(id, c)| Server {
+            .map(|(id, c)| Session {
                 id: id.clone(),
                 label: c.label.clone(),
                 url: c.url.clone(),

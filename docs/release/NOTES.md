@@ -1,7 +1,23 @@
-# VS Fleet — alpha release
+# VS Fleet v0.1.4 — alpha release
 
 Cross-platform alpha builds of VS Fleet, the stateless multiplexer host for
 VS Code web sessions.
+
+## What's new
+
+- Fleet's host architecture now matches its product boundary: a thin,
+  cmux-like shell around complete VS Code web sessions. VS Code continues to
+  own editing, terminals, Git, debugging, extensions, tasks, and project state.
+- Session webviews remain persistent while switching, preserving the live VS
+  Code workbench instead of rebuilding it as users move between sessions.
+- Reporter heartbeats remove sessions that stop phoning home, and explicitly
+  closed sessions disappear immediately.
+- Agent attention is isolated as an overlay on stable VS Code sessions rather
+  than being treated as the session lifecycle itself.
+- Unsupported SSH and container launch implementations are excluded from
+  normal builds behind an explicit experimental build feature.
+- Source-checkout launches now resolve the root-workspace reporter reliably;
+  packaged applications continue to use their bundled reporter sidecar.
 
 ## ⚠️ Unsigned builds
 
@@ -44,13 +60,14 @@ Fleet drives your VS Code install but stays out of it: sessions run with
 Fleet-private data dirs, and the bridge extension is installed only into
 those — never into your VS Code settings, profiles, or extensions.
 
-Without VS Code, Fleet still launches and externally started sessions can
-phone home on their own (the planned SSH/container session paths do not
-need a local VS Code); only spawning *local* sessions requires it.
+Without VS Code, Fleet still launches and externally managed sessions can
+phone home on their own; creating a session from a normal Fleet build requires
+the local VS Code CLI.
 
 `fleet-bridge.vsix` is embedded in the app for local sessions — no manual
-step needed. It is published separately for remote/container environments
-that bake the bridge into their own code-server installs.
+step is needed. It is also published separately for integration and
+experimental-runtime development; those paths are not supported user
+workflows in this release.
 
 ## Known alpha limitations
 

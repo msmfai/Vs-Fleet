@@ -21,11 +21,14 @@
 //! Env knobs: `FLEET_EDITOR_BIN`, `FLEET_CODE_SERVER_BIN`, `FLEET_BRIDGE_VSIX`,
 //! `FLEET_REPORTER_BIN`, `FLEET_CLAUDE_BIN`, `FLEET_MUX_DIR`.
 //!
-//! ## Spawn modes
-//! `FLEET_SPAWN_MODE` selects how a server is launched:
-//!   - `local` (default) — the local-process path above (code-server + reporter +
-//!     claude shim on the host). Unchanged.
-//!   - `container` — `docker run` the `fleet-env` image (code-server + reporter +
+//! ## Runtime boundary
+//! Normal Fleet builds expose only `local`: the local-process path above
+//! (code-server + reporter + claude shim on the host). The unsupported
+//! `container` and `ssh` evaluation paths require an explicit build with the
+//! `experimental-runtimes` feature before `FLEET_SPAWN_MODE` or a create request
+//! can select them.
+//!
+//! The container path runs the `fleet-env` image (code-server + reporter +
 //!     bridge baked in). The container phones home to Fleet's bridge on its own
 //!     (`FLEET_HOST_ADDR` → the host gateway, `FLEET_BRIDGE_PORT` → Fleet's bridge),
 //!     so it appears in the rail like any other env. We publish a free host port to
@@ -56,14 +59,15 @@ const SIGTERM: i32 = 15;
 const SIGKILL: i32 = 9;
 
 /// Tracks Fleet-spawned servers: their child processes (code-server + reporter,
-/// to close them) and their [`Server`] identity (the rail's source of truth for
-/// servers Fleet created — it knows these directly, since it made them).
+/// to close them) and their [`crate::session::Session`] identity (the rail's
+/// source of truth for sessions Fleet created — it knows these directly, since
+/// it made them).
 pub struct ServerSupervisor {
     children: Mutex<HashMap<String, Vec<Child>>>,
     /// `server id -> docker container name` for container-mode servers (so `close`
     /// knows to `docker rm` rather than kill child processes).
     containers: Mutex<HashMap<String, String>>,
-    servers: Mutex<Vec<crate::mux::Server>>,
+    servers: Mutex<Vec<crate::session::Session>>,
     counter: AtomicU64,
     launch_id: String,
     bridge_port: u16,
@@ -122,7 +126,7 @@ impl ServerSupervisor {
     }
 
     /// The servers Fleet has spawned (and not yet closed).
-    pub fn servers(&self) -> Vec<crate::mux::Server> {
+    pub fn servers(&self) -> Vec<crate::session::Session> {
         self.prune_dead_local_servers();
         match self.servers.lock() {
             Ok(servers) => servers.clone(),
@@ -149,7 +153,7 @@ impl ServerSupervisor {
     /// launching VS Code. Mirrors the spawn.rs `push_server` test helper.
     #[cfg(test)]
     pub(crate) fn push_test_server(&self, id: &str) {
-        self.servers.lock().unwrap().push(crate::mux::Server {
+        self.servers.lock().unwrap().push(crate::session::Session {
             id: id.into(),
             label: id.into(),
             url: format!("http://127.0.0.1:1/{id}"),
@@ -158,13 +162,13 @@ impl ServerSupervisor {
         });
     }
 
-    /// Spawn a new server. Routes to the container path when `FLEET_SPAWN_MODE=container`,
-    /// else the default local-process path. Both return a [`Server`] that Fleet adds
-    /// to the rail immediately; the spawned env phones home to the bridge on its own.
+    /// Spawn a new session. Normal builds expose only the supported local VS
+    /// Code runtime. Container and SSH evaluation paths require the explicit
+    /// `experimental-runtimes` build feature as well as their runtime request.
     // Glue: thin default wrapper over `spawn_with`, which launches a real
     // process tree (excluded below).
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn spawn(&self) -> std::io::Result<crate::mux::Server> {
+    pub fn spawn(&self) -> std::io::Result<crate::session::Session> {
         self.spawn_with(SpawnRequest::default())
     }
 
@@ -173,15 +177,15 @@ impl ServerSupervisor {
     // VS Code / Docker / SSH — not available in CI. The pure pieces it composes
     // (`spawn_mode`, `expand_user_path`, `default_spawn_folder`) are unit-tested.
     #[cfg_attr(coverage_nightly, coverage(off))]
-    pub fn spawn_with(&self, request: SpawnRequest) -> std::io::Result<crate::mux::Server> {
+    pub fn spawn_with(&self, request: SpawnRequest) -> std::io::Result<crate::session::Session> {
         let mode = request
             .mode
             .as_deref()
             .map(str::trim)
             .filter(|mode| !mode.is_empty());
         match resolve_spawn_route(mode, spawn_mode()) {
-            SpawnRoute::Container => self.spawn_container(),
-            SpawnRoute::Ssh => self.spawn_ssh(),
+            SpawnRoute::Container => self.spawn_container_route(),
+            SpawnRoute::Ssh => self.spawn_ssh_route(),
             // An explicit `mode == "local"` request forces a concrete folder
             // (defaulting it) so an explicit local create never lands on the
             // env-default folder path; the env-driven local route keeps the
@@ -197,14 +201,38 @@ impl ServerSupervisor {
         }
     }
 
+    #[cfg(feature = "experimental-runtimes")]
+    fn spawn_container_route(&self) -> std::io::Result<crate::session::Session> {
+        self.spawn_container()
+    }
+
+    #[cfg(not(feature = "experimental-runtimes"))]
+    fn spawn_container_route(&self) -> std::io::Result<crate::session::Session> {
+        Err(experimental_runtime_disabled("container"))
+    }
+
+    #[cfg(feature = "experimental-runtimes")]
+    fn spawn_ssh_route(&self) -> std::io::Result<crate::session::Session> {
+        self.spawn_ssh()
+    }
+
+    #[cfg(not(feature = "experimental-runtimes"))]
+    fn spawn_ssh_route(&self) -> std::io::Result<crate::session::Session> {
+        Err(experimental_runtime_disabled("ssh"))
+    }
+
     /// Spawn a new VS Code web server (+ its reporter + claude shim) and record it.
-    /// Returns its [`Server`]; Fleet adds it to the rail immediately.
+    /// Returns its [`crate::session::Session`]; Fleet adds it to the rail
+    /// immediately.
     // Glue: launches `code serve-web` (or the downloaded code-server) plus a
     // reporter child, installs the bridge VSIX, and writes server settings — all
     // requiring a real local VS Code install. Its pure helpers (`local_server_args`,
     // `fleet_env`, `query_escape`, `prepend_path`, settings/shim writers) are tested.
     #[cfg_attr(coverage_nightly, coverage(off))]
-    fn spawn_local(&self, folder_override: Option<PathBuf>) -> std::io::Result<crate::mux::Server> {
+    fn spawn_local(
+        &self,
+        folder_override: Option<PathBuf>,
+    ) -> std::io::Result<crate::session::Session> {
         let base = fleet_mux_base();
         let (n, id) = self.allocate_server_id();
         let label = server_label(n);
@@ -315,7 +343,7 @@ impl ServerSupervisor {
         children.push(child);
 
         tracing::info!(%id, port, server_bin = %server_bin.display(), "spawned VS Code web server + reporter");
-        let server = crate::mux::Server {
+        let server = crate::session::Session {
             id: id.clone(),
             label,
             url,
@@ -366,8 +394,9 @@ impl ServerSupervisor {
     /// interfaces — launch with `FLEET_BRIDGE_ADDR=0.0.0.0` (see `bridge.rs`).
     // Glue: shells out to `docker run`/`docker inspect`/`docker rm` — needs a
     // working Docker daemon. The reachable-URL parser (`inspect_url`) is separate.
+    #[cfg_attr(not(feature = "experimental-runtimes"), allow(dead_code))]
     #[cfg_attr(coverage_nightly, coverage(off))]
-    fn spawn_container(&self) -> std::io::Result<crate::mux::Server> {
+    fn spawn_container(&self) -> std::io::Result<crate::session::Session> {
         let (n, id) = self.allocate_server_id();
         let label = server_label(n);
         let name = format!("fleet-{id}");
@@ -427,7 +456,7 @@ impl ServerSupervisor {
             inspect_url(&docker, &name).unwrap_or_else(|| format!("http://127.0.0.1:{port}/"));
 
         tracing::info!(%id, %name, port, url, "spawned fleet-env container");
-        let server = crate::mux::Server {
+        let server = crate::session::Session {
             id: id.clone(),
             label,
             url,
@@ -455,8 +484,9 @@ impl ServerSupervisor {
     // editor+reporter shell. The pure remote-command and tunnel-arg builders it
     // composes (`ssh_remote_command`, `ssh_tunnel_args`, `ssh_remote_ports`) are
     // unit-tested below.
+    #[cfg_attr(not(feature = "experimental-runtimes"), allow(dead_code))]
     #[cfg_attr(coverage_nightly, coverage(off))]
-    fn spawn_ssh(&self) -> std::io::Result<crate::mux::Server> {
+    fn spawn_ssh(&self) -> std::io::Result<crate::session::Session> {
         let target = std::env::var("FLEET_SSH_TARGET")
             .map_err(|_| std::io::Error::other("FLEET_SSH_TARGET not set (e.g. user@host)"))?;
         let (n, id) = self.allocate_server_id();
@@ -509,7 +539,7 @@ impl ServerSupervisor {
         let child = spawn_fleet_child(&mut cmd)?;
 
         tracing::info!(%id, %target, local_editor, r_cs, "deployed code-server over ssh");
-        let server = crate::mux::Server {
+        let server = crate::session::Session {
             id: id.clone(),
             label,
             url,
@@ -597,6 +627,14 @@ impl ServerSupervisor {
         }
         tracing::info!(servers = ?removed, "pruned dead local sessions");
     }
+}
+
+#[cfg(not(feature = "experimental-runtimes"))]
+fn experimental_runtime_disabled(mode: &str) -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        format!("{mode} runtime is experimental and is not included in this Fleet build"),
+    )
 }
 
 /// Glue: `docker rm -f` a container-mode server. Needs a Docker daemon.
@@ -721,7 +759,7 @@ fn ssh_remote_command(
     )
 }
 
-fn rename_server_label(servers: &mut [crate::mux::Server], id: &str, label: &str) -> bool {
+fn rename_server_label(servers: &mut [crate::session::Session], id: &str, label: &str) -> bool {
     if let Some(server) = servers.iter_mut().find(|server| server.id == id) {
         server.label = label.to_string();
         server.renamed = true;
@@ -1039,9 +1077,9 @@ extern "C" {
     fn libc_kill(pid: i32, sig: i32) -> i32;
 }
 
-/// Which launch path `spawn()` takes. `FLEET_SPAWN_MODE=container` opts into Docker,
-/// `=ssh` deploys to the remote in `FLEET_SSH_TARGET`; anything else (incl. unset)
-/// keeps the default local-process path.
+/// Requested runtime before the build-feature gate is applied. In normal builds
+/// container/SSH requests resolve here and are then rejected by the route
+/// methods above; the environment variable alone cannot enable their code path.
 enum SpawnMode {
     Local,
     Container,
@@ -1075,6 +1113,7 @@ fn resolve_spawn_route(mode_override: Option<&str>, env_mode: SpawnMode) -> Spaw
     // An explicit request mode wins over the env knob.
     match mode_override {
         Some("container") => SpawnRoute::Container,
+        Some("ssh") => SpawnRoute::Ssh,
         Some("local") => SpawnRoute::LocalExplicit,
         _ => match env_mode {
             SpawnMode::Container => SpawnRoute::Container,
@@ -1220,8 +1259,44 @@ fn reporter_bin() -> PathBuf {
         return PathBuf::from(bin);
     }
     bundled_bin("fleet-reporter")
+        .or_else(workspace_reporter_bin)
         .or_else(|| find_on_path("fleet-reporter", &fleet_tool_path()))
         .unwrap_or_else(|| PathBuf::from("fleet-reporter"))
+}
+
+/// Resolve the reporter built by the root workspace when the host is run from
+/// its standalone Cargo target directory. The host is intentionally excluded
+/// from the root workspace, so a checkout produces sibling target trees:
+///
+/// `<root>/crates/fleet-host/target/<profile>/fleet-host`
+/// `<root>/target/<profile>/fleet-reporter`
+///
+/// Release bundles still resolve their colocated sidecar through `bundled_bin`
+/// first. This fallback exists only when the executable's location proves that
+/// it is running from the checkout layout.
+fn workspace_reporter_bin() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    workspace_reporter_bin_from(exe.parent()?)
+}
+
+fn workspace_reporter_bin_from(exe_dir: &Path) -> Option<PathBuf> {
+    let profile = exe_dir.file_name()?;
+    let target_dir = exe_dir.parent()?;
+    if target_dir.file_name()? != "target" {
+        return None;
+    }
+    let host_dir = target_dir.parent()?;
+    if host_dir.file_name()? != "fleet-host" {
+        return None;
+    }
+    let crates_dir = host_dir.parent()?;
+    if crates_dir.file_name()? != "crates" {
+        return None;
+    }
+    let root = crates_dir.parent()?;
+    executable_candidates(&root.join("target").join(profile), "fleet-reporter")
+        .into_iter()
+        .find(|path| path.is_file())
 }
 
 fn bundled_bin(name: &str) -> Option<PathBuf> {
@@ -2179,14 +2254,14 @@ mod tests {
     #[test]
     fn rename_server_label_updates_matching_server_only() {
         let mut servers = vec![
-            crate::mux::Server {
+            crate::session::Session {
                 id: "server-1".into(),
                 label: "server-1".into(),
                 url: "http://127.0.0.1:1/".into(),
                 owned: true,
                 renamed: false,
             },
-            crate::mux::Server {
+            crate::session::Session {
                 id: "server-2".into(),
                 label: "server-2".into(),
                 url: "http://127.0.0.1:2/".into(),
@@ -2731,13 +2806,17 @@ wait
             "token".into(),
             "testlaunch".into(),
         );
-        supervisor.servers.lock().unwrap().push(crate::mux::Server {
-            id: "server-test".into(),
-            label: "server-test".into(),
-            url: "http://127.0.0.1:1/".into(),
-            owned: true,
-            renamed: false,
-        });
+        supervisor
+            .servers
+            .lock()
+            .unwrap()
+            .push(crate::session::Session {
+                id: "server-test".into(),
+                label: "server-test".into(),
+                url: "http://127.0.0.1:1/".into(),
+                owned: true,
+                renamed: false,
+            });
         supervisor
             .children
             .lock()
@@ -2789,13 +2868,17 @@ wait
                 "token".into(),
                 "testlaunch".into(),
             );
-            supervisor.servers.lock().unwrap().push(crate::mux::Server {
-                id: "server-test".into(),
-                label: "server-test".into(),
-                url: "http://127.0.0.1:1/".into(),
-                owned: true,
-                renamed: false,
-            });
+            supervisor
+                .servers
+                .lock()
+                .unwrap()
+                .push(crate::session::Session {
+                    id: "server-test".into(),
+                    label: "server-test".into(),
+                    url: "http://127.0.0.1:1/".into(),
+                    owned: true,
+                    renamed: false,
+                });
             supervisor
                 .children
                 .lock()
@@ -3136,7 +3219,7 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
     }
 
     fn push_server(sup: &ServerSupervisor, id: &str) {
-        sup.servers.lock().unwrap().push(crate::mux::Server {
+        sup.servers.lock().unwrap().push(crate::session::Session {
             id: id.into(),
             label: id.into(),
             url: format!("http://127.0.0.1:1/{id}"),
@@ -3560,6 +3643,10 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
             resolve_spawn_route(Some("container"), SpawnMode::Ssh),
             SpawnRoute::Container
         );
+        assert_eq!(
+            resolve_spawn_route(Some("ssh"), SpawnMode::Local),
+            SpawnRoute::Ssh
+        );
         // An explicit `local` request forces the explicit-folder local path even
         // when the env knob says container/ssh.
         assert_eq!(
@@ -3591,6 +3678,26 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
             resolve_spawn_route(Some("bogus"), SpawnMode::Container),
             SpawnRoute::Container
         );
+    }
+
+    #[cfg(not(feature = "experimental-runtimes"))]
+    #[test]
+    fn default_build_rejects_experimental_runtime_dispatch() {
+        let _lock = lock_env();
+        let _mode = EnvGuard::set("FLEET_SPAWN_MODE", "local");
+        let supervisor = test_supervisor();
+
+        for mode in ["container", "ssh"] {
+            let error = supervisor
+                .spawn_with(SpawnRequest {
+                    mode: Some(mode.into()),
+                    folder: None,
+                })
+                .unwrap_err();
+            assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
+            assert!(error.to_string().contains(mode));
+            assert!(error.to_string().contains("experimental"));
+        }
     }
 
     // `SpawnRequest` is what the `spawn_server_with_options` command deserializes
@@ -3842,6 +3949,32 @@ for arg in "$@"; do printf 'ARG:%s\n' "$arg"; done
         // A root with no parent still yields at least itself.
         let root = bundle_search_dirs(Path::new("/"));
         assert!(root.contains(&PathBuf::from("/")));
+    }
+
+    #[test]
+    fn workspace_reporter_resolves_only_from_standalone_host_target_layout() {
+        let root = temp_test_dir("fleet-workspace-reporter");
+        let _ = std::fs::remove_dir_all(&root);
+        let host_bin_dir = root.join("crates/fleet-host/target/debug");
+        let reporter_dir = root.join("target/debug");
+        std::fs::create_dir_all(&host_bin_dir).unwrap();
+        std::fs::create_dir_all(&reporter_dir).unwrap();
+        let reporter = executable_candidates(&reporter_dir, "fleet-reporter")
+            .into_iter()
+            .next()
+            .unwrap();
+        std::fs::write(&reporter, "").unwrap();
+
+        assert_eq!(
+            workspace_reporter_bin_from(&host_bin_dir),
+            Some(reporter.clone())
+        );
+        assert_eq!(
+            workspace_reporter_bin_from(&root.join("some/other/target/debug")),
+            None
+        );
+
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

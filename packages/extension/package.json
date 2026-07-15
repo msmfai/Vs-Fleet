@@ -1,7 +1,7 @@
 {
   "name": "fleet-extension",
   "displayName": "Fleet",
-  "description": "Fleet VS Code extension — live agent state across editor windows.",
+  "description": "Unshipped Fleet VS Code extension prototype — design reference only.",
   "version": "0.1.0",
   "private": true,
   "publisher": "fleet-team",

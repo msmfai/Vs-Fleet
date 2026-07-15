@@ -9,7 +9,7 @@
 //! Only the rail webview gets Fleet's IPC; each editor surface is a plain
 //! external origin (the code-server) with no Fleet API access.
 
-use std::{collections::HashMap, process::Command, sync::Mutex};
+use std::{process::Command, sync::Mutex};
 
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "macos")]
@@ -18,6 +18,9 @@ use tauri::{
     utils::config::BackgroundThrottlingPolicy, webview::WebviewBuilder, App, AppHandle, Emitter,
     LogicalPosition, LogicalSize, Manager, State, WindowEvent,
 };
+
+use crate::session::Session;
+use crate::surface::SurfaceRegistry;
 
 /// Width of the rail, in logical pixels.
 const RAIL_W: f64 = 248.0;
@@ -28,25 +31,6 @@ pub const RAIL: &str = "rail";
 /// Event emitted whenever the host has a user-visible status override.
 pub const HOST_STATUS: &str = "host-status";
 
-/// One VS Code server workspace (a code-server the rail can switch to).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Server {
-    /// Stable id (also the agent session id the server's reporter registers).
-    pub id: String,
-    /// Display label shown in the rail.
-    pub label: String,
-    /// The code-server URL Fleet embeds.
-    pub url: String,
-    /// Whether Fleet owns the backing process/container and can kill it.
-    pub owned: bool,
-    /// True once the user has explicitly renamed this server. When set, the rail
-    /// shows `label` verbatim instead of letting the agent/session-derived title
-    /// override it — otherwise a reporter phone-home would clobber the rename.
-    /// `serde(default)` so older persisted manifests deserialize as not-renamed.
-    #[serde(default)]
-    pub renamed: bool,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HostStatus {
     pub level: String,
@@ -54,27 +38,16 @@ pub struct HostStatus {
     pub message: String,
 }
 
-/// One persistent editor webview owned by a server id.
-#[derive(Debug, Clone)]
-struct EditorEntry {
-    label: String,
-    loaded_url: Option<String>,
-}
-
-/// Multiplexer state: which server is selected + editor webviews by server id.
+/// Thin shell state: current session selection and Fleet-owned status UI.
 /// The server LIST is the supervisor (spawned) + the push-driven
 /// [`crate::bridge::BridgeRegistry`].
 #[derive(Default)]
-pub struct MuxState {
+pub struct ShellState {
     pub selected: Mutex<Option<String>>,
     pub status: Mutex<Option<HostStatus>>,
-    /// Legacy singleton loaded URL, used only when `FLEET_EDITOR_KEEPALIVE=0`.
-    loaded: Mutex<Option<String>>,
-    /// Persistent editor webviews keyed by Fleet server id.
-    editors: Mutex<HashMap<String, EditorEntry>>,
 }
 
-impl MuxState {
+impl ShellState {
     pub fn new() -> Self {
         Self::default()
     }
@@ -177,7 +150,7 @@ fn bridge_registered(app: &AppHandle, id: &str) -> bool {
 // Glue: reads supervisor + registry from managed state via the live `AppHandle`;
 // the merge it performs (`merged_servers`) is unit-tested.
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn servers_for_app(app: &AppHandle) -> Vec<Server> {
+pub fn servers_for_app(app: &AppHandle) -> Vec<Session> {
     let spawned = app
         .try_state::<crate::spawn::ServerSupervisor>()
         .map(|sup| sup.servers())
@@ -314,13 +287,13 @@ fn build_window_mux(app: &mut App) -> tauri::Result<()> {
 pub fn get_servers(
     registry: State<'_, crate::bridge::BridgeRegistry>,
     sup: State<'_, crate::spawn::ServerSupervisor>,
-) -> Vec<Server> {
+) -> Vec<Session> {
     merged_servers(sup.servers(), registry.servers())
 }
 
-fn merged_servers(spawned: Vec<Server>, registered: Vec<Server>) -> Vec<Server> {
+fn merged_servers(spawned: Vec<Session>, registered: Vec<Session>) -> Vec<Session> {
     let mut seen = std::collections::HashSet::new();
-    let mut out: Vec<Server> = Vec::new();
+    let mut out: Vec<Session> = Vec::new();
     for s in spawned.into_iter().chain(registered) {
         if seen.insert(s.id.clone()) {
             out.push(s);
@@ -334,7 +307,7 @@ fn merged_servers(spawned: Vec<Server>, registered: Vec<Server>) -> Vec<Server> 
 // Glue: Tauri command reading managed `State`.
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
-pub fn selected_server(state: State<'_, MuxState>) -> Option<String> {
+pub fn selected_server(state: State<'_, ShellState>) -> Option<String> {
     state.selected.lock().ok().and_then(|g| g.clone())
 }
 
@@ -368,7 +341,7 @@ pub fn select_spawned(app: AppHandle, id: String) {
                 refresh_persistent_editor(&app, &id, true);
             } else {
                 let still_selected = app
-                    .try_state::<MuxState>()
+                    .try_state::<ShellState>()
                     .and_then(|state| state.selected.lock().ok().and_then(|g| g.clone()))
                     .as_deref()
                     == Some(id.as_str());
@@ -464,17 +437,17 @@ pub fn open_server_external(app: AppHandle, id: String) -> Result<(), String> {
 }
 
 // Glue: thin Tauri command wrapper reading managed `State`; the read against the
-// `MuxState` status (`read_host_status`) is unit-tested + probe-round-tripped.
+// `ShellState` status (`read_host_status`) is unit-tested + probe-round-tripped.
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
-pub fn get_host_status(state: State<'_, MuxState>) -> Option<HostStatus> {
+pub fn get_host_status(state: State<'_, ShellState>) -> Option<HostStatus> {
     read_host_status(&state)
 }
 
-/// Read the current host-status override out of `MuxState`. Headless and
+/// Read the current host-status override out of `ShellState`. Headless and
 /// `State`-free so the `get_host_status` command + the `/host-status` probe GET
 /// can be round-tripped without a window.
-pub fn read_host_status(state: &MuxState) -> Option<HostStatus> {
+pub fn read_host_status(state: &ShellState) -> Option<HostStatus> {
     state.status.lock().ok().and_then(|status| status.clone())
 }
 
@@ -482,7 +455,7 @@ pub fn read_host_status(state: &MuxState) -> Option<HostStatus> {
 // clear (`clear_host_status_if_message`) is unit-tested + probe-round-tripped.
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[tauri::command]
-pub fn clear_host_status_if_current(state: State<'_, MuxState>, message: String) {
+pub fn clear_host_status_if_current(state: State<'_, ShellState>, message: String) {
     clear_host_status_if_message(&state, &message);
 }
 
@@ -495,7 +468,7 @@ pub fn clear_host_status_if_current(state: State<'_, MuxState>, message: String)
 // block's closing brace (same artifact class as paths.rs). The clear/keep
 // contract is fully exercised by `host_status_set_read_and_conditional_clear_round_trip`.
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn clear_host_status_if_message(state: &MuxState, message: &str) -> bool {
+pub fn clear_host_status_if_message(state: &ShellState, message: &str) -> bool {
     if let Ok(mut status) = state.status.lock() {
         if status.as_ref().is_some_and(|s| s.message == message) {
             *status = None;
@@ -505,11 +478,11 @@ pub fn clear_host_status_if_message(state: &MuxState, message: &str) -> bool {
     false
 }
 
-/// Set the host-status override directly on `MuxState` (no `AppHandle`/emit).
+/// Set the host-status override directly on `ShellState` (no `AppHandle`/emit).
 /// Used by the `/host-status/set` probe seam to seed an override so the GET +
 /// conditional-clear round-trips have observable state to act on. The live app
 /// uses `set_host_status` (which also emits the event); this is the headless core.
-pub fn set_host_status_state(state: &MuxState, status: HostStatus) {
+pub fn set_host_status_state(state: &ShellState, status: HostStatus) {
     if let Ok(mut stored) = state.status.lock() {
         *stored = Some(status);
     }
@@ -551,7 +524,7 @@ pub fn emit_host_status(
 // Glue: clears managed status state + emits through the live `AppHandle`.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn clear_host_status(app: &AppHandle) {
-    if let Some(state) = app.try_state::<MuxState>() {
+    if let Some(state) = app.try_state::<ShellState>() {
         if let Ok(mut status) = state.status.lock() {
             *status = None;
         }
@@ -562,7 +535,7 @@ pub fn clear_host_status(app: &AppHandle) {
 // Glue: stores managed status state + emits through the live `AppHandle`.
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn set_host_status(app: &AppHandle, status: HostStatus) {
-    if let Some(state) = app.try_state::<MuxState>() {
+    if let Some(state) = app.try_state::<ShellState>() {
         if let Ok(mut stored) = state.status.lock() {
             *stored = Some(status.clone());
         }
@@ -582,7 +555,7 @@ pub fn select(app: &AppHandle, id: String) -> bool {
 // Glue: the editor-navigation state machine — drives webviews/managed state.
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn select_impl(app: &AppHandle, id: String, force_navigate: bool) -> bool {
-    let Some(state) = app.try_state::<MuxState>() else {
+    let Some(state) = app.try_state::<ShellState>() else {
         return false;
     };
     if server_url(app, &id).is_none() {
@@ -599,13 +572,13 @@ fn select_impl(app: &AppHandle, id: String, force_navigate: bool) -> bool {
     tracing::info!(server_id = %id, force = force_navigate, "selected server");
 
     if keepalive_enabled() {
-        select_persistent(app, &state, &id, force_navigate);
+        select_persistent(app, &id, force_navigate);
         sync_rail_selection(app);
         refresh_menu(app);
         return true;
     }
 
-    select_singleton(app, &state, &id, force_navigate);
+    select_singleton(app, &id, force_navigate);
     sync_rail_selection(app);
     refresh_menu(app);
     true
@@ -613,34 +586,34 @@ fn select_impl(app: &AppHandle, id: String, force_navigate: bool) -> bool {
 
 // Glue: navigates the single rollback editor webview.
 #[cfg_attr(coverage_nightly, coverage(off))]
-fn select_singleton(app: &AppHandle, state: &State<'_, MuxState>, id: &str, force_navigate: bool) {
+fn select_singleton(app: &AppHandle, id: &str, force_navigate: bool) {
     // Navigate the editor to the server's URL (only if it changed, so re-selecting
     // the same server doesn't reload it). The loading overlay is raised/lowered by
     // the editor's own page-load events (see `build_window`).
+    let Some(surfaces) = app.try_state::<SurfaceRegistry>() else {
+        return;
+    };
     if let Some(target) = server_url(app, id) {
-        if let Ok(mut loaded) = state.loaded.lock() {
-            if force_navigate || loaded.as_deref() != Some(target.as_str()) {
-                if let (Some(wv), Ok(parsed)) = (app.get_webview(EDITOR), target.parse()) {
-                    tracing::info!(
-                        mode = "singleton",
-                        server_id = %id,
-                        editor_label = EDITOR,
-                        url = %target,
-                        force = force_navigate,
-                        "navigating editor surface"
-                    );
-                    match wv.navigate(parsed) {
-                        Ok(()) => *loaded = Some(target),
-                        Err(e) => tracing::warn!(
-                            mode = "singleton",
-                            server_id = %id,
-                            editor_label = EDITOR,
-                            url = %target,
-                            error = %e,
-                            "editor surface navigation failed"
-                        ),
-                    }
-                }
+        if let (Some(wv), Ok(parsed)) = (app.get_webview(EDITOR), target.parse()) {
+            if let Err(e) = surfaces.navigate_singleton(&target, force_navigate, || {
+                tracing::info!(
+                    mode = "singleton",
+                    server_id = %id,
+                    editor_label = EDITOR,
+                    url = %target,
+                    force = force_navigate,
+                    "navigating editor surface"
+                );
+                wv.navigate(parsed)
+            }) {
+                tracing::warn!(
+                    mode = "singleton",
+                    server_id = %id,
+                    editor_label = EDITOR,
+                    url = %target,
+                    error = %e,
+                    "editor surface navigation failed"
+                );
             }
         }
     }
@@ -649,45 +622,46 @@ fn select_singleton(app: &AppHandle, state: &State<'_, MuxState>, id: &str, forc
 
 // Glue: shows/creates the per-server persistent editor webview.
 #[cfg_attr(coverage_nightly, coverage(off))]
-fn select_persistent(app: &AppHandle, state: &State<'_, MuxState>, id: &str, force_navigate: bool) {
+fn select_persistent(app: &AppHandle, id: &str, force_navigate: bool) {
+    let Some(surfaces) = app.try_state::<SurfaceRegistry>() else {
+        return;
+    };
     let Some(target) = server_url(app, id) else {
         retile(app);
         return;
     };
-    let Some(label) = ensure_persistent_editor(app, state, id) else {
+    let Some(label) = ensure_persistent_editor(app, &surfaces, id) else {
         retile(app);
         return;
     };
-    navigate_persistent_editor(app, state, id, &label, &target, force_navigate);
+    navigate_persistent_editor(app, &surfaces, id, &label, &target, force_navigate);
     retile(app);
 }
 
 // Glue: re-navigates a persistent editor webview during spawn retries.
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn refresh_persistent_editor(app: &AppHandle, id: &str, force_navigate: bool) {
-    let Some(state) = app.try_state::<MuxState>() else {
+    let Some(surfaces) = app.try_state::<SurfaceRegistry>() else {
         return;
     };
     let Some(target) = server_url(app, id) else {
         return;
     };
-    let Some(label) = ensure_persistent_editor(app, &state, id) else {
+    let Some(label) = ensure_persistent_editor(app, &surfaces, id) else {
         return;
     };
-    navigate_persistent_editor(app, &state, id, &label, &target, force_navigate);
+    navigate_persistent_editor(app, &surfaces, id, &label, &target, force_navigate);
 }
 
 // Glue: creates (lazily) the per-server editor webview as a window child.
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn ensure_persistent_editor(
     app: &AppHandle,
-    state: &State<'_, MuxState>,
+    surfaces: &State<'_, SurfaceRegistry>,
     id: &str,
 ) -> Option<String> {
-    if let Ok(editors) = state.editors.lock() {
-        if let Some(entry) = editors.get(id) {
-            return Some(entry.label.clone());
-        }
+    if let Some(label) = surfaces.persistent_label(id) {
+        return Some(label);
     }
 
     let label = editor_label_for(id);
@@ -725,12 +699,7 @@ fn ensure_persistent_editor(
         }
     }
 
-    if let Ok(mut editors) = state.editors.lock() {
-        editors.entry(id.to_string()).or_insert(EditorEntry {
-            label: label.clone(),
-            loaded_url: None,
-        });
-    }
+    surfaces.register_persistent(id, label.clone());
     Some(label)
 }
 
@@ -738,22 +707,13 @@ fn ensure_persistent_editor(
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn navigate_persistent_editor(
     app: &AppHandle,
-    state: &State<'_, MuxState>,
+    surfaces: &State<'_, SurfaceRegistry>,
     id: &str,
     label: &str,
     target: &str,
     force_navigate: bool,
 ) {
-    let should_navigate = state
-        .editors
-        .lock()
-        .ok()
-        .and_then(|editors| {
-            editors
-                .get(id)
-                .map(|entry| force_navigate || entry.loaded_url.as_deref() != Some(target))
-        })
-        .unwrap_or(force_navigate);
+    let should_navigate = surfaces.persistent_needs_navigation(id, target, force_navigate);
     if !should_navigate {
         return;
     }
@@ -787,13 +747,7 @@ fn navigate_persistent_editor(
         "navigating persistent editor surface"
     );
     match wv.navigate(parsed) {
-        Ok(()) => {
-            if let Ok(mut editors) = state.editors.lock() {
-                if let Some(entry) = editors.get_mut(id) {
-                    entry.loaded_url = Some(target.to_string());
-                }
-            }
-        }
+        Ok(()) => surfaces.record_persistent_navigation(id, target),
         Err(e) => tracing::warn!(
             mode = "persistent",
             server_id = %id,
@@ -810,7 +764,7 @@ fn navigate_persistent_editor(
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn close_server_by_id(app: &AppHandle, sup: &crate::spawn::ServerSupervisor, id: &str) -> bool {
     let was_selected = app
-        .try_state::<MuxState>()
+        .try_state::<ShellState>()
         .and_then(|state| state.selected.lock().ok().and_then(|g| g.clone()))
         .as_deref()
         == Some(id);
@@ -822,12 +776,12 @@ pub fn close_server_by_id(app: &AppHandle, sup: &crate::spawn::ServerSupervisor,
     }
 
     if was_selected {
-        if let Some(state) = app.try_state::<MuxState>() {
+        if let Some(state) = app.try_state::<ShellState>() {
             if let Ok(mut selected) = state.selected.lock() {
                 *selected = None;
             }
             if !keepalive_enabled() {
-                blank_singleton_editor(app, &state);
+                blank_singleton_editor(app);
             }
         }
     }
@@ -891,25 +845,20 @@ fn external_open_command(url: &str) -> (&'static str, Vec<String>) {
 // Glue: closes a server's persistent editor webview via the live `AppHandle`.
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn close_editor(app: &AppHandle, id: &str) {
-    let Some(state) = app.try_state::<MuxState>() else {
+    let Some(surfaces) = app.try_state::<SurfaceRegistry>() else {
         return;
     };
-    let entry = state
-        .editors
-        .lock()
-        .ok()
-        .and_then(|mut editors| editors.remove(id));
-    if let Some(entry) = entry {
-        if let Some(wv) = app.get_webview(&entry.label) {
+    if let Some(label) = surfaces.remove_persistent(id) {
+        if let Some(wv) = app.get_webview(&label) {
             match wv.close() {
                 Ok(()) => tracing::info!(
                     server_id = %id,
-                    editor_label = %entry.label,
+                    editor_label = %label,
                     "closed persistent editor surface"
                 ),
                 Err(e) => tracing::warn!(
                     server_id = %id,
-                    editor_label = %entry.label,
+                    editor_label = %label,
                     error = %e,
                     "persistent editor surface close failed"
                 ),
@@ -920,13 +869,13 @@ fn close_editor(app: &AppHandle, id: &str) {
 
 // Glue: navigates the singleton editor webview back to about:blank.
 #[cfg_attr(coverage_nightly, coverage(off))]
-fn blank_singleton_editor(app: &AppHandle, state: &State<'_, MuxState>) {
+fn blank_singleton_editor(app: &AppHandle) {
     let blank = "about:blank".parse().expect("about:blank is a valid url");
     if let Some(wv) = app.get_webview(EDITOR) {
         let _ = wv.navigate(blank);
     }
-    if let Ok(mut loaded) = state.loaded.lock() {
-        *loaded = None;
+    if let Some(surfaces) = app.try_state::<SurfaceRegistry>() {
+        surfaces.clear_singleton();
     }
 }
 
@@ -1260,23 +1209,16 @@ fn retile(app: &AppHandle) {
     let park_size = LogicalSize::new(1.0, 1.0);
 
     if keepalive_enabled() {
-        let Some(state) = app.try_state::<MuxState>() else {
+        let Some(state) = app.try_state::<ShellState>() else {
+            return;
+        };
+        let Some(surfaces) = app.try_state::<SurfaceRegistry>() else {
             return;
         };
         let selected = state.selected.lock().ok().and_then(|g| g.clone());
-        let mut active_label = None;
-        let mut inactive_labels = Vec::new();
-        if let Ok(editors) = state.editors.lock() {
-            for (id, entry) in editors.iter() {
-                if selected.as_deref() == Some(id.as_str()) {
-                    active_label = Some(entry.label.clone());
-                } else {
-                    inactive_labels.push(entry.label.clone());
-                }
-            }
-        }
+        let layout = surfaces.layout(selected.as_deref());
 
-        for label in inactive_labels {
+        for label in layout.inactive_labels {
             if let Some(wv) = app.get_webview(&label) {
                 let _ = wv.set_position(park_pos);
                 let _ = wv.set_size(park_size);
@@ -1285,7 +1227,7 @@ fn retile(app: &AppHandle) {
         }
 
         if let Some(wv) = app.get_webview(EDITOR) {
-            if active_label.is_some() {
+            if layout.active_label.is_some() {
                 let _ = wv.set_position(park_pos);
                 let _ = wv.set_size(park_size);
                 let _ = wv.hide();
@@ -1296,7 +1238,7 @@ fn retile(app: &AppHandle) {
             }
         }
 
-        if let Some(label) = active_label {
+        if let Some(label) = layout.active_label {
             if let Some(wv) = app.get_webview(&label) {
                 let _ = wv.set_position(pos);
                 let _ = wv.set_size(pane);
@@ -1327,8 +1269,9 @@ fn editor_parking_pane(app: &AppHandle) -> Option<(LogicalPosition<f64>, Logical
 mod tests {
     use super::{
         editor_label_for, external_open_command, keepalive_env_enabled, merged_servers,
-        rail_only_env_enabled, sanitize_server_label, Server,
+        rail_only_env_enabled, sanitize_server_label,
     };
+    use crate::session::Session;
 
     #[cfg(target_os = "macos")]
     use super::macos_title_bar_style_from_env_value;
@@ -1337,22 +1280,22 @@ mod tests {
     use tauri::TitleBarStyle;
 
     #[test]
-    fn mux_state_starts_empty() {
-        let state = super::MuxState::new();
+    fn shell_state_starts_empty() {
+        let state = super::ShellState::new();
         assert!(state.selected.lock().unwrap().is_none());
         assert!(state.status.lock().unwrap().is_none());
     }
 
-    // Host-status round-trip at the `MuxState` seam — the headless core the
+    // Host-status round-trip at the `ShellState` seam — the headless core the
     // `get_host_status` / `clear_host_status_if_current` Tauri commands and the
     // `/host-status[/set|/clear]` probes share. Drives the exact observable state.
     #[test]
     fn host_status_set_read_and_conditional_clear_round_trip() {
         use super::{
             clear_host_status_if_message, read_host_status, set_host_status_state, HostStatus,
-            MuxState,
+            ShellState,
         };
-        let state = MuxState::new();
+        let state = ShellState::new();
         // Empty to start: the read returns None.
         assert_eq!(read_host_status(&state), None);
 
@@ -1451,14 +1394,14 @@ mod tests {
 
     #[test]
     fn merged_servers_prefers_fleet_owned_entries() {
-        let owned = Server {
+        let owned = Session {
             id: "server-1".into(),
             label: "server-1".into(),
             url: "http://127.0.0.1:1/".into(),
             owned: true,
             renamed: false,
         };
-        let registered = Server {
+        let registered = Session {
             id: "server-1".into(),
             label: "bridge label".into(),
             url: "http://127.0.0.1:2/".into(),
