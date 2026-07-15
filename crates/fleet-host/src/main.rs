@@ -20,11 +20,14 @@
 // the pure logic stays fully tested.
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
+mod attention;
 mod bridge;
 mod hub_client;
 mod mux;
 mod render;
+mod session;
 mod spawn;
+mod surface;
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -32,7 +35,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use render::RenderedInbox;
 use tauri::{Emitter, Manager};
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::EnvFilter;
@@ -180,15 +182,6 @@ fn embedded_hub_persist_enabled_from(value: Option<&str>) -> bool {
 /// be launched with `FLEET_BRIDGE_URL=ws://127.0.0.1:<this>` before Fleet starts.
 const BRIDGE_PORT: u16 = 51778;
 
-/// The webview's initial pull of current inbox state (live updates arrive via the
-/// `inbox` event). App-defined command — not gated by the v2 capability ACL.
-// Glue: a Tauri command reading managed `State`, which needs a running app.
-#[cfg_attr(coverage_nightly, coverage(off))]
-#[tauri::command]
-fn get_inbox(state: tauri::State<'_, hub_client::Shared>) -> RenderedInbox {
-    state.lock().map(|g| g.clone()).unwrap_or_default()
-}
-
 // Glue: the entire Tauri application — builder, managed state, command handlers,
 // menu/window-event callbacks, the background runtime thread, and the forever
 // event loop (`.run`). Needs a real webview/event loop, so it can't run headless;
@@ -216,7 +209,7 @@ fn main() {
     let start_local_hub = explicit_ws_url.is_none();
     let ws_url = explicit_ws_url.unwrap_or_else(|| DEFAULT_HUB_URL.to_string());
 
-    let shared: hub_client::Shared = Arc::new(Mutex::new(RenderedInbox::default()));
+    let shared = attention::shared_attention();
     let (hub_commands, hub_command_rx) = hub_client::command_channel();
     let registry = bridge::BridgeRegistry::new();
     let bridge_token =
@@ -226,7 +219,8 @@ fn main() {
         .menu(mux::build_menu)
         .manage(shared.clone())
         .manage(hub_commands)
-        .manage(mux::MuxState::new())
+        .manage(mux::ShellState::new())
+        .manage(surface::SurfaceRegistry::new())
         .manage(registry.clone())
         .manage(spawn::ServerSupervisor::new(
             BRIDGE_PORT,
@@ -237,7 +231,7 @@ fn main() {
         ))
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
-            get_inbox,
+            attention::get_inbox,
             mux::get_servers,
             mux::selected_server,
             mux::select_server,
@@ -276,7 +270,7 @@ fn main() {
                     }
                 });
             } else if let Some(command) = id.strip_prefix("cmd:") {
-                let Some(mux_state) = app.try_state::<mux::MuxState>() else {
+                let Some(mux_state) = app.try_state::<mux::ShellState>() else {
                     mux::emit_host_status(app, "error", "menu", "command bridge unavailable");
                     return;
                 };
@@ -460,7 +454,7 @@ fn handle_probe_control(app: tauri::AppHandle, mut stream: TcpStream) {
         let _ = write_probe_json(&mut stream, 200, &body);
     } else if path == "/selected" {
         let selected = app
-            .try_state::<mux::MuxState>()
+            .try_state::<mux::ShellState>()
             .and_then(|state| state.selected.lock().ok().and_then(|g| g.clone()));
         let body = serde_json::json!({ "selected": selected }).to_string();
         let _ = write_probe_json(&mut stream, 200, &body);
@@ -468,7 +462,7 @@ fn handle_probe_control(app: tauri::AppHandle, mut stream: TcpStream) {
         // Read command (`get_inbox`): the webview's initial pull of inbox state.
         // Mirror the command — clone the latest rendered inbox out of `Shared`.
         let inbox = app
-            .try_state::<hub_client::Shared>()
+            .try_state::<attention::SharedAttention>()
             .map(|shared| shared.lock().map(|g| g.clone()).unwrap_or_default())
             .unwrap_or_default();
         let body = serde_json::to_string(&inbox).unwrap_or_else(|_| "null".to_string());
@@ -476,20 +470,20 @@ fn handle_probe_control(app: tauri::AppHandle, mut stream: TcpStream) {
     } else if path == "/host-status" {
         // Read command (`get_host_status`): the current host-status override.
         let status = app
-            .try_state::<mux::MuxState>()
+            .try_state::<mux::ShellState>()
             .and_then(|state| mux::read_host_status(&state));
         let body = serde_json::json!({ "status": status }).to_string();
         let _ = write_probe_json(&mut stream, 200, &body);
     } else if let Some(rest) = path.strip_prefix("/host-status/set") {
         // Seed a host-status override so the GET + conditional-clear round-trips
         // have observable state to act on (`?message=<urlencoded>`). Headless: it
-        // mutates `MuxState` directly, not via the live emit path.
+        // mutates `ShellState` directly, not via the live emit path.
         let message = rest
             .strip_prefix('?')
             .and_then(probe_query_message)
             .unwrap_or_default();
         let set = app
-            .try_state::<mux::MuxState>()
+            .try_state::<mux::ShellState>()
             .map(|state| {
                 mux::set_host_status_state(
                     &state,
@@ -512,7 +506,7 @@ fn handle_probe_control(app: tauri::AppHandle, mut stream: TcpStream) {
             .and_then(probe_query_message)
             .unwrap_or_default();
         let cleared = app
-            .try_state::<mux::MuxState>()
+            .try_state::<mux::ShellState>()
             .map(|state| mux::clear_host_status_if_message(&state, &message))
             .unwrap_or(false);
         let body = serde_json::json!({ "cleared": cleared, "message": message }).to_string();

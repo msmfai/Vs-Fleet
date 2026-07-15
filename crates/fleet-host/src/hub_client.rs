@@ -7,7 +7,6 @@
 //! `connected:false` rather than blanking the window. This is the exact wire +
 //! reducer the CLI and e2e faces use — nothing is faked.
 
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -25,10 +24,8 @@ use fleet_host_core::{
 use fleet_hub::ClientMessage;
 use fleet_protocol::{Command, Event, Target};
 
+use crate::attention::SharedAttention;
 use crate::render::{render_at, RenderedInbox};
-
-/// Shared latest-rendered-inbox, read by the `get_inbox` command on webview load.
-pub type Shared = Arc<Mutex<RenderedInbox>>;
 
 /// Thread-safe handle used by Tauri commands to send face→Hub commands on the
 /// live Hub websocket owned by the background link.
@@ -57,7 +54,7 @@ pub fn command_channel() -> (HubCommandSender, mpsc::UnboundedReceiver<Command>)
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub async fn run(
     app: AppHandle,
-    shared: Shared,
+    shared: SharedAttention,
     ws_url: String,
     mut command_rx: mpsc::UnboundedReceiver<Command>,
 ) {
@@ -90,7 +87,7 @@ pub async fn run(
 #[cfg_attr(coverage_nightly, coverage(off))]
 async fn connect_once(
     app: &AppHandle,
-    shared: &Shared,
+    shared: &SharedAttention,
     ws_url: &str,
     command_rx: &mut mpsc::UnboundedReceiver<Command>,
     model: &mut InboxModel,
@@ -187,7 +184,7 @@ fn dismiss_session_command(session_id: String) -> Command {
 #[tauri::command]
 pub fn set_session_muted(
     commands: tauri::State<'_, HubCommandSender>,
-    shared: tauri::State<'_, Shared>,
+    shared: tauri::State<'_, SharedAttention>,
     session_id: String,
     muted: bool,
 ) -> Result<(), String> {
@@ -199,7 +196,7 @@ pub fn set_session_muted(
 #[tauri::command]
 pub fn set_session_soloed(
     commands: tauri::State<'_, HubCommandSender>,
-    shared: tauri::State<'_, Shared>,
+    shared: tauri::State<'_, SharedAttention>,
     session_id: String,
     soloed: bool,
 ) -> Result<(), String> {
@@ -211,7 +208,7 @@ pub fn set_session_soloed(
 #[tauri::command]
 pub fn dismiss_session(
     commands: tauri::State<'_, HubCommandSender>,
-    shared: tauri::State<'_, Shared>,
+    shared: tauri::State<'_, SharedAttention>,
     session_id: String,
 ) -> Result<(), String> {
     ensure_connected(&shared)?;
@@ -222,14 +219,14 @@ pub fn dismiss_session(
 #[tauri::command]
 pub fn focus_session(
     commands: tauri::State<'_, HubCommandSender>,
-    shared: tauri::State<'_, Shared>,
+    shared: tauri::State<'_, SharedAttention>,
     session_id: String,
 ) -> Result<(), String> {
     ensure_connected(&shared)?;
     commands.send(focus_command(&session_id))
 }
 
-fn ensure_connected(shared: &Shared) -> Result<(), String> {
+fn ensure_connected(shared: &SharedAttention) -> Result<(), String> {
     let connected = shared
         .lock()
         .ok()
@@ -250,7 +247,7 @@ fn ensure_connected(shared: &Shared) -> Result<(), String> {
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn push(
     app: &AppHandle,
-    shared: &Shared,
+    shared: &SharedAttention,
     rendered: RenderedInbox,
     notification_outcomes: &[NotificationOutcome],
 ) {
@@ -497,7 +494,7 @@ fn waiting_badge_label(waiting_count: usize) -> Option<String> {
 // Glue: mutates shared state and re-`push`es through the `AppHandle` so the
 // window shows the disconnected banner. Reached only from the reconnect loop.
 #[cfg_attr(coverage_nightly, coverage(off))]
-fn mark_disconnected(app: &AppHandle, shared: &Shared) {
+fn mark_disconnected(app: &AppHandle, shared: &SharedAttention) {
     let mut snapshot = shared.lock().ok().map(|g| g.clone()).unwrap_or_default();
     if snapshot.connected {
         snapshot.connected = false;
@@ -507,6 +504,8 @@ fn mark_disconnected(app: &AppHandle, shared: &Shared) {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
     use super::*;
 
     fn inbox(waiting_count: usize, connected: bool) -> RenderedInbox {

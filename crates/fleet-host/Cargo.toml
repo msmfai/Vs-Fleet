@@ -4,12 +4,18 @@
 
 [package]
 name = "fleet-host"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 rust-version = "1.78"
 description = "Fleet host face — the Tauri sidebar window (the primary v1 GUI)"
 license = "MIT"
 publish = false
+
+[features]
+default = []
+# Unsupported evaluation paths. Normal Fleet builds expose only the local
+# `code serve-web` runtime; opting in is a deliberate build-time decision.
+experimental-runtimes = []
 
 [[bin]]
 name = "fleet-host"

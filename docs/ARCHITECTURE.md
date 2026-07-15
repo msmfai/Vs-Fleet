@@ -11,6 +11,32 @@ does not poll a static server list. The host may create local sessions as a
 convenience, but externally registered sessions are not owned by the host and
 must survive a Fleet restart.
 
+Fleet is a thin wrapper around full VS Code web sessions, not a replacement for
+VS Code functionality. The outer shell owns creation, listing, switching,
+focus, and Fleet-specific attention UI. Each embedded VS Code webview remains an
+opaque work surface that owns editing, terminals, source control, debugging,
+extensions, tasks, and project semantics.
+
+Agent awareness is an overlay on those work surfaces. An agent run can start and
+end without changing the identity of its containing VS Code session, and Fleet
+does not infer a task, branch, worktree, or review lifecycle from that run.
+
+## Host Boundaries
+
+The host keeps four concerns separate even though they run in one Tauri app:
+
+| Boundary | Current implementation | Responsibility |
+|---|---|---|
+| Session description | `crates/fleet-host/src/session.rs` | Minimal id, label, URL, and ownership metadata needed by the shell. |
+| Shell | `crates/fleet-host/src/mux.rs` and `ui/main.js` | Rail, selection, menus, create/rename/close commands, and layout. |
+| VS Code surfaces | `crates/fleet-host/src/surface.rs` plus webview glue in `mux.rs` | Persistent mapping from session id to opaque VS Code webview and last loaded URL. |
+| Attention overlay | `crates/fleet-host/src/attention.rs`, `hub_client.rs`, and `render.rs` | Hub-derived badges, waiting state, notifications, and the rail inbox projection. |
+| Runtime | `crates/fleet-host/src/spawn.rs` | Supported local `code serve-web` and reporter process lifecycle. |
+
+The existing frontend IPC still uses `server` in command/event names for wire
+compatibility. That legacy name does not make the web server Fleet's product
+unit; internally the descriptor is a `Session`.
+
 ## Supported Surface
 
 The current supported path is:
@@ -23,7 +49,9 @@ The current supported path is:
   provided.
 
 Remote, SSH, Docker/container, visual probe, and eval harness paths exist in
-the tree, but they are not currently supported user workflows.
+the tree, but they are not currently supported user workflows. The host's SSH
+and container dispatch is excluded from normal builds and requires the explicit
+`experimental-runtimes` Cargo feature.
 
 Fleet is a user-provided VS Code workflow: Fleet may launch the user's local
 `code serve-web` install, but Fleet does not download, bundle, host, or
@@ -68,6 +96,10 @@ the server process.
 - Fleet does not kill external sessions when the host exits.
 - Fleet does not persist a server list across restarts. Reporters and bridges
   re-register after the host/Hub comes back.
+- Fleet retains one persistent webview per selected live session by default so
+  switching is a visibility/layout operation rather than a VS Code reload.
+- Fleet treats the VS Code surface as opaque. It does not implement an editor,
+  Git/worktree lifecycle, task model, or review UI outside VS Code.
 - Fleet installs only a static AppKit-aware native shell menu with no Edit
   submenu and no editor/server command proxies. It does not install global
   keyboard hooks or app-wide native text-editing accelerators for the embedded

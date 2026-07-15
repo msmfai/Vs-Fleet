@@ -93,4 +93,5 @@ Use these only when debugging a non-default setup:
 | `FLEET_SPAWN_REPO` | Clone a repo into each spawned workspace. Supports full URLs, `gh:owner/repo`, `gl:owner/repo`, or `owner/repo`. |
 
 Remote, SSH, and container spawn modes exist in the tree but are not currently
-supported user workflows.
+supported user workflows. SSH/container dispatch is absent from normal host
+builds and requires the explicit `experimental-runtimes` Cargo feature.

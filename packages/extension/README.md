@@ -1,5 +1,12 @@
 # Fleet — VS Code extension
 
+> **Status: unshipped prototype and design reference.** This package is not the
+> extension installed by Fleet and is not compatible with the current Hub
+> contract without additional work. The supported host path packages
+> [`packages/fleet-bridge`](../fleet-bridge). Do not publish, install, or extend
+> this prototype as a current Fleet component without an explicit adoption
+> decision and Rust/TypeScript wire-contract tests.
+
 Live agent state across editor windows. Fleet observes terminal-based AI coding
 agents (Claude Code, Codex CLI) running in this window's **integrated terminals**
 and reports their state to the local Fleet Hub, so a sidebar/CLI face can show
