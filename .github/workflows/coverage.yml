@@ -64,7 +64,7 @@ jobs:
       - name: Coverage gate (zero uncovered source lines, both workspaces)
         run: xvfb-run -a ./scripts/coverage.sh --host --lcov coverage/fleet.lcov --fail-under 100
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-lcov
