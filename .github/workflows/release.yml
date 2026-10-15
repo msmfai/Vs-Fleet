@@ -103,7 +103,7 @@ jobs:
           node-version: "22"
 
       - name: Fetch bridge VSIX
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: fleet-bridge-vsix
           path: crates/fleet-host/resources
@@ -202,7 +202,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Download all bundles
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: bundles-*
           path: dist
@@ -212,7 +212,7 @@ jobs:
       # local sessions, but remote/container environments bake the bridge into
       # their own code-server installs and need the artifact directly.
       - name: Fetch bridge VSIX
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: fleet-bridge-vsix
           path: dist
