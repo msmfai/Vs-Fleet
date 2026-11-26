@@ -60,7 +60,7 @@
     "clean": "rm -rf out"
   },
   "dependencies": {
-    "ws": "^8.21.0"
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
